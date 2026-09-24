@@ -1,4 +1,6 @@
-# jadwal — Jadwal Shift (shift roster)
+# jadwal — Jadwal Shift (shift roster) — DONE
+
+Ported: `app/Modules/Jadwal/Services/JadwalService.php` (+ HeadDirectory), legacy controller, `/api/v1/jadwal/*`, tests `tests/Feature/Jadwal`, parity `tools/parity/cases/jadwal.json` (35/35). Note: legacy `getAll`/`shiftHari` rows have no ORDER BY — parity compares them unordered.
 
 - Legacy source: `laksamana-office/jadwal-mysql/` (`api.php`, `lib_jadwal_mysql.php`, `lib_sesi.php`)
 - Legacy URL: `/jadwal-api-mysql/api.php`

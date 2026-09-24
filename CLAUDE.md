@@ -110,4 +110,5 @@ php artisan route:list --path=api/v1
 | module | legacy compat | v1 | parity |
 |---|---|---|---|
 | account | done | auth + admin | 139/139 |
+| jadwal | done | cells, shifts, requests, settings, heads | 35/35 |
 | (others) | pending — see docs/modules/README.md | | |

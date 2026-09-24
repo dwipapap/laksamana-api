@@ -11,7 +11,7 @@ source disagree, the source wins; then correct the spec.
 | module | spec | legacy compat | v1 | parity | tests |
 |---|---|---|---|---|---|
 | account | [account.md](account.md) | **done** | auth + admin | 139/139 | 11 |
-| jadwal | [jadwal.md](jadwal.md) | pending | pending | — | — |
+| jadwal | [jadwal.md](jadwal.md) | **done** | cells, shifts, requests, settings, heads | 35/35 | 13 |
 | dw | [dw.md](dw.md) | pending | pending | — | — |
 | absensi | [absensi.md](absensi.md) | pending | pending | — | — |
 | marketing | [marketing.md](marketing.md) | pending | pending | — | — |
