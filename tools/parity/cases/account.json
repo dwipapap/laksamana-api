@@ -1,0 +1,225 @@
+{
+  "dir": "account-mysql",
+  "legacyPath": "account-api-mysql",
+  "dbEnv": "ACCOUNT",
+  "db": "lakk5493_db_account",
+  "extraDbs": [
+    {
+      "dbEnv": "JADWAL",
+      "db": "lakk5493_db_jadwal"
+    }
+  ],
+  "ignore": [
+    "data.ts",
+    "data.backend",
+    "data.db",
+    "user.token"
+  ],
+  "cases": [
+    {
+      "name": "ping",
+      "method": "GET",
+      "query": {
+        "action": "ping"
+      }
+    },
+    {
+      "name": "stats",
+      "method": "GET",
+      "query": {
+        "action": "stats"
+      }
+    },
+    {
+      "name": "unknown action",
+      "body": {
+        "action": "nope"
+      }
+    },
+    {
+      "name": "listDivisiRoster",
+      "body": {
+        "action": "listDivisiRoster"
+      }
+    },
+    {
+      "name": "listModuleRoster jadwal",
+      "body": {
+        "action": "listModuleRoster",
+        "module": "jadwal"
+      }
+    },
+    {
+      "name": "listModuleRoster dw",
+      "body": {
+        "action": "listModuleRoster",
+        "module": "dw"
+      }
+    },
+    {
+      "name": "listModuleRoster missing",
+      "body": {
+        "action": "listModuleRoster"
+      }
+    },
+    {
+      "name": "sessionRefresh every user",
+      "each": "SELECT id FROM users",
+      "body": {
+        "action": "sessionRefresh",
+        "userId": "$each"
+      }
+    },
+    {
+      "name": "sessionRefresh unknown",
+      "body": {
+        "action": "sessionRefresh",
+        "userId": "u-nobody"
+      }
+    },
+    {
+      "name": "login missing",
+      "body": {
+        "action": "login",
+        "name": "",
+        "pin": ""
+      }
+    },
+    {
+      "name": "login invalid",
+      "body": {
+        "action": "login",
+        "name": "Admin",
+        "pin": "0000000"
+      }
+    },
+    {
+      "name": "whoami bad token",
+      "body": {
+        "action": "whoami",
+        "token": "deadbeef"
+      }
+    },
+    {
+      "name": "listUsers forbidden",
+      "body": {
+        "action": "listUsers",
+        "callerName": "x",
+        "callerPin": "1"
+      }
+    },
+    {
+      "name": "listModules forbidden",
+      "body": {
+        "action": "listModules"
+      }
+    },
+    {
+      "name": "changePin bad",
+      "body": {
+        "action": "changePin",
+        "name": "Admin",
+        "newPin": "12"
+      }
+    },
+    {
+      "name": "rosterSetActive forbidden",
+      "body": {
+        "action": "rosterSetActive",
+        "sesi": "x",
+        "id": "u-admin",
+        "active": false
+      }
+    },
+    {
+      "name": "listUsers (superadmin)",
+      "each": "SELECT CONCAT(u.name,'|',u.pin) FROM users u JOIN admins a ON a.user_id=u.id WHERE a.module='*' AND u.active=1 LIMIT 1",
+      "body": {
+        "action": "listUsers",
+        "callerName": "$each1",
+        "callerPin": "$each2"
+      }
+    },
+    {
+      "name": "listAccess (superadmin)",
+      "each": "SELECT CONCAT(u.name,'|',u.pin) FROM users u JOIN admins a ON a.user_id=u.id WHERE a.module='*' AND u.active=1 LIMIT 1",
+      "body": {
+        "action": "listAccess",
+        "callerName": "$each1",
+        "callerPin": "$each2"
+      }
+    },
+    {
+      "name": "listModules all (superadmin)",
+      "each": "SELECT CONCAT(u.name,'|',u.pin) FROM users u JOIN admins a ON a.user_id=u.id WHERE a.module='*' AND u.active=1 LIMIT 1",
+      "body": {
+        "action": "listModules",
+        "all": true,
+        "callerName": "$each1",
+        "callerPin": "$each2"
+      }
+    },
+    {
+      "name": "login each active user",
+      "each": "SELECT CONCAT(name,'|',pin) FROM users WHERE active=1",
+      "body": {
+        "action": "login",
+        "name": "$each1",
+        "pin": "$each2"
+      }
+    },
+    {
+      "name": "saveUser new (write)",
+      "each": "SELECT CONCAT(u.name,'|',u.pin) FROM users u JOIN admins a ON a.user_id=u.id WHERE a.module='*' AND u.active=1 LIMIT 1",
+      "body": {
+        "action": "saveUser",
+        "callerName": "$each1",
+        "callerPin": "$each2",
+        "name": "Parity Tester",
+        "pin": "4321",
+        "keterangan": "Bar",
+        "jobLevel": "Staff",
+        "joinDate": "2026-9-1"
+      }
+    },
+    {
+      "name": "saveUser dup name (write)",
+      "each": "SELECT CONCAT(u.name,'|',u.pin) FROM users u JOIN admins a ON a.user_id=u.id WHERE a.module='*' AND u.active=1 LIMIT 1",
+      "body": {
+        "action": "saveUser",
+        "callerName": "$each1",
+        "callerPin": "$each2",
+        "name": "Parity Tester"
+      }
+    },
+    {
+      "name": "setModuleAccess (write)",
+      "each": "SELECT CONCAT(u.name,'|',u.pin) FROM users u JOIN admins a ON a.user_id=u.id WHERE a.module='*' AND u.active=1 LIMIT 1",
+      "body": {
+        "action": "setModuleAccess",
+        "callerName": "$each1",
+        "callerPin": "$each2",
+        "userId": "u-paritytester",
+        "module": "stock",
+        "access": true
+      }
+    },
+    {
+      "name": "sessionRefresh after writes",
+      "body": {
+        "action": "sessionRefresh",
+        "userId": "u-paritytester"
+      }
+    },
+    {
+      "name": "deleteUser active refused (write)",
+      "each": "SELECT CONCAT(u.name,'|',u.pin) FROM users u JOIN admins a ON a.user_id=u.id WHERE a.module='*' AND u.active=1 LIMIT 1",
+      "body": {
+        "action": "deleteUser",
+        "callerName": "$each1",
+        "callerPin": "$each2",
+        "id": "u-paritytester"
+      }
+    }
+  ]
+}
