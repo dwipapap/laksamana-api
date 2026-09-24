@@ -122,3 +122,17 @@ php artisan route:list --path=api/v1
 | jadwal | done | cells, shifts, requests, settings, heads | 35/35 |
 | marketing | done | full contract (docs/api/marketing.md) | 46/46 · frontend e2e 25/25 |
 | (others) | pending — see docs/modules/README.md | | |
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues for `dwipapap/laksamana-api` (`gh` CLI). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` at the repo root (created lazily by `/domain-modeling`). See `docs/agents/domain.md`.
