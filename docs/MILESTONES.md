@@ -21,11 +21,11 @@ List tags with `git tag -n1`.
 | M1.5 | 2026-09-24 | Porting specs for every module (`docs/modules/`) | `419009e` · `m1.5-specs` | — | — |
 | M2 | 2026-09-24 | **jadwal**: 12 legacy actions, v1 cells/shifts/requests/settings/heads | `8f81b7f` · `m2-jadwal` | parity 35/35 · 13 tests | legacy rows have no ORDER BY → compared unordered |
 | M3 | 2026-09-24 | **marketing** (13 legacy actions) + shared `App\Support\RowSync`; full v1 contract (`docs/api/marketing.md`: 12 record resources, documents, read models, files, timeline) | `fca89b7` · `m3-marketing` | parity 46/46 · 18 feature + 5 unit tests | v1 versions are valid `baseUpdatedAt` for old tabs (same guards + lock) |
+| M4 | 2026-09-24 | **Old marketing frontend end to end on Laravel**: `tools/devproxy/serve.mjs` (production cutover shape: only `/marketing-api-mysql` + `/account-api-mysql` → Laravel, the rest stay legacy PHP) + headless walkthrough `tools/e2e/marketing.mjs` driving the real `deploy/marketing` page | `m4-marketing-frontend` | e2e 25/25 · 47 tests | SSO boot, CRM, client edit, new event, 2-chunk upload + stream, VIP row, reload, two-tab conflict modal, delete via `_sejak`; no page errors |
 
 ## In progress / next
 
 | ID | Scope | Status |
 |---|---|---|
-| M4 | Old marketing frontend (`deploy/marketing`) running end to end against Laravel via local devproxy | planned |
 | — | dw | legacy source read, no code yet |
 | — | v1 completeness back-fill for account & jadwal (audit against their screens) | planned |

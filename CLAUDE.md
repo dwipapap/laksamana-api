@@ -109,6 +109,8 @@ export PATH="/c/Users/dwip/.config/herd-lite/bin:$PATH"
 php artisan test                         # Pest
 php artisan test --filter=Stock
 node tools/parity/parity.mjs account     # old vs new, local DB clones (never live)
+node tools/devproxy/serve.mjs            # old deploy/* frontends on :8080, account+marketing -> Laravel, rest legacy PHP
+node tools/e2e/marketing.mjs             # headless walkthrough of deploy/marketing against Laravel (local DB)
 php artisan route:list --path=api/v1
 ```
 
@@ -118,5 +120,5 @@ php artisan route:list --path=api/v1
 |---|---|---|---|
 | account | done | auth + admin | 139/139 |
 | jadwal | done | cells, shifts, requests, settings, heads | 35/35 |
-| marketing | done | full contract (docs/api/marketing.md) | 46/46 |
+| marketing | done | full contract (docs/api/marketing.md) | 46/46 · frontend e2e 25/25 |
 | (others) | pending — see docs/modules/README.md | | |
