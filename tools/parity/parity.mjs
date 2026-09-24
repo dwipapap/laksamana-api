@@ -22,7 +22,8 @@
  *   "dir": "account-mysql",            legacy folder in laksamana-office
  *   "legacyPath": "account-api-mysql",  URL prefix on the Laravel side
  *   "dbEnv": "ACCOUNT", "db": "lakk5493_db_account",
- *   "extraDbs": [{"dbEnv":"JADWAL","db":"lakk5493_db_jadwal"}],   optional
+ *   "extraDbs": [{"dbEnv":"JADWAL","db":"lakk5493_db_jadwal"}],   optional (cloned for both sides)
+ *   "extraLegacy": [{"dir":"dw-mysql","legacyPath":"dw-api-mysql","db":"lakk5493_db_dw","root":"acc|old"}],
  *   "ignore": ["data.ts", "data.backend"],   global ignored paths ("*" = any key)
  *   "cases": [
  *     {"name": "...", "file": "api.php", "method": "GET|POST",
@@ -44,7 +45,11 @@ const MYSQL = process.env.MYSQL_BIN || 'C:/laragon/bin/mysql/mysql-8.4.3-winx64/
 const MYSQLDUMP = process.env.MYSQLDUMP_BIN || MYSQL.replace(/mysql(\.exe)?$/, 'mysqldump$1');
 const PHP = process.env.PHP_BIN || 'php';
 const HOST = process.env.MYSQL_HOST || '127.0.0.1';
-const OLD_PORT = 8901, NEW_PORT = 8902, ACC_PORT = 8900;
+// Parallel runs (several agents at once) need distinct ports and DB names.
+const BASE = parseInt(process.env.PARITY_PORT_BASE || '8900', 10);
+const ACC_PORT = BASE, OLD_PORT = BASE + 1, NEW_PORT = BASE + 2;
+const TAG = (process.env.PARITY_TAG || '').replace(/[^a-z0-9]/gi, '');
+const P = TAG ? `parity_${TAG}` : 'parity';
 
 if (!['127.0.0.1', 'localhost'].includes(HOST)) { console.error('REFUSING: non-local MYSQL_HOST'); process.exit(2); }
 
@@ -67,7 +72,7 @@ const dbs = [{ dbEnv: spec.dbEnv, db: spec.db }, ...(spec.extraDbs || [])];
 if (!dbs.find(d => d.dbEnv === 'ACCOUNT')) dbs.push({ dbEnv: 'ACCOUNT', db: 'lakk5493_db_account' });
 // ...and account asks jadwal for division heads (headIds)
 if (!dbs.find(d => d.dbEnv === 'JADWAL')) dbs.push({ dbEnv: 'JADWAL', db: 'lakk5493_db_jadwal' });
-for (const d of dbs) { cloneDb(d.db, `parity_old_${d.db}`); cloneDb(d.db, `parity_new_${d.db}`); }
+for (const d of dbs) { cloneDb(d.db, `${P}_old_${d.db}`); cloneDb(d.db, `${P}_new_${d.db}`); }
 
 // ---- legacy side -----------------------------------------------------------
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), `parity-${mod}-`));
@@ -80,7 +85,7 @@ define('ENV_LABEL','lokal'); define('API_TOKEN','');
 define('DATA_DIR', ${JSON.stringify(dataDir)}); define('TRAINING_DIR', ${JSON.stringify(dataDir)});
 define('ACCOUNT_API_URL','${acc}');
 define('JADWAL_API_URL','http://127.0.0.1:${ACC_PORT}/jadwal-api-mysql/api.php');
-define('DW_API_URL','http://127.0.0.1:${OLD_PORT}/dw-api-mysql/api.php');
+define('DW_API_URL','http://127.0.0.1:${ACC_PORT}/dw-api-mysql/api.php');
 `;
 }
 function stageLegacy(dir, urlPrefix, dbName, docroot) {
@@ -93,9 +98,14 @@ function stageLegacy(dir, urlPrefix, dbName, docroot) {
   try { fs.rmSync(path.join(dst, 'config.local.php')); } catch {}
 }
 const oldRoot = path.join(scratch, 'old'), accRoot = path.join(scratch, 'acc');
-stageLegacy(spec.dir, spec.legacyPath, `parity_old_${spec.db}`, oldRoot);
-stageLegacy('account-mysql', 'account-api-mysql', 'parity_old_lakk5493_db_account', accRoot);
-stageLegacy('jadwal-mysql', 'jadwal-api-mysql', 'parity_old_lakk5493_db_jadwal', accRoot);
+stageLegacy(spec.dir, spec.legacyPath, `${P}_old_${spec.db}`, oldRoot);
+stageLegacy('account-mysql', 'account-api-mysql', `${P}_old_lakk5493_db_account`, accRoot);
+stageLegacy('jadwal-mysql', 'jadwal-api-mysql', `${P}_old_lakk5493_db_jadwal`, accRoot);
+// Other old backends this one calls over HTTP. root "acc" (default) = the helper server that
+// ACCOUNT/JADWAL/DW_API_URL point at; root "old" = same host as the module (SERVER_NAME-derived URLs).
+for (const x of spec.extraLegacy || []) {
+  stageLegacy(x.dir, x.legacyPath, `${P}_old_${x.db}`, x.root === 'old' ? oldRoot : accRoot);
+}
 
 const procs = [];
 function start(cmd, argv, opts) {
@@ -108,7 +118,7 @@ start(PHP, ['-S', `127.0.0.1:${ACC_PORT}`, '-t', accRoot], { cwd: accRoot });
 
 // ---- laravel side ----------------------------------------------------------
 const env = { ...process.env, LAKSAMANA_ENV_LABEL: 'lokal', CACHE_STORE: 'array' };
-for (const d of dbs) env[`DB_${d.dbEnv}_DATABASE`] = `parity_new_${d.db}`;
+for (const d of dbs) env[`DB_${d.dbEnv}_DATABASE`] = `${P}_new_${d.db}`;
 const newData = path.join(scratch, 'data-new');
 for (const [k] of Object.entries({ AKADEMI: 1, EVENT: 1, KOMPAS: 1, KONTEN: 1, MARKETING: 1, RESERVASI: 1, STOCK: 1 })) {
   env[`${k}_DATA_DIR`] = path.join(newData, k.toLowerCase()); fs.mkdirSync(env[`${k}_DATA_DIR`], { recursive: true });
@@ -120,7 +130,7 @@ const cleanup = () => {
   for (const p of procs) try { p.kill(); } catch {}
   if (!keep) {
     try { fs.rmSync(scratch, { recursive: true, force: true }); } catch {}
-    for (const d of dbs) try { sql(`DROP DATABASE IF EXISTS \`parity_old_${d.db}\`; DROP DATABASE IF EXISTS \`parity_new_${d.db}\`;`); } catch {}
+    for (const d of dbs) try { sql(`DROP DATABASE IF EXISTS \`${P}_old_${d.db}\`; DROP DATABASE IF EXISTS \`${P}_new_${d.db}\`;`); } catch {}
   }
 };
 process.on('exit', cleanup);
@@ -173,7 +183,7 @@ async function call(port, prefix, c, each) {
   let fails = 0, runs = 0;
   for (const c of spec.cases) {
     if (only && !c.name.includes(only)) continue;
-    const eachVals = c.each ? sql(c.each, `parity_old_${spec.db}`).trim().split(/\r?\n/).filter(Boolean) : [null];
+    const eachVals = c.each ? sql(c.each, `${P}_old_${spec.db}`).trim().split(/\r?\n/).filter(Boolean) : [null];
     for (const e of eachVals) {
       runs++;
       const [o, n] = [await call(OLD_PORT, spec.legacyPath, c, e), await call(NEW_PORT, spec.legacyPath, c, e)];
