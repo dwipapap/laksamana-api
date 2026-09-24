@@ -28,8 +28,10 @@
  *   "cases": [
  *     {"name": "...", "file": "api.php", "method": "GET|POST",
  *      "query": {...}, "body": {...}, "ignore": [...],
- *      "each": "SELECT id FROM users"   optional: repeat, substituting "$each" }
- *   ]
+ *      "each": "SELECT id FROM users"   optional: repeat, substituting "$each" / "$each1","$each2" (split on |) }
+ *   ],
+ *   "sessions": {"hrd": "SELECT CONCAT(name,'|',pin) FROM users WHERE ..."}
+ *      logs in on BOTH sides first; use "$sesi:hrd" anywhere in query/body
  * }
  */
 import { spawn, execFileSync } from 'node:child_process';
@@ -149,9 +151,17 @@ function matches(p, pattern) {
   if (b[b.length - 1] === '**') return b.slice(0, -1).every((x, i) => x === '*' || x === a[i]);
   return a.length === b.length && a.every((x, i) => b[i] === '*' || b[i] === x);
 }
+// Paths whose array ORDER is unspecified in legacy (SELECT without ORDER BY):
+// compared as multisets. Use sparingly — only where legacy SQL has no ORDER BY.
+let UNORDERED = [];
+const canon = v => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x)) ? Object.fromEntries(Object.entries(x).sort()) : x);
 function diff(a, b, ignore, p = '', out = []) {
   if (p && ignore.some(ig => matches(p.slice(1), ig))) return out;
   if (a === b) return out;
+  if (p && Array.isArray(a) && Array.isArray(b) && UNORDERED.some(u => matches(p.slice(1), u))) {
+    a = [...a].sort((x, y) => canon(x) < canon(y) ? -1 : 1);
+    b = [...b].sort((x, y) => canon(x) < canon(y) ? -1 : 1);
+  }
   const ta = Array.isArray(a) ? 'array' : typeof a, tb = Array.isArray(b) ? 'array' : typeof b;
   if (ta !== tb || a === null || b === null || ta !== 'object' && ta !== 'array') {
     // numeric-string vs number counts as a difference only if values differ
@@ -164,9 +174,24 @@ function diff(a, b, ignore, p = '', out = []) {
   return out;
 }
 
-async function call(port, prefix, c, each) {
+// Office session tokens per side, from spec.sessions {label: "SQL -> name|pin"}; used as "$sesi:<label>".
+const TOKENS = { old: {}, new: {} };
+async function loginBoth() {
+  for (const [label, q] of Object.entries(spec.sessions || {})) {
+    const [name, pin] = sql(q, `${P}_old_lakk5493_db_account`).trim().split(/\r?\n/)[0].split('|');
+    for (const [side, port] of [['old', ACC_PORT], ['new', NEW_PORT]]) {
+      const r = await fetch(`http://127.0.0.1:${port}/account-api-mysql/api.php`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ action: 'login', name, pin }) });
+      const j = await r.json();
+      if (!j.ok || !j.user.token) throw new Error(`login ${label} failed on ${side}: ${JSON.stringify(j)}`);
+      TOKENS[side][label] = j.user.token;
+    }
+  }
+}
+
+async function call(port, prefix, c, each, side) {
   const [e1, e2] = String(each ?? '').split('|');
-  const sub = v => JSON.parse(JSON.stringify(v ?? {}).replaceAll('$each1', e1 ?? '').replaceAll('$each2', e2 ?? '').replaceAll('$each', each ?? ''));
+  const sub = v => JSON.parse(JSON.stringify(v ?? {}).replaceAll('$each1', e1 ?? '').replaceAll('$each2', e2 ?? '').replaceAll('$each', each ?? '')
+    .replace(/\$sesi:([A-Za-z0-9_]+)/g, (_, l) => TOKENS[side][l] ?? ''));
   const q = new URLSearchParams(sub(c.query)).toString();
   const url = `http://127.0.0.1:${port}/${prefix}/${c.file || spec.file || 'api.php'}${q ? '?' + q : ''}`;
   const init = (c.method || 'POST') === 'GET' ? {} : { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(sub(c.body)) };
@@ -180,14 +205,16 @@ async function call(port, prefix, c, each) {
   await waitUp(`http://127.0.0.1:${OLD_PORT}/`);
   await waitUp(`http://127.0.0.1:${ACC_PORT}/`);
   await waitUp(`http://127.0.0.1:${NEW_PORT}/up`);
+  await loginBoth();
   let fails = 0, runs = 0;
   for (const c of spec.cases) {
     if (only && !c.name.includes(only)) continue;
     const eachVals = c.each ? sql(c.each, `${P}_old_${spec.db}`).trim().split(/\r?\n/).filter(Boolean) : [null];
     for (const e of eachVals) {
       runs++;
-      const [o, n] = [await call(OLD_PORT, spec.legacyPath, c, e), await call(NEW_PORT, spec.legacyPath, c, e)];
+      const [o, n] = [await call(OLD_PORT, spec.legacyPath, c, e, 'old'), await call(NEW_PORT, spec.legacyPath, c, e, 'new')];
       const ignore = [...(spec.ignore || []), ...(c.ignore || [])];
+      UNORDERED = [...(spec.unordered || []), ...(c.unordered || [])];
       const d = diff(o.json, n.json, ignore);
       if (o.status !== n.status) d.unshift(`HTTP status old=${o.status} new=${n.status}`);
       const label = c.name + (e ? ` [${e}]` : '');

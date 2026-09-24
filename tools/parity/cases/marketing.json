@@ -1,0 +1,79 @@
+{
+  "dir": "marketing-mysql",
+  "legacyPath": "marketing-api-mysql",
+  "dbEnv": "MARKETING",
+  "db": "lakk5493_db_marketing",
+  "ignore": ["data.ts", "data.backend", "data.db", "data.folderBerkas", "data.folderSampah", "data.amanDiLuarWeb", "data.berkasDibuang"],
+  "cases": [
+    { "name": "ping", "method": "GET", "query": { "action": "ping" } },
+    { "name": "stats", "method": "GET", "query": { "action": "stats" } },
+    { "name": "getAll (default GET)", "method": "GET", "query": {} },
+    { "name": "unknown action", "body": { "action": "nope" } },
+    { "name": "eventsHari event done", "method": "GET", "query": { "action": "eventsHari", "tgl": "2026-09-20" } },
+    { "name": "eventsHari deal", "method": "GET", "query": { "action": "eventsHari", "tgl": "2026-10-22" } },
+    { "name": "eventsHari VIP day", "method": "GET", "query": { "action": "eventsHari", "tgl": "2026-08-13" } },
+    { "name": "eventsHari empty day", "method": "GET", "query": { "action": "eventsHari", "tgl": "2026-01-01" } },
+    { "name": "eventsHari bad date", "method": "GET", "query": { "action": "eventsHari", "tgl": "2026-9-1" } },
+    { "name": "dpMasuk september", "method": "GET", "query": { "action": "dpMasuk", "dari": "2026-09-01", "sampai": "2026-09-30" } },
+    { "name": "dpMasuk reversed wide", "method": "GET", "query": { "action": "dpMasuk", "dari": "2026-11-30", "sampai": "2026-07-01" } },
+    { "name": "dpMasuk empty range", "method": "GET", "query": { "action": "dpMasuk", "dari": "2025-01-01", "sampai": "2025-01-31" } },
+    { "name": "dpMasuk bad", "method": "GET", "query": { "action": "dpMasuk", "dari": "x", "sampai": "2026-01-01" } },
+    { "name": "designReqs all", "method": "GET", "query": { "action": "designReqs" } },
+    { "name": "designReqs active", "method": "GET", "query": { "action": "designReqs", "aktif": "1" } },
+    { "name": "designReq one", "method": "GET", "query": { "action": "designReq", "id": "dr_u7lzbj8" } },
+    { "name": "designReq missing", "method": "GET", "query": { "action": "designReq", "id": "nope" } },
+    { "name": "designReq empty id", "method": "GET", "query": { "action": "designReq" } },
+    { "name": "designReqSet done", "body": { "action": "designReqSet", "id": "dr_u7lzbj8", "status": "done", "picNama": "Parity" }, "ignore": ["data.ts"] },
+    { "name": "designReqs active after set", "method": "GET", "query": { "action": "designReqs", "aktif": "1" }, "ignore": ["data.reqs.*.doneAt"] },
+    { "name": "designReqOpsi empty ignored", "body": { "action": "designReqOpsi", "opsi": { "brands": [], "pics": [] } } },
+    { "name": "designReqOpsi set", "body": { "action": "designReqOpsi", "opsi": { "brands": [{ "id": "b1", "name": "Laksamana" }, { "name": "no id" }], "pics": [{ "id": "u1", "name": "A", "prod": true }], "platforms": ["IG", "", 5] } } },
+    { "name": "saveAll invalid payload", "body": { "action": "saveAll" } },
+    { "name": "saveAll new client + activity + extra key", "body": { "action": "saveAll", "data": {
+      "clients": [{ "id": "c_par1", "nama": "Parity Client", "perusahaan": "PT Parity", "status": "Lead", "lastContact": "2026-09-24", "nextFU": "bad", "updatedAt": 1790100000000, "createdAt": 1790100000000 }],
+      "activities": [{ "id": "a_par1", "refType": "client", "refId": "c_par1", "action": "Client baru", "by": "Parity", "at": "2026-09-24T03:00:00.000Z" }],
+      "parityExtra": { "a": 1, "list": [1, 2] }
+    } } },
+    { "name": "saveAll edit with correct base", "body": { "action": "saveAll", "data": {
+      "clients": [{ "id": "c_par1", "nama": "Parity Client 2", "perusahaan": "PT Parity", "status": "Prospect", "updatedAt": 1790100000500, "createdAt": 1790100000000, "baseUpdatedAt": 1790100000000 }]
+    } } },
+    { "name": "saveAll stale base -> bentrok", "body": { "action": "saveAll", "data": {
+      "clients": [{ "id": "c_par1", "nama": "Someone else", "perusahaan": "PT Parity", "status": "Lost", "updatedAt": 1790100000900, "createdAt": 1790100000000, "baseUpdatedAt": 1790100000000 }]
+    } } },
+    { "name": "saveAll stale base but identical content -> versi", "body": { "action": "saveAll", "data": {
+      "clients": [{ "perusahaan": "PT Parity", "id": "c_par1", "status": "Prospect", "nama": "Parity Client 2", "createdAt": 1790100000000, "updatedAt": 1790100000777, "baseUpdatedAt": 1790100000000 }]
+    } } },
+    { "name": "saveAll cap bump -> versi server+1", "body": { "action": "saveAll", "data": {
+      "clients": [{ "id": "c_par1", "nama": "Parity Client 3", "perusahaan": "PT Parity", "status": "Deal", "updatedAt": 1790100000400, "createdAt": 1790100000000, "baseUpdatedAt": 1790100000500 }]
+    } } },
+    { "name": "saveAll unchanged reflection skipped", "body": { "action": "saveAll", "data": {
+      "clients": [{ "id": "c_par1", "nama": "SHOULD NOT WRITE", "updatedAt": 1790100000501, "createdAt": 1790100000000 }]
+    } } },
+    { "name": "saveAll _sejak=0 deletes nothing", "body": { "action": "saveAll", "data": {
+      "clients": [{ "id": "c_par1", "nama": "Parity Client 3", "perusahaan": "PT Parity", "status": "Deal", "updatedAt": 1790100000501, "createdAt": 1790100000000 }], "_sejak": 0
+    } } },
+    { "name": "saveAll new VIP row", "body": { "action": "saveAll", "data": {
+      "vip": [{ "id": "vip_par1", "nama": "Parity VIP", "tanggal": "2026-10-10", "jenis": "Assisted", "nominal": 5000000, "paxMax": 30, "updatedAt": 1790100001000 }]
+    } } },
+    { "name": "saveAll VIP stale -> bentrok", "body": { "action": "saveAll", "data": {
+      "vip": [{ "id": "vip_par1", "nama": "Changed", "tanggal": "2026-10-10", "jenis": "Assisted", "updatedAt": 1790100001500, "baseUpdatedAt": 1790100000999 }]
+    } } },
+    { "name": "saveAll VIP edit ok", "body": { "action": "saveAll", "data": {
+      "vip": [{ "id": "vip_par1", "nama": "Parity VIP 2", "tanggal": "2026-10-10", "jenis": "Assisted", "nominal": 6000000, "paxMax": 30, "updatedAt": 1790100001600, "baseUpdatedAt": 1790100001000 }]
+    } } },
+    { "name": "eventsHari shows new VIP", "method": "GET", "query": { "action": "eventsHari", "tgl": "2026-10-10" } },
+    { "name": "getAll after writes", "method": "GET", "query": { "action": "getAll" } },
+    { "name": "uploadReceipt empty", "body": { "action": "uploadReceipt" } },
+    { "name": "uploadReceipt bad base64", "body": { "action": "uploadReceipt", "dataBase64": "@@@", "mimeType": "image/png" } },
+    { "name": "uploadReceipt png", "body": { "action": "uploadReceipt", "dataBase64": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "mimeType": "image/png", "fileName": "dot.png" }, "ignore": ["data.key"] },
+    { "name": "uploadChunk no id", "body": { "action": "uploadChunk" } },
+    { "name": "uploadChunk first", "body": { "action": "uploadChunk", "uploadId": "par1", "seq": 0, "dataBase64": "aGVsbG8=" } },
+    { "name": "uploadChunk missing start", "body": { "action": "uploadChunk", "uploadId": "par2", "seq": 1, "dataBase64": "aGVsbG8=" } },
+    { "name": "uploadChunk last", "body": { "action": "uploadChunk", "uploadId": "par1", "seq": 1, "last": true, "dataBase64": "IHdvcmxk", "mimeType": "application/pdf", "fileName": "x.pdf" }, "ignore": ["data.key"] },
+    { "name": "receipt missing file", "method": "GET", "query": { "action": "receipt", "key": "rc_nope.png" } },
+    { "name": "receipt traversal", "method": "GET", "query": { "action": "receipt", "key": "../x" } },
+    { "name": "saveAll delete bounded by _sejak", "body": { "action": "saveAll", "data": {
+      "clients": [{ "id": "c_par1", "nama": "Parity Client 3", "perusahaan": "PT Parity", "status": "Deal", "updatedAt": 1790100000501, "createdAt": 1790100000000 }], "_sejak": 1790068989701
+    } } },
+    { "name": "getAll after bounded delete", "method": "GET", "query": { "action": "getAll" } }
+  ]
+}

@@ -1,50 +1,48 @@
 <?php
 
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use App\Support\Modules;
 use Tests\TestCase;
 
 /*
-|--------------------------------------------------------------------------
-| Test Case
-|--------------------------------------------------------------------------
-|
-| The closure you provide to your test functions is always bound to a specific PHPUnit test
-| case class. By default, that class is "PHPUnit\Framework\TestCase". Of course, you may
-| need to change it using the "pest()" function to bind different classes or traits.
-|
+| Feature tests run against the LOCAL restored legacy databases; every test is
+| wrapped in a transaction on every connection (see Tests\TestCase).
 */
+pest()->extend(TestCase::class)->in('Feature');
 
-pest()->extend(TestCase::class)
- // ->use(RefreshDatabase::class)
-    ->in('Feature');
-
-/*
-|--------------------------------------------------------------------------
-| Expectations
-|--------------------------------------------------------------------------
-|
-| When you're writing tests, you often need to check that values meet certain conditions. The
-| "expect()" function gives you access to a set of "expectations" methods that you can use
-| to assert different things. Of course, you may extend the Expectation API at any time.
-|
-*/
-
-expect()->extend('toBeOne', function () {
-    return $this->toBe(1);
-});
-
-/*
-|--------------------------------------------------------------------------
-| Functions
-|--------------------------------------------------------------------------
-|
-| While Pest is very powerful out-of-the-box, you may have some testing code specific to your
-| project that you don't want to repeat in every file. Here you can also expose helpers as
-| global functions to help you to reduce the number of lines of code in your test files.
-|
-*/
-
-function something()
+/** A real active user from the restored account DB, with its plain PIN. */
+function anyActiveUser(bool $superadmin = false): array
 {
-    // ..
+    $db = Modules::db('account');
+    $row = $superadmin
+        ? $db->selectOne("SELECT u.id, u.name, u.pin FROM users u JOIN admins a ON a.user_id = u.id WHERE a.module = '*' AND u.active = 1 LIMIT 1")
+        : $db->selectOne("SELECT u.id, u.name, u.pin FROM users u WHERE u.active = 1 AND u.id NOT IN (SELECT user_id FROM admins WHERE module = '*') LIMIT 1");
+
+    return (array) $row;
+}
+
+/** One Office user by id (with plain PIN) from the restored account DB. */
+function officeUser(string $id): array
+{
+    $row = Modules::db('account')->selectOne('SELECT id, name, pin FROM users WHERE id = ?', [$id]);
+    if (! $row) {
+        throw new RuntimeException("Test user $id not found in the restored account DB.");
+    }
+
+    return (array) $row;
+}
+
+/** Sanctum token for a user array (from anyActiveUser/officeUser). */
+function loginAs(array $u): string
+{
+    return test()->postJson('/api/v1/auth/login', ['login' => $u['name'], 'pin' => $u['pin']])
+        ->assertOk()->json('data.token');
+}
+
+/** Old-style Office session token (lm_session.token) via the legacy account route. */
+function legacySesi(array $u): string
+{
+    $r = test()->call('POST', '/account-api-mysql/api.php', [], [], [], ['CONTENT_TYPE' => 'text/plain'],
+        json_encode(['action' => 'login', 'name' => $u['name'], 'pin' => $u['pin']]))->json();
+
+    return (string) ($r['user']['token'] ?? '');
 }

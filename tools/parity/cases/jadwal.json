@@ -1,0 +1,402 @@
+{
+  "dir": "jadwal-mysql",
+  "legacyPath": "jadwal-api-mysql",
+  "dbEnv": "JADWAL",
+  "db": "lakk5493_db_jadwal",
+  "sessions": {
+    "admin": "SELECT CONCAT(name,'|',pin) FROM users WHERE id='u-admin'",
+    "headbar": "SELECT CONCAT(name,'|',pin) FROM users WHERE id='u-arif'",
+    "headfloor": "SELECT CONCAT(name,'|',pin) FROM users WHERE id='u-mella'",
+    "crewbar": "SELECT CONCAT(name,'|',pin) FROM users WHERE id='u-yuzaalfarel'",
+    "hrd": "SELECT CONCAT(name,'|',pin) FROM users WHERE id='u-rizkiarfan'"
+  },
+  "ignore": [
+    "data.ts",
+    "data.backend",
+    "data.db",
+    "data.pengajuan.*.dibuatAt",
+    "data.pengajuan.*.putusAt",
+    "data.pengajuan.*.headAt"
+  ],
+  "cases": [
+    {
+      "name": "ping",
+      "method": "GET",
+      "query": {
+        "action": "ping"
+      }
+    },
+    {
+      "name": "stats",
+      "method": "GET",
+      "query": {
+        "action": "stats"
+      }
+    },
+    {
+      "name": "headIds (open)",
+      "method": "GET",
+      "query": {
+        "action": "headIds"
+      }
+    },
+    {
+      "name": "shiftHari all (open)",
+      "method": "GET",
+      "query": {
+        "action": "shiftHari",
+        "dari": "2026-09-01",
+        "sampai": "2026-09-30"
+      }
+    },
+    {
+      "name": "shiftHari one user",
+      "method": "GET",
+      "query": {
+        "action": "shiftHari",
+        "user": "u-yuzaalfarel",
+        "dari": "2026-09-30",
+        "sampai": "2026-09-01"
+      }
+    },
+    {
+      "name": "shiftHari bad date",
+      "method": "GET",
+      "query": {
+        "action": "shiftHari",
+        "dari": "2026-13-01",
+        "sampai": "2026-09-30"
+      }
+    },
+    {
+      "name": "getAll without session",
+      "method": "GET",
+      "query": {
+        "action": "getAll"
+      }
+    },
+    {
+      "name": "getAll bad token",
+      "method": "GET",
+      "query": {
+        "action": "getAll",
+        "sesi": "deadbeef"
+      }
+    },
+    {
+      "name": "getAll crew range",
+      "method": "GET",
+      "query": {
+        "action": "getAll",
+        "sesi": "$sesi:crewbar",
+        "dari": "2026-09-01",
+        "sampai": "2026-09-30"
+      }
+    },
+    {
+      "name": "getAll default action (GET, no action)",
+      "method": "GET",
+      "query": {
+        "sesi": "$sesi:admin",
+        "dari": "2026-08-01",
+        "sampai": "2026-08-31"
+      }
+    },
+    {
+      "name": "unknown action",
+      "body": {
+        "action": "nope",
+        "sesi": "$sesi:admin"
+      }
+    },
+    {
+      "name": "simpanSel head bar -> bar crew",
+      "body": {
+        "action": "simpanSel",
+        "sesi": "$sesi:headbar",
+        "by": "spoofed",
+        "rows": [
+          {
+            "u": "u-yuzaalfarel",
+            "d": "2026-10-05",
+            "t": "PAGI",
+            "m": "08:00",
+            "s": "16:00",
+            "n": "parity"
+          },
+          {
+            "u": "u-yuzaalfarel",
+            "d": "2026-10-06",
+            "t": "SIANG",
+            "m": "25:00",
+            "s": "",
+            "n": ""
+          },
+          {
+            "u": "u-yuzaalfarel",
+            "d": "2026-02-31",
+            "t": "PAGI"
+          }
+        ],
+        "hapus": [
+          {
+            "u": "u-yuzaalfarel",
+            "d": "2026-10-01"
+          }
+        ]
+      }
+    },
+    {
+      "name": "simpanSel head bar -> floor crew refused",
+      "body": {
+        "action": "simpanSel",
+        "sesi": "$sesi:headbar",
+        "rows": [
+          {
+            "u": "u-mella",
+            "d": "2026-10-05",
+            "t": "PAGI"
+          }
+        ]
+      }
+    },
+    {
+      "name": "simpanSel plain crew refused",
+      "body": {
+        "action": "simpanSel",
+        "sesi": "$sesi:crewbar",
+        "rows": [
+          {
+            "u": "u-yuzaalfarel",
+            "d": "2026-10-07",
+            "t": "OFF"
+          }
+        ]
+      }
+    },
+    {
+      "name": "simpanSel non-shift crew refused",
+      "body": {
+        "action": "simpanSel",
+        "sesi": "$sesi:headbar",
+        "rows": [
+          {
+            "u": "u-rizkiarfan",
+            "d": "2026-10-05",
+            "t": "PAGI"
+          }
+        ]
+      }
+    },
+    {
+      "name": "getAll after cell writes",
+      "method": "GET",
+      "query": {
+        "action": "getAll",
+        "sesi": "$sesi:admin",
+        "dari": "2026-10-01",
+        "sampai": "2026-10-31"
+      }
+    },
+    {
+      "name": "simpanPengajuan crew (userId forced)",
+      "body": {
+        "action": "simpanPengajuan",
+        "sesi": "$sesi:crewbar",
+        "row": {
+          "id": "Aparity1",
+          "userId": "u-arif",
+          "jenis": "cuti",
+          "dari": "2026-10-12",
+          "sampai": "2026-10-10",
+          "alasan": "parity",
+          "shift": "PAGI",
+          "jamMulai": "8:00"
+        }
+      }
+    },
+    {
+      "name": "HRD cannot approve before head",
+      "body": {
+        "action": "putusPengajuan",
+        "sesi": "$sesi:hrd",
+        "id": "Aparity1",
+        "status": "DISETUJUI"
+      }
+    },
+    {
+      "name": "HRD cannot do head step",
+      "body": {
+        "action": "putusPengajuan",
+        "sesi": "$sesi:hrd",
+        "id": "Aparity1",
+        "status": "MENUNGGU_HRD"
+      }
+    },
+    {
+      "name": "floor head cannot decide bar crew",
+      "body": {
+        "action": "putusPengajuan",
+        "sesi": "$sesi:headfloor",
+        "id": "Aparity1",
+        "status": "MENUNGGU_HRD"
+      }
+    },
+    {
+      "name": "bar head forwards to HRD",
+      "body": {
+        "action": "putusPengajuan",
+        "sesi": "$sesi:headbar",
+        "id": "Aparity1",
+        "status": "MENUNGGU_HRD",
+        "nota": "ok head"
+      }
+    },
+    {
+      "name": "bar head cannot final-approve",
+      "body": {
+        "action": "putusPengajuan",
+        "sesi": "$sesi:headbar",
+        "id": "Aparity1",
+        "status": "DISETUJUI"
+      }
+    },
+    {
+      "name": "HRD approves",
+      "body": {
+        "action": "putusPengajuan",
+        "sesi": "$sesi:hrd",
+        "id": "Aparity1",
+        "status": "DISETUJUI",
+        "nota": "sah"
+      }
+    },
+    {
+      "name": "bad status",
+      "body": {
+        "action": "putusPengajuan",
+        "sesi": "$sesi:hrd",
+        "id": "Aparity1",
+        "status": "YES"
+      }
+    },
+    {
+      "name": "missing request",
+      "body": {
+        "action": "putusPengajuan",
+        "sesi": "$sesi:hrd",
+        "id": "Anope",
+        "status": "DITOLAK"
+      }
+    },
+    {
+      "name": "getAll shows request trail",
+      "method": "GET",
+      "query": {
+        "action": "getAll",
+        "sesi": "$sesi:admin",
+        "dari": "2026-10-01",
+        "sampai": "2026-10-31"
+      }
+    },
+    {
+      "name": "floor head cannot delete bar request",
+      "body": {
+        "action": "hapusPengajuan",
+        "sesi": "$sesi:headfloor",
+        "id": "Aparity1"
+      }
+    },
+    {
+      "name": "simpanSetting by crew refused",
+      "body": {
+        "action": "simpanSetting",
+        "sesi": "$sesi:crewbar",
+        "data": {}
+      }
+    },
+    {
+      "name": "kosongkanSemua wrong confirmation",
+      "body": {
+        "action": "kosongkanSemua",
+        "sesi": "$sesi:admin",
+        "konfirmasi": "yes"
+      }
+    },
+    {
+      "name": "kosongkanSemua by non-admin",
+      "body": {
+        "action": "kosongkanSemua",
+        "sesi": "$sesi:headbar",
+        "konfirmasi": "HAPUS SEMUA"
+      }
+    },
+    {
+      "name": "probeTulis (open)",
+      "body": {
+        "action": "probeTulis"
+      }
+    },
+    {
+      "name": "requester deletes own request",
+      "body": {
+        "action": "hapusPengajuan",
+        "sesi": "$sesi:crewbar",
+        "id": "Aparity1"
+      }
+    },
+    {
+      "name": "simpanSetting admin keeps empty maps as objects",
+      "body": {
+        "action": "simpanSetting",
+        "sesi": "$sesi:admin",
+        "data": {
+          "shifts": {
+            "PAGI": {
+              "m": "08:00",
+              "s": "16:00"
+            },
+            "OFF": {
+              "libur": true
+            }
+          },
+          "heads": {
+            "bar": [
+              "u-arif"
+            ],
+            "floor": [
+              "u-mella"
+            ]
+          },
+          "divOverride": [],
+          "jabatan": [],
+          "shiftKru": {},
+          "template": []
+        }
+      }
+    },
+    {
+      "name": "getAll setting after save",
+      "method": "GET",
+      "query": {
+        "action": "getAll",
+        "sesi": "$sesi:admin",
+        "dari": "2026-10-05",
+        "sampai": "2026-10-06"
+      }
+    },
+    {
+      "name": "shiftHari fills defaults from new setting",
+      "method": "GET",
+      "query": {
+        "action": "shiftHari",
+        "dari": "2026-10-05",
+        "sampai": "2026-10-06"
+      }
+    }
+  ],
+  "unordered": [
+    "data.sel",
+    "data.rows"
+  ]
+}

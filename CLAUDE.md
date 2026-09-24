@@ -82,12 +82,19 @@ hlife hr jadwal kompas konten marketing reservasi stock. event+ticketing share `
 5. `Http/V1` — granular REST (no whole-state saveAll). `auth:sanctum` + `module:<key>` /
    `module:<key>,admin` middleware. Responses via ApiResponse. Expose concurrency explicitly
    (ETag/If-Match or a `version` field) using the module's existing version column.
+   **v1 must be FEATURE-COMPLETE per module.** It is the long-term contract for the old
+   laksamana-office (which may migrate onto it), the future **laksamana-office-vue** (Vue + Nuxt UI,
+   same DBs and same menus), and any other app. Derive the feature list from the module's
+   frontend menus (`NAV_DEF`/`TITLES` in `deploy/<m>/index.html`) and document the contract in
+   `docs/api/<module>.md`.
 6. `tests/Feature/<Name>/` — Pest. The base TestCase wraps EVERY connection in a transaction,
    so tests may write. Use real rows from the restored DB. One HTTP request per auth identity
    per test (guards cache the user within a test).
 7. `tools/parity/cases/<module>.json` — reads for every action + the important write paths.
    `node tools/parity/parity.mjs <module>` must print `N/N identical`. Ignore only
    volatile fields (ts, backend, generated ids/tokens) — never ignore real behaviour.
+8. **Milestone.** Finishing a module = commit + annotated tag (`git tag -a m<N>-<name>`) + a row in
+   `docs/MILESTONES.md` + status tables in `docs/modules/README.md` and §5 below.
 
 ## 3. Files on disk
 
@@ -102,6 +109,8 @@ export PATH="/c/Users/dwip/.config/herd-lite/bin:$PATH"
 php artisan test                         # Pest
 php artisan test --filter=Stock
 node tools/parity/parity.mjs account     # old vs new, local DB clones (never live)
+node tools/devproxy/serve.mjs            # old deploy/* frontends on :8080, account+marketing -> Laravel, rest legacy PHP
+node tools/e2e/marketing.mjs             # headless walkthrough of deploy/marketing against Laravel (local DB)
 php artisan route:list --path=api/v1
 ```
 
@@ -110,4 +119,20 @@ php artisan route:list --path=api/v1
 | module | legacy compat | v1 | parity |
 |---|---|---|---|
 | account | done | auth + admin | 139/139 |
-| (others) | pending | pending | — |
+| jadwal | done | cells, shifts, requests, settings, heads | 35/35 |
+| marketing | done | full contract (docs/api/marketing.md) | 46/46 · frontend e2e 25/25 |
+| (others) | pending — see docs/modules/README.md | | |
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues for `dwipapap/laksamana-api` (`gh` CLI). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` at the repo root (created lazily by `/domain-modeling`). See `docs/agents/domain.md`.
