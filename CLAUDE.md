@@ -82,12 +82,19 @@ hlife hr jadwal kompas konten marketing reservasi stock. event+ticketing share `
 5. `Http/V1` — granular REST (no whole-state saveAll). `auth:sanctum` + `module:<key>` /
    `module:<key>,admin` middleware. Responses via ApiResponse. Expose concurrency explicitly
    (ETag/If-Match or a `version` field) using the module's existing version column.
+   **v1 must be FEATURE-COMPLETE per module.** It is the long-term contract for the old
+   laksamana-office (which may migrate onto it), the future **laksamana-office-vue** (Vue + Nuxt UI,
+   same DBs and same menus), and any other app. Derive the feature list from the module's
+   frontend menus (`NAV_DEF`/`TITLES` in `deploy/<m>/index.html`) and document the contract in
+   `docs/api/<module>.md`.
 6. `tests/Feature/<Name>/` — Pest. The base TestCase wraps EVERY connection in a transaction,
    so tests may write. Use real rows from the restored DB. One HTTP request per auth identity
    per test (guards cache the user within a test).
 7. `tools/parity/cases/<module>.json` — reads for every action + the important write paths.
    `node tools/parity/parity.mjs <module>` must print `N/N identical`. Ignore only
    volatile fields (ts, backend, generated ids/tokens) — never ignore real behaviour.
+8. **Milestone.** Finishing a module = commit + annotated tag (`git tag -a m<N>-<name>`) + a row in
+   `docs/MILESTONES.md` + status tables in `docs/modules/README.md` and §5 below.
 
 ## 3. Files on disk
 
