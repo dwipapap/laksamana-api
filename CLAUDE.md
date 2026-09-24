@@ -118,4 +118,5 @@ php artisan route:list --path=api/v1
 |---|---|---|---|
 | account | done | auth + admin | 139/139 |
 | jadwal | done | cells, shifts, requests, settings, heads | 35/35 |
+| marketing | done | full contract (docs/api/marketing.md) | 46/46 |
 | (others) | pending — see docs/modules/README.md | | |

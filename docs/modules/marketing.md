@@ -1,4 +1,6 @@
-# marketing — CRM, events, Reservasi VIP, Request Design
+# marketing — CRM, events, Reservasi VIP, Request Design — DONE (M3)
+
+Ported: `app/Support/RowSync.php`, `app/Modules/Marketing/Services/{MarketingSchema,MarketingState,MarketingFiles,MarketingQueries,MarketingRecords}.php`, legacy controller, v1 (`docs/api/marketing.md`), tests `tests/Feature/Marketing` + `tests/Unit/RowSyncTest.php`, parity 46/46. Legacy getAll decodes JSON as assoc arrays (empty object -> []), kept for fidelity.
 
 - Legacy source: `laksamana-office/marketing-mysql/` (`api.php`, `lib_marketing_mysql.php`, `.user.ini`: post_max_size 64M, memory 256M)
 - Legacy URL: `/marketing-api-mysql/api.php`

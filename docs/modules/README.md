@@ -14,7 +14,7 @@ source disagree, the source wins; then correct the spec.
 | jadwal | [jadwal.md](jadwal.md) | **done** | cells, shifts, requests, settings, heads | 35/35 | 13 |
 | dw | [dw.md](dw.md) | pending | pending | — | — |
 | absensi | [absensi.md](absensi.md) | pending | pending | — | — |
-| marketing | [marketing.md](marketing.md) | pending | pending | — | — |
+| marketing | [marketing.md](marketing.md) | **done** | full contract, see docs/api/marketing.md | 46/46 | 18 + RowSync unit |
 | konten | [konten.md](konten.md) | pending | pending | — | — |
 | akademi | [akademi.md](akademi.md) | pending | pending | — | — |
 | bd | [bd.md](bd.md) | pending | pending | — | — |
