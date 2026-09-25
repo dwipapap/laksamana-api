@@ -1,6 +1,12 @@
 # stock — purchasing, ordering, central kitchen, usage/waste, HPP
 
-**Status:** part 1 (#34) done — `items.php`, `vendors.php`, `orders.php`, `stock.php` on Laravel (`app/Modules/Stock`), v1 in [docs/api/stock.md](../api/stock.md), parity `tools/parity/cases/stock.json`. Part 2 (#35) done — `ck.php`, `usage.php`, `waste.php`, `serah.php`, `opname.php`, `log.php`; Usage Panel e2e `tools/e2e/stock-usage.mjs`. Parts 3–4 (#36–#37) pending.
+**Status:** part 1 (#34) done — `items.php`, `vendors.php`, `orders.php`, `stock.php` on Laravel (`app/Modules/Stock`), v1 in [docs/api/stock.md](../api/stock.md), parity `tools/parity/cases/stock.json`. Part 2 (#35) done — `ck.php`, `usage.php`, `waste.php`, `serah.php`, `opname.php`, `log.php`; Usage Panel e2e `tools/e2e/stock-usage.mjs`. Part 3 (#36) done — `hpp.php`; HPP Panel e2e `tools/e2e/stock-hpp.mjs`. Part 4 (#37) pending.
+
+Port notes (part 3):
+- `hpp.php` answers a thrown error as `500 {status:'error', message:'kesalahan server: <reason>'}` (the other stock files hide the reason); the port keeps it, with the PDO message for database errors.
+- `by` (updated_by) comes from the request body on the compat route, as legacy stored it; v1 uses the acting user.
+- The runtime DDL (`hpp_pastikan_tabel*`, `hpp_pastikan_kolom` with its one-time backfills) is not ported: tables and columns exist live.
+- v1 `POST /hpp/import` is all-or-nothing (legacy stops half-way on a bad row, after a `timpa` wipe); v1 refuses a rename onto a name another ingredient holds (legacy's upsert + delete would merge them, or lose the row on a case-only rename).
 
 Port notes (part 2):
 - **`pur_ada_baris()` quirk kept (#113).** Its closed table list lacks `serah_terima` and `ck_stock`: a serah terima edit is saved and then answered 500; a CK `simpan` with an `id` answers 500 before writing. The compat route does the same; v1 is not affected.

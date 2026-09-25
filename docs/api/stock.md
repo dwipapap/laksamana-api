@@ -1,6 +1,6 @@
 # Stock API v1 — contract
 
-This is the contract for **laksamana-office-vue**, the old laksamana-office if it migrates, and any other app. It grows per porting issue; this page covers **part 1 (#34): products, vendors, orders and Stock Today** and **part 2 (#35): Central Kitchen, the Usage Panel (usage, waste, handovers, opname) and the activity log**. HPP & Resep (#36), users/settings/training (#37) follow.
+This is the contract for **laksamana-office-vue**, the old laksamana-office if it migrates, and any other app. It grows per porting issue; this page covers **part 1 (#34): products, vendors, orders and Stock Today** and **part 2 (#35): Central Kitchen, the Usage Panel (usage, waste, handovers, opname) and the activity log** and **part 3 (#36): HPP & Resep**. Users/settings/training (#37) follow.
 
 - **Base URL:** `/api/v1/stock`
 - **Auth:** `Authorization: Bearer <token>` from `POST /api/v1/auth/login {login, pin}`.
@@ -30,6 +30,12 @@ This is the contract for **laksamana-office-vue**, the old laksamana-office if i
 | Pemakaian › Pemakaian Bahan (Catat / Report) | `GET/POST /usage`, `GET/PATCH/DELETE /usage/{id}` (`status` is a PATCH field) |
 | Pemakaian › Waste Produk (Catat / Report, photo) | `GET/POST /waste`, `GET/PATCH/DELETE /waste/{id}`, `GET /waste/{id}/photo` |
 | Pemakaian › Serah Terima (Catat / Report, photo) | `GET/POST /handovers`, `GET/PATCH/DELETE /handovers/{id}`, `GET /handovers/{id}/photo` |
+| HPP › Dashboard, Kalkulator (computed by the client) | `GET /hpp/ingredients`, `GET /hpp/recipes`, `GET /hpp/settings` |
+| HPP › Bahan & Harga, Barang Floor | `GET/POST /hpp/ingredients`, `GET/PATCH/DELETE /hpp/ingredients/{nama}`, `POST /hpp/ingredients-import`, `POST /hpp/ingredients-merge`, `POST /hpp/pull-products`, `POST /hpp/remove-shadows`, `POST /hpp/align-names` |
+| HPP › Daftar Resep | `GET/POST /hpp/recipes`, `GET/PATCH/DELETE /hpp/recipes/{id}`, `POST /hpp/recipes-import` |
+| HPP › Pemakaian & Selisih | `GET/PATCH /hpp/usage/{YYYY-MM}` |
+| HPP › Pengaturan | `GET/PATCH /hpp/settings` |
+| HPP › first move from Excel (empty tables only) | `POST /hpp/import` (HPP admins) |
 
 ## Products & vendors
 
@@ -113,6 +119,35 @@ Nothing here changes the Stock Today snapshot (the next upload replaces it whole
 | POST | `/logs` | ordering, purchasing | `{entries:[{modul, aksi, tim?, ringkas?, data?}]}` → `{recorded}`. Entries without `modul`/`aksi` are skipped; `aktor` is the acting user; `waktu` is the server clock; `ringkas` is cut at 500 chars. Logging never fails the caller (an error answers `recorded: 0`). |
 | GET | `/logs?from=&to=&modul=&q=&limit=` | purchasing **admin** | Newest first; `limit` default 300, max 2000; `q` searches `ringkas`, `aktor`, `aksi`. |
 
+## HPP & Resep
+
+Modul `hpp` for everything below (`/hpp/import`: HPP admins). Records are the rows of the old `hpp.php` (snake_case columns). Costs are **not** computed by the server — the client computes them, cascading through recipes that use other recipes — except `per1` = `harga_beli / qty_beli` on each ingredient. `updated_by` is always the acting user. Versions are content hashes (the rename cascade into recipe lines does not bump `updated_at`).
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/hpp/ingredients` | `{nama, satuan, qty_beli, harga_beli, per1, vendor, produk, kategori, catatan, di_purchasing, dibeli_jadi, sisi_harga: ''\|beli\|resep, updated_at, updated_by}` by name. `meta.versions` = `{nama: version}`. |
+| GET | `/hpp/ingredients/{nama}` | One + version. |
+| POST | `/hpp/ingredients` | `201`. `di_purchasing` defaults to on: the name is then registered as a Purchasing product if missing (`meta.report.purchasingBaru`). `409 already_exists` when the name is taken (case-insensitive). |
+| PATCH | `/hpp/ingredients/{nama}` | Only the fields sent change. `nama` different from the URL **renames**: every recipe line and the monthly usage follow (`meta.report.resepIkutBerubah`); `409` when the new name is taken. Version required. |
+| DELETE | `/hpp/ingredients/{nama}` | Version required. Recipe lines naming it are left as they are (the screen warns first). |
+| POST | `/hpp/ingredients-merge` | `{from, into}` + If-Match = the version of `from`: recipe lines and usage of `from` move to `into` (usage months that already hold `into` are dropped), then `from` is deleted; `into`'s price is untouched. → the `into` record, `meta.recipes`. |
+| POST | `/hpp/ingredients-import` | `{rows:[…]}` upsert by name, never deletes, never renames. → `{baru, diubah, dilewati, galat:[names]}`. |
+| POST | `/hpp/pull-products` | Every Purchasing product without an ingredient row gets a zero-priced one. → `{pulled}`. |
+| POST | `/hpp/remove-shadows` | Deletes the ingredients named like a recipe, except when `sisi_harga` is set, a **base** recipe has that name, or a recipe uses it as an ingredient line. → `{deleted, names}` (first 50). |
+| POST | `/hpp/align-names` | Renames every ingredient paired with a Purchasing product (`produk`) to that name (recipes follow) and clears the pairing; targets already taken are skipped. → `{renamed, cleared, conflicts}`. |
+| GET | `/hpp/recipes` | `{id, nama, jenis: food\|drink, tipe: base\|dish, seksi, kode, yield_qty, yield_unit, harga_lama, harga_baru, harga_upsize, modal_manual, catatan, bahan:[{nama, qty, satuan, ref: bahan\|resep} \| {catatan}], aktif, di_purchasing, updated_at, updated_by}` by `jenis, tipe, nama`. |
+| GET | `/hpp/recipes/{id}` | One + version. |
+| POST | `/hpp/recipes` | `201`. The server makes the `id` unless one is sent (`409` when taken). `kode` is upper-cased; a zero `yield_qty` becomes 1. `di_purchasing` registers the recipe as a Central Kitchen product (`sumber: ck`) if missing. |
+| PATCH | `/hpp/recipes/{id}` | Only the fields sent change; `bahan` is replaced whole when sent. Version required. |
+| DELETE | `/hpp/recipes/{id}` | Version required. |
+| POST | `/hpp/recipes-import` | `{rows:[…]}` upsert by id, deletes no recipe (the lines of an uploaded recipe are replaced). → `{baru, diubah, lewat, galat}`. |
+| GET | `/hpp/usage/{YYYY-MM}` | `{bulan, baris:[{bahan, sa, beli, resep, spoil, team, rnd, comp, opname, …}], penjualan, catatan, daftarBulan}` + version (other months do not change it). |
+| PATCH | `/hpp/usage/{YYYY-MM}` | `{baris?, penjualan?, catatan?}`: rows are upserted by `bahan` (rows not sent are kept), the sales figure and note are kept unless sent. Version required. |
+| GET / PATCH | `/hpp/settings` | `{targetFood, targetDrink, buffer, lampuKuning, lampuMerah}` (defaults 0.33, 0.33, 0.05, 3, 8); only these keys, as numbers. Version required on PATCH. |
+| POST | `/hpp/import` | `{bahan:[…], resep:[…], replace?}` — the one-time move from Excel. `409 hpp_not_empty` when HPP already holds data, unless `replace` (which wipes both tables first). All-or-nothing: a bad row (`422`) rolls the whole import back. |
+
+Numbers are read like the old screen sends them: everything but digits, `.` and `-` is dropped (`"Rp 25.000"` → 25.0 — dots are decimals).
+
 ## Errors
 
 | Status | `error.code` | When |
@@ -120,6 +155,6 @@ Nothing here changes the Stock Today snapshot (the next upload replaces it whole
 | 401 | `unauthenticated` | No or bad token |
 | 403 | `module_not_granted` | None of the required Modul |
 | 404 | `not_found` | Unknown name / order number |
-| 409 | `already_exists` / `batch_not_found` / `version_conflict` | See above |
+| 409 | `already_exists` / `batch_not_found` / `hpp_not_empty` / `version_conflict` | See above |
 | 422 | `validation_failed` | Bad body; legacy reasons are passed through (`nama produk kosong`, `newQty bukan angka`, `format tanggal jemput harus YYYY-MM-DD`, `stock kosong`, `tanggal wajib diisi`, `foto bukti wajib diunggah`, `barang bukan barang Central Kitchen: …`, …) |
 | 428 | `version_required` | Write without a version |
