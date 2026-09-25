@@ -2,10 +2,10 @@
 
 namespace App\Modules\Account\Services;
 
+use App\Auth\AccountRepository;
 use App\Auth\LegacySessions;
 use App\Auth\OfficeAccess;
 use App\Support\Modules;
-use Illuminate\Database\ConnectionInterface;
 
 /**
  * Office accounts & module access — port of account-mysql/lib_account_mysql.php.
@@ -28,12 +28,8 @@ class AccountService
     public function __construct(
         private readonly OfficeAccess $access,
         private readonly LegacySessions $sessions,
+        private readonly AccountRepository $users,
     ) {}
-
-    private function db(): ConnectionInterface
-    {
-        return Modules::db('account');
-    }
 
     private static function s(mixed $v): string
     {
@@ -73,26 +69,12 @@ class AccountService
     /** @return array<int,array<string,mixed>> real rows only (no half-empty ghosts) */
     public function allUsers(): array
     {
-        return array_map(fn ($r) => (array) $r, $this->db()->select(
-            'SELECT '.OfficeAccess::userColumnsSql()." FROM `users`
-             WHERE TRIM(id) <> '' AND TRIM(name) <> '' ORDER BY name ASC"
-        ));
+        return $this->users->allUsers();
     }
 
     public function identityClash(string $cand, string $exceptId): ?array
     {
-        $c = mb_strtolower(trim(self::s($cand)), 'UTF-8');
-        if ($c === '') {
-            return null;
-        }
-        $r = $this->db()->selectOne(
-            "SELECT id, name, username FROM `users`
-             WHERE id <> ? AND (LOWER(TRIM(name)) = ? OR (TRIM(username) <> '' AND LOWER(TRIM(username)) = ?))
-             LIMIT 1",
-            [self::s($exceptId), $c, $c]
-        );
-
-        return $r ? (array) $r : null;
+        return $this->users->identityClash($cand, $exceptId);
     }
 
     // ------------------------------------------------------------ gates
@@ -182,8 +164,7 @@ class AccountService
         if (! preg_match('/^\d{4,8}$/', $next)) {
             return ['ok' => false, 'error' => 'bad_pin'];
         }
-        $n = $this->db()->update('UPDATE `users` SET pin = ? WHERE LOWER(TRIM(name)) = ? AND active = 1',
-            [$next, mb_strtolower($name, 'UTF-8')]);
+        $n = $this->users->updatePinByName($name, $next);
         if ($n > 0) {
             return ['ok' => true];
         }
@@ -212,7 +193,7 @@ class AccountService
     public function applyUsername(string $userId, string $new): array
     {
         if ($new === '') {
-            $this->db()->update("UPDATE `users` SET username = '' WHERE id = ?", [$userId]);
+            $this->users->updateUsername($userId, '');
 
             return ['ok' => true, 'username' => ''];
         }
@@ -222,7 +203,7 @@ class AccountService
         if ($this->identityClash($new, $userId)) {
             return ['ok' => false, 'error' => 'username_taken'];
         }
-        $this->db()->update('UPDATE `users` SET username = ? WHERE id = ?', [$new, $userId]);
+        $this->users->updateUsername($userId, $new);
         $this->access->forgetUser($userId);
 
         return ['ok' => true, 'username' => $new];
@@ -332,15 +313,15 @@ class AccountService
             return ['ok' => false, 'error' => 'name_taken', 'takenBy' => self::s($c['name'])];
         }
         if ($tid !== '') {
-            $d = $this->db()->selectOne('SELECT id, name FROM `users` WHERE TRIM(talenta_id) = ? AND id <> ? LIMIT 1', [$tid, $editId]);
+            $d = $this->users->talentaOwner($tid, $editId);
             if ($d) {
-                return ['ok' => false, 'error' => 'talenta_taken', 'takenBy' => self::s($d->name)];
+                return ['ok' => false, 'error' => 'talenta_taken', 'takenBy' => self::s($d['name'])];
             }
         }
 
         if ($editId !== '') {
-            $set = ['name = ?', 'pin = ?', 'active = ?', 'keterangan = ?', 'no_hp = ?', 'talenta_id = ?'];
-            $arg = [$name, $pin, $active, $ket, $hp, $tid];
+            $columns = ['name' => $name, 'pin' => $pin, 'active' => $active,
+                'keterangan' => $ket, 'no_hp' => $hp, 'talenta_id' => $tid];
             if (array_key_exists('username', $body)) {
                 $un = trim(self::s($body['username']));
                 if ($un !== '') {
@@ -351,18 +332,15 @@ class AccountService
                         return ['ok' => false, 'error' => 'username_taken', 'takenBy' => self::s($du['name'])];
                     }
                 }
-                $set[] = 'username = ?';
-                $arg[] = $un;
+                $columns['username'] = $un;
             }
             foreach (OfficeAccess::HR_COLUMNS as $key => $col) {
                 if (! array_key_exists($key, $body)) {
                     continue;
                 }
-                $set[] = "`$col` = ?";
-                $arg[] = self::hrValue($key, $body[$key]);
+                $columns[$col] = self::hrValue($key, $body[$key]);
             }
-            $arg[] = $editId;
-            $n = $this->db()->update('UPDATE `users` SET '.implode(', ', $set).' WHERE id = ?', $arg);
+            $n = $this->users->updateUser($editId, $columns);
             $this->access->forgetUser($editId);
             if ($n === 0 && ! $this->access->userById($editId)) {
                 return ['ok' => false, 'error' => 'not_found'];
@@ -382,14 +360,12 @@ class AccountService
             $id = $base.$n++;
         }
         $this->access->forgetUser($id);
-        $cols = ['id', 'name', 'pin', 'active', 'keterangan', 'no_hp', 'talenta_id'];
-        $vals = [$id, $name, $pin, $active, $ket, $hp, $tid];
+        $columns = ['id' => $id, 'name' => $name, 'pin' => $pin, 'active' => $active,
+            'keterangan' => $ket, 'no_hp' => $hp, 'talenta_id' => $tid];
         foreach (OfficeAccess::HR_COLUMNS as $key => $col) {
-            $cols[] = "`$col`";
-            $vals[] = array_key_exists($key, $body) ? self::hrValue($key, $body[$key]) : '';
+            $columns[$col] = array_key_exists($key, $body) ? self::hrValue($key, $body[$key]) : '';
         }
-        $this->db()->insert('INSERT INTO `users` ('.implode(', ', $cols).') VALUES ('
-            .implode(', ', array_fill(0, count($cols), '?')).')', $vals);
+        $this->users->insertUser($columns);
 
         return ['ok' => true, 'id' => $id];
     }
@@ -466,11 +442,7 @@ class AccountService
         if (! ((int) $u['active'] === 0)) {
             return ['ok' => false, 'error' => 'must_deactivate_first'];
         }
-        $this->db()->transaction(function () use ($id) {
-            $this->db()->delete('DELETE FROM `grants` WHERE user_id = ?', [$id]);
-            $this->db()->delete('DELETE FROM `admins` WHERE user_id = ?', [$id]);
-            $this->db()->delete('DELETE FROM `users` WHERE id = ?', [$id]);
-        });
+        $this->users->deleteUserCascade($id);
         $this->access->forgetUser($id);
 
         return $protectSuperadmin
@@ -538,7 +510,7 @@ class AccountService
         if (! $active && $this->access->isSuperadmin($id)) {
             return ['ok' => false, 'error' => 'cannot_deactivate_admin'];
         }
-        $this->db()->update('UPDATE `users` SET active = ? WHERE id = ?', [$active ? 1 : 0, $id]);
+        $this->users->setActive($id, $active);
         $this->access->forgetUser($id);
 
         return ['ok' => true, 'id' => $id, 'active' => $active];
@@ -567,16 +539,7 @@ class AccountService
 
     public function modulesList(bool $all): array
     {
-        $sql = 'SELECT `key`, `label`, `active` FROM `modules` '.($all ? '' : 'WHERE active = 1 ').'ORDER BY urut ASC, `key` ASC';
-        $out = [];
-        foreach ($this->db()->select($sql) as $m) {
-            if (self::s($m->key) === '') {
-                continue;
-            }
-            $out[] = ['key' => self::s($m->key), 'label' => self::s($m->label), 'active' => (int) $m->active === 1];
-        }
-
-        return $out;
+        return $this->users->moduleRows($all);
     }
 
     /** Adds NEW keys only; never overwrites label/active, never deletes. */
@@ -586,17 +549,17 @@ class AccountService
             return ['ok' => false, 'error' => 'forbidden'];
         }
         $incoming = is_array($body['modules'] ?? null) ? $body['modules'] : [];
-        $urut = (int) ($this->db()->selectOne('SELECT COALESCE(MAX(urut),0) m FROM `modules`')->m ?? 0);
+        $urut = $this->users->maxModuleUrut();
         $added = [];
         foreach ($incoming as $m) {
             $m = (array) $m;
             $key = self::s($m['key'] ?? '');
-            if ($key === '' || $this->db()->selectOne('SELECT 1 x FROM `modules` WHERE `key` = ? LIMIT 1', [$key])) {
+            if ($key === '' || $this->users->moduleExists($key)) {
                 continue;
             }
             $label = self::s($m['label'] ?? '') ?: $key;
             $urut += 10;
-            $this->db()->insert('INSERT INTO `modules` (`key`, `label`, `active`, `urut`) VALUES (?, ?, 1, ?)', [$key, $label, $urut]);
+            $this->users->insertModule($key, $label, $urut);
             $added[] = $key;
         }
 
@@ -612,14 +575,14 @@ class AccountService
         if ($key === '') {
             return ['ok' => false, 'error' => 'missing_key'];
         }
-        if (! $this->db()->selectOne('SELECT 1 x FROM `modules` WHERE `key` = ? LIMIT 1', [$key])) {
+        if (! $this->users->moduleExists($key)) {
             return ['ok' => false, 'error' => 'not_found'];
         }
         if (isset($body['label'])) {
-            $this->db()->update('UPDATE `modules` SET label = ? WHERE `key` = ?', [self::s($body['label']), $key]);
+            $this->users->updateModuleLabel($key, self::s($body['label']));
         }
         if (isset($body['active'])) {
-            $this->db()->update('UPDATE `modules` SET active = ? WHERE `key` = ?', [self::truthy($body['active']) ? 1 : 0, $key]);
+            $this->users->updateModuleActive($key, self::truthy($body['active']));
         }
 
         return ['ok' => true];
@@ -638,15 +601,38 @@ class AccountService
         }
         $grant = self::truthy($body['access'] ?? null);
         if ($module === '*' && ! $grant && self::s($caller['id']) === $userId) {
-            $n = (int) $this->db()->selectOne("SELECT COUNT(*) c FROM `admins` WHERE `module` = '*'")->c;
-            if ($n <= 1) {
+            if ($this->users->countSuperadmins() <= 1) {
                 return ['ok' => false, 'error' => 'last_superadmin'];
             }
         }
         if ($grant) {
-            $this->db()->insert('INSERT IGNORE INTO `admins` (user_id, `module`) VALUES (?, ?)', [$userId, $module]);
+            $this->users->grantAdmin($userId, $module);
         } else {
-            $this->db()->delete('DELETE FROM `admins` WHERE user_id = ? AND `module` = ?', [$userId, $module]);
+            $this->users->revokeAdmin($userId, $module);
+        }
+        $this->access->forgetUser($userId);
+
+        return ['ok' => true];
+    }
+
+    /**
+     * setAdmin WITHOUT the callerName+callerPin gate (the v1 caller is the
+     * Sanctum user, already authorised by the route). Same guard, same write.
+     */
+    public function setAdminCore(string $callerId, string $userId, string $module, bool $grant): array
+    {
+        if ($userId === '' || $module === '') {
+            return ['ok' => false, 'error' => 'missing_fields'];
+        }
+        if ($module === '*' && ! $grant && $callerId === $userId) {
+            if ($this->users->countSuperadmins() <= 1) {
+                return ['ok' => false, 'error' => 'last_superadmin'];
+            }
+        }
+        if ($grant) {
+            $this->users->grantAdmin($userId, $module);
+        } else {
+            $this->users->revokeAdmin($userId, $module);
         }
         $this->access->forgetUser($userId);
 
@@ -689,11 +675,7 @@ class AccountService
         if ($userId === '' || $module === '') {
             return ['ok' => false, 'error' => 'missing_fields'];
         }
-        $this->db()->statement(
-            'INSERT INTO `grants` (user_id, `module`, `access`, granted_by, ts) VALUES (?, ?, ?, ?, NOW())
-             ON DUPLICATE KEY UPDATE `access` = VALUES(`access`), granted_by = VALUES(granted_by), ts = VALUES(ts)',
-            [$userId, $module, $access ? 1 : 0, $callerId]
-        );
+        $this->users->upsertGrant($userId, $module, $access, $callerId);
         $this->access->forgetUser($userId);
 
         return ['ok' => true];
@@ -788,7 +770,6 @@ class AccountService
 
             return ! in_array($t, ['FALSE', '0', 'NO', 'TIDAK'], true);
         };
-        $db = $this->db();
         foreach (is_array($body['users'] ?? null) ? $body['users'] : [] as $u) {
             $u = (array) $u;
             $id = self::s($u['id'] ?? '');
@@ -796,11 +777,9 @@ class AccountService
             if ($id === '' || $nm === '') {
                 continue;
             }
-            $db->statement("INSERT INTO `users` (id, name, pin, active, keterangan, talenta_id) VALUES (?,?,?,?,?,?)
-                ON DUPLICATE KEY UPDATE name=VALUES(name), pin=VALUES(pin), active=VALUES(active),
-                  keterangan=VALUES(keterangan), talenta_id=IF(VALUES(talenta_id)='', talenta_id, VALUES(talenta_id))",
-                [$id, $nm, self::s($u['pin'] ?? '') !== '' ? self::s($u['pin']) : '1111',
-                    $bool($u['active'] ?? null) ? 1 : 0, self::s($u['keterangan'] ?? ''), self::s($u['talentaId'] ?? '')]);
+            $this->users->upsertImportUser($id, $nm,
+                self::s($u['pin'] ?? '') !== '' ? self::s($u['pin']) : '1111',
+                $bool($u['active'] ?? null), self::s($u['keterangan'] ?? ''), self::s($u['talentaId'] ?? ''));
             $n['users']++;
         }
         foreach (is_array($body['modules'] ?? null) ? $body['modules'] : [] as $m) {
@@ -809,9 +788,8 @@ class AccountService
             if ($k === '') {
                 continue;
             }
-            $db->statement('INSERT INTO `modules` (`key`,`label`,`active`) VALUES (?,?,?)
-                ON DUPLICATE KEY UPDATE `label`=VALUES(`label`), `active`=VALUES(`active`)',
-                [$k, self::s($m['label'] ?? '') !== '' ? self::s($m['label']) : $k, $bool($m['active'] ?? null) ? 1 : 0]);
+            $this->users->upsertImportModule($k,
+                self::s($m['label'] ?? '') !== '' ? self::s($m['label']) : $k, $bool($m['active'] ?? null));
             $n['modules']++;
         }
         foreach (is_array($body['grants'] ?? null) ? $body['grants'] : [] as $g) {
@@ -821,9 +799,7 @@ class AccountService
             if ($u === '' || $m === '') {
                 continue;
             }
-            $db->statement('INSERT INTO `grants` (user_id,`module`,`access`,granted_by,ts) VALUES (?,?,?,?,NOW())
-                ON DUPLICATE KEY UPDATE `access`=VALUES(`access`)',
-                [$u, $m, $bool($g['access'] ?? null) ? 1 : 0, self::s($g['grantedBy'] ?? 'import')]);
+            $this->users->upsertImportGrant($u, $m, $bool($g['access'] ?? null), self::s($g['grantedBy'] ?? 'import'));
             $n['grants']++;
         }
         foreach (is_array($body['admins'] ?? null) ? $body['admins'] : [] as $a) {
@@ -833,7 +809,7 @@ class AccountService
             if ($u === '' || $m === '') {
                 continue;
             }
-            $db->insert('INSERT IGNORE INTO `admins` (user_id,`module`) VALUES (?,?)', [$u, $m]);
+            $this->users->grantAdmin($u, $m);
             $n['admins']++;
         }
 
@@ -843,16 +819,15 @@ class AccountService
     /** Seed three superadmins ONLY when `users` is completely empty (fresh install). */
     public function seedIfEmpty(): bool
     {
-        $db = $this->db();
-        if ((int) $db->selectOne('SELECT COUNT(*) c FROM `users`')->c > 0) {
+        if ($this->users->userCount() > 0) {
             return false;
         }
         foreach ([['u-admin', 'Admin'], ['u-howandi', 'Howandi'], ['u-wandi', 'Wandi']] as [$id, $name]) {
-            $db->insert("INSERT IGNORE INTO `users` (id,name,pin,active,keterangan) VALUES (?,?,'1111',1,'')", [$id, $name]);
-            $db->insert("INSERT IGNORE INTO `grants` (user_id,`module`,`access`,granted_by) VALUES (?,'*',1,'seed')", [$id]);
-            $db->insert("INSERT IGNORE INTO `admins` (user_id,`module`) VALUES (?,'*')", [$id]);
+            $this->users->insertIgnoreUser($id, $name);
+            $this->users->insertIgnoreGrant($id, '*', 1, 'seed');
+            $this->users->grantAdmin($id, '*');
         }
-        $db->insert("INSERT IGNORE INTO `grants` (user_id,`module`,`access`,granted_by) VALUES ('u-wandi','howandi_life',0,'seed')");
+        $this->users->insertIgnoreGrant('u-wandi', 'howandi_life', 0, 'seed');
 
         return true;
     }
@@ -869,9 +844,9 @@ class AccountService
     {
         $out = ['backend' => 'laravel', 'env' => Modules::envLabel(), 'db' => Modules::databaseName('account')];
         foreach (['users', 'modules', 'grants', 'admins'] as $t) {
-            $out[$t] = (int) $this->db()->selectOne("SELECT COUNT(*) c FROM `$t`")->c;
+            $out[$t] = $this->users->countTable($t);
         }
-        $out['superadmin'] = (int) $this->db()->selectOne("SELECT COUNT(*) c FROM `admins` WHERE `module` = '*'")->c;
+        $out['superadmin'] = $this->users->countSuperadmins();
         $out['ts'] = gmdate('c');
 
         return $out;

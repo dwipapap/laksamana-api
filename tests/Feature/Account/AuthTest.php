@@ -1,7 +1,6 @@
 <?php
 
 use App\Auth\OfficeAccess;
-use App\Support\Modules;
 
 it('issues a Sanctum token for valid Office credentials and /me matches legacy module resolution', function () {
     $u = anyActiveUser();
@@ -38,7 +37,7 @@ it('requires a token for /me', function () {
 it('cuts off a token as soon as the account is deactivated', function () {
     $u = anyActiveUser();
     $token = loginAs($u);
-    Modules::db('account')->update('UPDATE users SET active = 0 WHERE id = ?', [$u['id']]);
+    setUserActive($u['id'], false);
 
     $this->withToken($token)->getJson('/api/v1/me')->assertStatus(401);
 });
@@ -67,7 +66,7 @@ it('never falls back to PIN 1111 when a superadmin edits a user via v1', functio
         ->patchJson('/api/v1/account/users/'.$target['id'], ['name' => $target['name'], 'keterangan' => 'Bar'])
         ->assertOk();
 
-    $pin = Modules::db('account')->selectOne('SELECT pin FROM users WHERE id = ?', [$target['id']])->pin;
+    $pin = officeUser($target['id'])['pin'];
     expect($pin)->toBe($target['pin']);
 });
 

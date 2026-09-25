@@ -5,7 +5,6 @@ namespace App\Modules\Account\Http\V1;
 use App\Auth\OfficeAccess;
 use App\Modules\Account\Services\AccountService;
 use App\Support\Api\ApiResponse;
-use App\Support\Modules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -105,24 +104,11 @@ class AccountAdminController
     public function setAdmin(Request $request, string $id): JsonResponse
     {
         $data = $request->validate(['module' => ['required', 'string', 'max:64'], 'admin' => ['required', 'boolean']]);
-        $body = [
-            // reuse the legacy rule set (last-superadmin protection) through the gate-free path
-            'userId' => $id, 'module' => $data['module'], 'access' => (bool) $data['admin'],
-        ];
-        $caller = (string) $request->user()->getKey();
-        if ($data['module'] === '*' && ! $data['admin'] && $caller === $id) {
-            $n = (int) Modules::db('account')->selectOne("SELECT COUNT(*) c FROM `admins` WHERE `module` = '*'")->c;
-            if ($n <= 1) {
-                return ApiResponse::error('last_superadmin', 'The last superadmin cannot remove itself.', 422);
-            }
+        $r = $this->account->setAdminCore((string) $request->user()->getKey(), $id, $data['module'], (bool) $data['admin']);
+        if (empty($r['ok'])) {
+            // Same shape as before the seam: 422 with the legacy guard message.
+            return ApiResponse::error($r['error'], 'The last superadmin cannot remove itself.', 422);
         }
-        $db = Modules::db('account');
-        if ($body['access']) {
-            $db->insert('INSERT IGNORE INTO `admins` (user_id, `module`) VALUES (?, ?)', [$id, $body['module']]);
-        } else {
-            $db->delete('DELETE FROM `admins` WHERE user_id = ? AND `module` = ?', [$id, $body['module']]);
-        }
-        $this->access->forgetUser($id);
 
         return ApiResponse::ok(['userId' => $id, 'module' => $data['module'], 'admin' => (bool) $data['admin']]);
     }

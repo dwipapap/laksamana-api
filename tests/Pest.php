@@ -1,6 +1,6 @@
 <?php
 
-use App\Support\Modules;
+use App\Auth\AccountRepository;
 use Tests\TestCase;
 
 /*
@@ -12,23 +12,24 @@ pest()->extend(TestCase::class)->in('Feature');
 /** A real active user from the restored account DB, with its plain PIN. */
 function anyActiveUser(bool $superadmin = false): array
 {
-    $db = Modules::db('account');
-    $row = $superadmin
-        ? $db->selectOne("SELECT u.id, u.name, u.pin FROM users u JOIN admins a ON a.user_id = u.id WHERE a.module = '*' AND u.active = 1 LIMIT 1")
-        : $db->selectOne("SELECT u.id, u.name, u.pin FROM users u WHERE u.active = 1 AND u.id NOT IN (SELECT user_id FROM admins WHERE module = '*') LIMIT 1");
-
-    return (array) $row;
+    return (array) (app(AccountRepository::class)->activeUserSample($superadmin) ?? []);
 }
 
 /** One Office user by id (with plain PIN) from the restored account DB. */
 function officeUser(string $id): array
 {
-    $row = Modules::db('account')->selectOne('SELECT id, name, pin FROM users WHERE id = ?', [$id]);
+    $row = app(AccountRepository::class)->userById($id);
     if (! $row) {
         throw new RuntimeException("Test user $id not found in the restored account DB.");
     }
 
-    return (array) $row;
+    return $row;
+}
+
+/** Deactivate (or reactivate) a user by id. Tests run inside transactions, so nothing persists. */
+function setUserActive(string $id, bool $active): void
+{
+    app(AccountRepository::class)->setActive($id, $active);
 }
 
 /** Sanctum token for a user array (from anyActiveUser/officeUser). */
