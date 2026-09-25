@@ -1,6 +1,7 @@
 <?php
 
 use App\Support\Modules;
+use App\Support\RowSync;
 
 /* u-andry holds module `konten`; u-adit does not. */
 
@@ -149,4 +150,65 @@ it('exposes every ported collection through generic CRUD', function () {
     foreach (['users', 'brands', 'campaigns', 'content', 'prod-tasks', 'shootings', 'assets', 'bank', 'kols', 'visits', 'ads', 'ad-funds', 'notifications'] as $res) {
         $this->withToken($token)->getJson('/api/v1/konten/'.$res.'?perPage=2')->assertOk()->assertJsonStructure(['data', 'meta']);
     }
+});
+
+it('replaces the whole record on PUT and drops fields that are not sent', function () {
+    $token = loginAs(officeUser('u-andry'));
+    $id = $this->withToken($token)->postJson('/api/v1/konten/brands', ['name' => 'Put Saya', 'desc' => 'lama'])
+        ->assertCreated()->json('data.id');
+    $v = $this->withToken($token)->getJson('/api/v1/konten/brands/'.$id)->json('meta.version');
+
+    $res = $this->withToken($token)->withHeader('If-Match', '"'.$v.'"')
+        ->putJson('/api/v1/konten/brands/'.$id, ['name' => 'Put Baru'])
+        ->assertOk()->assertJsonPath('data.name', 'Put Baru');
+    expect($res->json('data'))->not->toHaveKey('desc')
+        ->and($res->json('meta.version'))->toBeGreaterThan($v);
+});
+
+it('treats an identical-content write as a no-op success instead of a conflict', function () {
+    $token = loginAs(officeUser('u-andry'));
+    $row = $this->withToken($token)->postJson('/api/v1/konten/brands', ['name' => 'Sama Saja'])
+        ->assertCreated()->json('data');
+    $v = $this->withToken($token)->getJson('/api/v1/konten/brands/'.$row['id'])->json('meta.version');
+
+    // Someone else saves first: the stored version moves, the content does not.
+    $db = Modules::db('konten');
+    $cur = json_decode($db->selectOne('SELECT data FROM brands WHERE id = ?', [$row['id']])->data, true);
+    $cur['updatedAt'] = $v + 5;
+    $db->update('UPDATE brands SET data = ?, updated_at = ? WHERE id = ?',
+        [RowSync::enc($cur), $v + 5, $row['id']]);
+
+    // Sending back exactly what is stored is a no-op 200, not a 409.
+    $this->withToken($token)->withHeader('If-Match', '"'.$v.'"')
+        ->patchJson('/api/v1/konten/brands/'.$row['id'], ['name' => 'Sama Saja'])
+        ->assertOk()->assertJsonPath('data.id', $row['id']);
+});
+
+it('deletes with ?version= as well as If-Match, and 404s unknown ids', function () {
+    $token = loginAs(officeUser('u-andry'));
+    $id = $this->withToken($token)->postJson('/api/v1/konten/brands', ['name' => 'Hapus Query'])
+        ->assertCreated()->json('data.id');
+    $v = $this->withToken($token)->getJson('/api/v1/konten/brands/'.$id)->json('meta.version');
+
+    $this->withToken($token)->deleteJson('/api/v1/konten/brands/'.$id.'?version='.$v)
+        ->assertOk()->assertJsonPath('data.deleted', true);
+    $this->withToken($token)->getJson('/api/v1/konten/brands/'.$id)->assertStatus(404);
+    $this->withToken($token)->withHeader('If-Match', '"'.$v.'"')
+        ->deleteJson('/api/v1/konten/brands/tidak-ada')->assertStatus(404);
+});
+
+it('filters by free text and by updatedSince', function () {
+    $token = loginAs(officeUser('u-andry'));
+    $name = 'Cari Saya '.strtolower(Str::random(6));
+    $made = $this->withToken($token)->postJson('/api/v1/konten/brands', ['name' => $name])
+        ->assertCreated()->json('data');
+
+    $hit = $this->withToken($token)->getJson('/api/v1/konten/brands?q='.urlencode($name))->assertOk()->json('data');
+    expect(collect($hit)->pluck('id')->all())->toContain($made['id']);
+
+    $v = $this->withToken($token)->getJson('/api/v1/konten/brands/'.$made['id'])->json('meta.version');
+    $since = $this->withToken($token)->getJson('/api/v1/konten/brands?updatedSince='.($v - 1))->assertOk()->json('data');
+    expect(collect($since)->pluck('id')->all())->toContain($made['id']);
+    $after = $this->withToken($token)->getJson('/api/v1/konten/brands?updatedSince='.$v)->assertOk()->json('data');
+    expect(collect($after)->pluck('id')->all())->not->toContain($made['id']);
 });
