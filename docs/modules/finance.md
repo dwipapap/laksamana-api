@@ -59,3 +59,11 @@
 - `/api/v1/finance/petty-cash/{transactions, sources, categories}`
 - `/api/v1/finance/vault` — split into resources, with a version field
 - `/api/v1/finance/invoices` — request, decide, file
+
+## Port notes (#25: Kas Kecil + Akses Halaman)
+
+- The compat controller serves the Kas Kecil and Akses Halaman actions, plus `ping`/`stats`. Brankas (`brankas*`, `bayarSave`) and invoices (`inv*`) answer `Aksi tidak dikenal` until their issues land, so do not route finance to Laravel in production before then.
+- `pastikan_tabel()` (runtime DDL, seeding of empty tables, and the one-off cleanup of `#`/`@` keys in `kk_akses`) is not ported. The tables exist live and hold no such keys.
+- Error messages keep the `petunjuk_galat()` cPanel hints. As in every port, raw database error messages are hidden behind `kesalahan database` outside debug mode.
+- The connection keeps the server sql_mode (`server_sql_mode`, #97): `keterangan` is not length-checked, and a non-strict production truncates it.
+- v1: `docs/api/finance.md`.
