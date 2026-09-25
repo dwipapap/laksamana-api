@@ -236,6 +236,38 @@
       "bahan": [{ "nama": "Parity Timpa", "qty_beli": 1, "harga_beli": 2 }, 5], "resep": [{ "nama": "Tidak Sampai" }] } } },
     { "name": "hpp impor timpa", "file": "hpp.php", "body": { "action": "impor", "timpa": true, "by": "Kru", "data": {
       "bahan": [{ "nama": "Parity Timpa", "qty_beli": 1, "harga_beli": 2 }], "resep": [{ "id": "parity-t1", "nama": "Parity Resep Timpa", "bahan": [{ "nama": "Parity Timpa", "qty": 1 }] }] } } },
-    { "name": "hpp GET all after timpa", "file": "hpp.php", "method": "GET", "query": {}, "ignore": ["ts", "*.*.updated_at"] }
+    { "name": "hpp GET all after timpa", "file": "hpp.php", "method": "GET", "query": {}, "ignore": ["ts", "*.*.updated_at"] },
+
+    { "name": "users GET (legacy includes PINs)", "file": "users.php", "method": "GET", "query": {} },
+    { "name": "users add new", "file": "users.php", "body": { "action": "add", "user": { "id": "u-parity", "name": "Parity User", "pin": "1234", "keterangan": "Kitchen" } } },
+    { "name": "users add without id", "file": "users.php", "body": { "action": "add", "user": { "name": "No Id" } } },
+    { "name": "users update replaces every sent field", "file": "users.php", "body": { "action": "update", "user": { "id": "u-parity", "name": "Parity User Edit", "role": "full" } } },
+    { "name": "users unknown action", "file": "users.php", "body": { "action": "seed" } },
+    { "name": "users delete the last admin refused", "file": "users.php", "body": { "action": "delete", "user": { "id": "u-admin" } } },
+    { "name": "users delete", "file": "users.php", "body": { "action": "delete", "user": { "id": "u-parity" } } },
+
+    { "name": "ordering users GET", "file": "ordering-users.php", "method": "GET", "query": {} },
+    { "name": "ordering saveUser explicit id", "file": "ordering-users.php", "body": { "action": "saveUser", "user": { "id": "u-parity-kitchen", "name": "Parity Dapur", "pin": "4321", "tim": "Kitchen" } } },
+    { "name": "ordering saveUser invalid", "file": "ordering-users.php", "body": { "action": "saveUser", "user": "x" } },
+    { "name": "ordering bulkSeed upserts and never deletes", "file": "ordering-users.php", "body": { "action": "bulkSeed", "users": [
+      { "id": "u-parity-seed", "name": "Parity Seed", "pin": "1", "role": "checkin" },
+      { "id": "u-parity-kitchen", "name": "Parity Dapur Edit", "pin": "9" }, "x" ] } },
+    { "name": "ordering bulkSeed not an array", "file": "ordering-users.php", "body": { "action": "bulkSeed", "users": { "x": 1 } } },
+    { "name": "ordering deleteUser", "file": "ordering-users.php", "body": { "action": "deleteUser", "user": { "id": "u-parity-seed" } } },
+
+    { "name": "ordering settings GET (stock_settings missing)", "file": "ordering-settings.php", "method": "GET", "query": {} },
+    { "name": "purchasing settings GET (stock_settings missing)", "file": "purchasing-settings.php", "method": "GET", "query": {} },
+    { "name": "ordering settings savePerms (stock_settings missing)", "file": "ordering-settings.php", "body": { "action": "savePerms", "perms": {} } },
+    { "name": "purchasing settings saveTemplates (stock_settings missing)", "file": "purchasing-settings.php", "body": { "action": "saveTemplates", "templates": {} } },
+    { "name": "ordering settings unknown action", "file": "ordering-settings.php", "body": { "action": "saveTemplates", "templates": {} } },
+
+    { "name": "training summary before upload", "file": "training.php", "method": "GET", "query": {} },
+    { "name": "training list needs API_TOKEN", "file": "training.php", "method": "GET", "query": { "action": "list", "target": "usage" } },
+    { "name": "training get needs API_TOKEN", "file": "training.php", "method": "GET", "query": { "action": "get", "target": "usage", "name": "x.xlsx" } },
+    { "name": "training unknown target", "file": "training.php", "body": { "type": "training", "target": "x", "filename": "x.xlsx", "content_b64": "QUJD" } },
+    { "name": "training wrong extension", "file": "training.php", "body": { "type": "training", "target": "usage", "filename": "x.txt", "content_b64": "QUJD" } },
+    { "name": "training broken base64", "file": "training.php", "body": { "type": "training", "target": "usage", "filename": "x.xlsx", "content_b64": "!!" } },
+    { "name": "training upload", "file": "training.php", "body": { "type": "training", "target": "usage", "filename": "../parity.xlsx", "content_b64": "QUJD" }, "ignore": ["saved_as"] },
+    { "name": "training summary after upload", "file": "training.php", "method": "GET", "query": {} }
   ]
 }

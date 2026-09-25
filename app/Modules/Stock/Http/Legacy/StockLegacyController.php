@@ -8,9 +8,13 @@ use App\Modules\Stock\Services\StockEntries;
 use App\Modules\Stock\Services\StockHpp;
 use App\Modules\Stock\Services\StockLog;
 use App\Modules\Stock\Services\StockOrders;
+use App\Modules\Stock\Services\StockSettings;
 use App\Modules\Stock\Services\StockSnapshot;
 use App\Modules\Stock\Services\StockSupport;
 use App\Modules\Stock\Services\StockTeamScope;
+use App\Modules\Stock\Services\StockTraining;
+use App\Modules\Stock\Services\StockTrainingError;
+use App\Modules\Stock\Services\StockUsers;
 use App\Support\Modules;
 use Closure;
 use Illuminate\Database\QueryException;
@@ -47,6 +51,9 @@ class StockLegacyController
         private readonly StockLog $log,
         private readonly StockTeamScope $scope,
         private readonly StockHpp $hpp,
+        private readonly StockUsers $users,
+        private readonly StockSettings $settings,
+        private readonly StockTraining $training,
     ) {}
 
     public function items(Request $r): Response
@@ -80,6 +87,123 @@ class StockLegacyController
                 'deleteVendor' => $this->catalog->deleteVendor($b->vendorName ?? ''),
                 default => null,
             });
+    }
+
+    /** users.php — Purchasing crew. The PIN is part of the frozen legacy wire shape. */
+    public function users(Request $r): Response
+    {
+        return $this->serve($r, 'users',
+            fn () => ['users' => $this->users->all('users')],
+            fn (string $a, stdClass $b) => match ($a) {
+                'add', 'update' => $this->users->saveCompat('users', $b->user ?? null),
+                'delete' => $this->users->deleteCompat('users', $b->user ?? null),
+                default => null,
+            });
+    }
+
+    /** ordering-users.php — the separate Ordering kitchen crew table. */
+    public function orderingUsers(Request $r): Response
+    {
+        return $this->serve($r, 'ordering-users',
+            fn () => ['users' => $this->users->all('ordering_users')],
+            fn (string $a, stdClass $b) => match ($a) {
+                'saveUser' => $this->users->saveOrdering($b->user ?? null),
+                'bulkSeed' => $this->users->seedOrdering($b->users ?? []),
+                'deleteUser' => $this->users->deleteCompat('ordering_users', $b->user ?? null),
+                default => null,
+            });
+    }
+
+    public function orderingSettings(Request $r): Response
+    {
+        return $this->serve($r, 'ordering-settings',
+            fn () => ['perms' => $this->settings->perms('ordering')],
+            fn (string $a, stdClass $b) => match ($a) {
+                'savePerms' => $this->settings->savePermsCompat('ordering', $b->perms ?? null),
+                default => null,
+            });
+    }
+
+    public function purchasingSettings(Request $r): Response
+    {
+        return $this->serve($r, 'purchasing-settings',
+            fn () => $this->settings->purchasingCompat(),
+            fn (string $a, stdClass $b) => match ($a) {
+                'savePerms', 'saveTemplates' => $this->settings->savePurchasingCompat($a, $b->perms ?? null, $b->templates ?? null),
+                default => null,
+            });
+    }
+
+    /** training.php — the only stock endpoint that can answer with file bytes. */
+    public function training(Request $r): Response
+    {
+        parse_str((string) $r->server('QUERY_STRING', ''), $q);
+        $method = strtoupper($r->getMethod());
+        $action = (string) ($q['action'] ?? '');
+
+        if ($method === 'GET' && $action === 'ping') {
+            return self::json(['status' => 'success', 'ok' => true, 'time' => gmdate('c'),
+                'env' => Modules::envLabel(), 'db' => Modules::databaseName('stock')]);
+        }
+
+        try {
+            if ($method === 'GET') {
+                if ($action === 'list' || $action === 'get') {
+                    if ((string) config('laksamana.legacy_api_token', '') === '') {
+                        return self::error('unduh arsip butuh API_TOKEN diatur di config.php', 403);
+                    }
+                    if ($bad = self::checkToken($q, null)) {
+                        return $bad;
+                    }
+                } else {
+                    if ($bad = self::checkToken($q, null)) {
+                        return $bad;
+                    }
+                }
+
+                if ($action === 'list') {
+                    return self::json(['status' => 'success', 'target' => (string) ($q['target'] ?? ''),
+                        'files' => $this->training->list((string) ($q['target'] ?? ''))]);
+                }
+                if ($action === 'get') {
+                    $path = $this->training->path((string) ($q['target'] ?? ''), (string) ($q['name'] ?? ''));
+
+                    return response()->file($path, [
+                        'Content-Type' => 'application/octet-stream',
+                        'Content-Disposition' => 'attachment; filename="'.basename($path).'"',
+                        'Cache-Control' => 'no-store',
+                    ]);
+                }
+
+                return self::json($this->training->summary());
+            }
+            if ($method === 'POST') {
+                $b = json_decode((string) $r->getContent());
+                if (! $b instanceof stdClass) {
+                    return self::error('body bukan JSON', 400);
+                }
+                if ($bad = self::checkToken($q, $b)) {
+                    return $bad;
+                }
+
+                $out = $this->training->saveCompat(
+                    StockSupport::str($b->target ?? ''), $b->filename ?? '', $b->content_b64 ?? ''
+                );
+
+                return self::json($out, ($out['status'] ?? '') === 'error'
+                    ? (in_array($out['message'], ['folder data latih tidak bisa dibuat', 'gagal menyimpan berkas'], true) ? 500 : 400)
+                    : 200);
+            }
+
+            return self::error('metode tidak didukung', 405);
+        } catch (StockTrainingError $e) {
+            return self::error($e->getMessage(), $e->status);
+        } catch (Throwable $e) {
+            Log::error('[stock/training] '.$e->getMessage());
+            report($e);
+
+            return self::error('kesalahan server', 500);
+        }
     }
 
     public function orders(Request $r): Response

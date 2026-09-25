@@ -1,6 +1,6 @@
 # Stock API v1 — contract
 
-This is the contract for **laksamana-office-vue**, the old laksamana-office if it migrates, and any other app. It grows per porting issue; this page covers **part 1 (#34): products, vendors, orders and Stock Today** and **part 2 (#35): Central Kitchen, the Usage Panel (usage, waste, handovers, opname) and the activity log** and **part 3 (#36): HPP & Resep**. Users/settings/training (#37) follow.
+This is the contract for **laksamana-office-vue**, the old laksamana-office if it migrates, and any other app. It grows per porting issue; this page covers **part 1 (#34): products, vendors, orders and Stock Today**, **part 2 (#35): Central Kitchen, the Usage Panel (usage, waste, handovers, opname) and the activity log**, **part 3 (#36): HPP & Resep** and **part 4 (#37): the two crew lists, Akses Halaman settings and the training archive**. All four are done — the v1 surface of this module is complete.
 
 - **Base URL:** `/api/v1/stock`
 - **Auth:** `Authorization: Bearer <token>` from `POST /api/v1/auth/login {login, pin}`.
@@ -36,6 +36,11 @@ This is the contract for **laksamana-office-vue**, the old laksamana-office if i
 | HPP › Pemakaian & Selisih | `GET/PATCH /hpp/usage/{YYYY-MM}` |
 | HPP › Pengaturan | `GET/PATCH /hpp/settings` |
 | HPP › first move from Excel (empty tables only) | `POST /hpp/import` (HPP admins) |
+| Pohon Resep (read-only Panel) | `GET /hpp/ingredients`, `/hpp/ingredients/{nama}`, `/hpp/recipes`, `/hpp/recipes/{id}` (Modul `tree`, no write) |
+| Purchasing › Kelola Akses (crew) | `GET/POST /users`, `GET/PATCH/DELETE /users/{id}` (purchasing admins) |
+| Ordering › Kelola Akses (kitchen crew, roster seed) | `GET/POST /ordering-users`, `PATCH/DELETE /ordering-users/{id}`, `POST /ordering-users-import` (ordering admins) |
+| Ordering › Data Forecast › Unggah Data Latih (training archive) | `GET /training`, `POST /training`, `GET /training/{usage\|sales_detail}`, `GET /training/{target}/{name}` (ordering admins) |
+| Ordering & Purchasing › Akses Halaman | `GET/PUT /settings/{ordering\|purchasing}` (admins of that Modul) |
 
 ## Products & vendors
 
@@ -148,6 +153,29 @@ Modul `hpp` for everything below (`/hpp/import`: HPP admins). Records are the ro
 
 Numbers are read like the old screen sends them: everything but digits, `.` and `-` is dropped (`"Rp 25.000"` → 25.0 — dots are decimals).
 
+## Crew, settings & training
+
+`users` is the Purchasing crew, `ordering_users` the Ordering kitchen crew: two tables, one contract.
+
+| Method | Path | Modul | Notes |
+|---|---|---|---|
+| GET | `/users`, `/ordering-users` | purchasing / ordering **admin** | All, by name. `{id, name, role, keterangan}` — **the PIN is never returned**, only written. `meta.versions` = `{id: version}`; a row's version is a hash of its stored `data` JSON. |
+| GET | `/users/{id}`, `/ordering-users/{id}` | ″ | One + version. |
+| POST | `/users`, `/ordering-users` | ″ | `{id?, name, pin?, role?, keterangan?}` → `201`. The server makes an `id` (`u-<12 hex>`) when one is not sent. `role` default `full`. `409 already_exists` when the id is taken. |
+| PATCH | `/users/{id}`, `/ordering-users/{id}` | ″ | Only the fields sent change; a `pin` that is not sent keeps the old one (the old endpoints blank it). `422` when the body's `id` differs from the URL. Version required. |
+| DELETE | `/users/{id}`, `/ordering-users/{id}` | ″ | Version required. The last `admin` of `users` cannot be deleted → `409 last_admin` (the old `users.php` refuses it too; `ordering_users` has no such guard). |
+| POST | `/ordering-users-import` | ordering admin | `{users:[{id?, name, pin?, role?, keterangan?}]}` upsert by id in one transaction, deletes nobody. → `{seeded}`. |
+| GET | `/settings/{ordering\|purchasing}` | ″ | `ordering` = `{perms}`; `purchasing` = `{perms, templates}`. `meta.available` is `false` while the `stock_settings` table is missing and `meta.version` is then the hash of the empty default. |
+| PUT | `/settings/{ordering\|purchasing}` | ″ | Only the keys sent change. Version required, then `503 settings_unavailable` while the table is missing — the settings are never silently invented. |
+| GET | `/training` | ordering admin | `{usage: {files, last_date, next_from}, sales_detail: {…}}` — the two archive folders, newest file's date. |
+| POST | `/training` | ″ | `{target: usage\|sales_detail, fileName, contentB64}` → `201` `{name, size, target}`. `.xlsx`/`.xls` only, ≤ 12 MB, and the magic bytes are checked. The stored name is `Ymd-His_<sanitised stem>.<ext>` — the browser's name is never used as a path. |
+| GET | `/training/{target}` | ″ | `{name, size, mtime}` list, `meta.total`. |
+| GET | `/training/{target}/{name}` | ″ | The file itself, as an attachment. |
+
+**`stock_settings` does not exist** in the restored production and dev dumps. The old endpoints answer `500 kesalahan server` there and stay that way (they are frozen); v1 says so honestly instead of failing — reads return the empty default with `meta.available: false`, writes refuse with `503 settings_unavailable`. Create the table deliberately during a cutover; no migration here does it.
+
+**Training is a file store**, not a spreadsheet service: the Panel POSTs a raw POS `.xlsx`/`.xls` export as base64, the server stores it and answers the archive status. Nothing parses the workbook; the forecast model is a separate process. The old `training.php` keeps its own rules — `list`/`get` need `API_TOKEN` (`403` when it is empty, "unduh arsip butuh API_TOKEN diatur di config.php") and it accepts any base64 with the right extension, while v1 also checks the size and the magic bytes.
+
 ## Errors
 
 | Status | `error.code` | When |
@@ -155,6 +183,7 @@ Numbers are read like the old screen sends them: everything but digits, `.` and 
 | 401 | `unauthenticated` | No or bad token |
 | 403 | `module_not_granted` | None of the required Modul |
 | 404 | `not_found` | Unknown name / order number |
-| 409 | `already_exists` / `batch_not_found` / `hpp_not_empty` / `version_conflict` | See above |
-| 422 | `validation_failed` | Bad body; legacy reasons are passed through (`nama produk kosong`, `newQty bukan angka`, `format tanggal jemput harus YYYY-MM-DD`, `stock kosong`, `tanggal wajib diisi`, `foto bukti wajib diunggah`, `barang bukan barang Central Kitchen: …`, …) |
+| 409 | `already_exists` / `batch_not_found` / `hpp_not_empty` / `last_admin` / `version_conflict` | See above |
+| 422 | `validation_failed` | Bad body; legacy reasons are passed through (`nama produk kosong`, `newQty bukan angka`, `format tanggal jemput harus YYYY-MM-DD`, `stock kosong`, `tanggal wajib diisi`, `foto bukti wajib diunggah`, `barang bukan barang Central Kitchen: …`, `Hanya berkas .xlsx/.xls.`, `Isi berkas tidak terbaca.`, …) |
 | 428 | `version_required` | Write without a version |
+| 503 | `settings_unavailable` | Writing Akses Halaman while `stock_settings` is missing |
