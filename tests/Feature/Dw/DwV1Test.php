@@ -163,3 +163,153 @@ it('refuses assignment deletes to non-HRD', function () {
         officeUser('u-arif')['name'])['row']['id'];
     $this->withToken(loginAs(officeUser('u-arif')))->deleteJson('/api/v1/dw/assignments/'.$id)->assertStatus(403);
 });
+
+/*
+ * Cluster (2): attendance, replacement, settings, payment ticks, admin wipe.
+ * ONE login per test (the Sanctum guard memoizes its user for the whole
+ * test); cross-identity setup goes through DwService directly.
+ */
+
+function dwSetuju1(string $dwId, string $tgl, string $divisi = 'bar'): string
+{
+    $r = dwSvc1()->saveAjuan(['dwId' => $dwId, 'tgl' => $tgl, 'm' => '18:00', 's' => '23:00', 'divisi' => $divisi],
+        officeUser('u-rizkiarfan')['name']);
+    dwSvc1()->decideAjuan($r['row']['id'], 'DISETUJUI', '', officeUser('u-rizkiarfan')['name']);
+
+    return $r['row']['id'];
+}
+
+it('marks attendance as HRD and reads it back', function () {
+    $hrd = loginAs(officeUser('u-rizkiarfan'));
+    $id = dwSetuju1('DWmtxzw6fd369', '2031-05-01');
+
+    $this->withToken($hrd)->postJson('/api/v1/dw/assignments/'.$id.'/attendance', ['hadir' => 'TELAT', 'nota' => 'macet'])
+        ->assertOk()->assertJsonPath('data.saved', true);
+    $this->withToken($hrd)->getJson('/api/v1/dw/assignments/'.$id)->assertOk()
+        ->assertJsonPath('data.hadir', 'TELAT')->assertJsonPath('data.hadirNota', 'macet');
+
+    // '' resets to unconfirmed
+    $this->withToken($hrd)->postJson('/api/v1/dw/assignments/'.$id.'/attendance', ['hadir' => ''])
+        ->assertOk();
+    $this->withToken($hrd)->getJson('/api/v1/dw/assignments/'.$id)->assertOk()
+        ->assertJsonPath('data.hadir', '');
+});
+
+it('refuses attendance for unknown shifts, other divisions and bad values', function () {
+    $bar = loginAs(officeUser('u-arif'));
+    $this->withToken($bar)->postJson('/api/v1/dw/assignments/AJtidakada/attendance', ['hadir' => 'HADIR'])
+        ->assertStatus(404);
+
+    $kitchen = dwSetuju1('DWmtxzw6fd369', '2031-05-02', 'kitchen');
+    $this->withToken($bar)->postJson('/api/v1/dw/assignments/'.$kitchen.'/attendance', ['hadir' => 'HADIR'])
+        ->assertStatus(403)->assertJsonPath('error.code', 'forbidden');
+
+    $own = dwSetuju1('DWmtxzw6fd369', '2031-05-03', 'bar');
+    // the head of the row division may confirm
+    $this->withToken($bar)->postJson('/api/v1/dw/assignments/'.$own.'/attendance', ['hadir' => 'HADIR'])
+        ->assertOk();
+    $this->withToken($bar)->postJson('/api/v1/dw/assignments/'.$own.'/attendance', ['hadir' => 'HILANG'])
+        ->assertStatus(422)->assertJsonPath('error.code', 'rejected');
+});
+
+it('refuses attendance on rows that were never approved', function () {
+    $hrd = loginAs(officeUser('u-rizkiarfan'));
+    $id = dwSvc1()->saveAjuan(['dwId' => 'DWmtxzw6fd369', 'tgl' => '2031-05-04', 'm' => '18:00', 's' => '23:00'],
+        officeUser('u-arif')['name'])['row']['id'];
+    $this->withToken($hrd)->postJson('/api/v1/dw/assignments/'.$id.'/attendance', ['hadir' => 'HADIR'])
+        ->assertStatus(422)->assertJsonPath('error.code', 'rejected');
+});
+
+it('replaces the worker through v1, keeping history and the request link', function () {
+    $hrd = loginAs(officeUser('u-rizkiarfan'));
+    $pm = dwSvc1()->savePermintaan(['divisi' => 'bar', 'tgl' => '2031-05-05', 'm' => '18:00', 's' => '23:00', 'jumlah' => 1],
+        officeUser('u-arif')['name'])['row']['id'];
+    $aj = dwSvc1()->assignDw($pm, ['DWmtxzw6fd369'], officeUser('u-rizkiarfan')['name'])['ditugaskan'][0]['id'];
+
+    $r = $this->withToken($hrd)->postJson('/api/v1/dw/assignments/'.$aj.'/replace', ['dwBaru' => 'DWmty9fok2781', 'nota' => 'sakit'])
+        ->assertOk()->json();
+    expect($r['data']['lama'])->toMatchArray(['id' => $aj, 'hadir' => 'ALFA'])
+        ->and($r['data']['baru'])->toMatchArray(['dwId' => 'DWmty9fok2781', 'hadir' => 'HADIR', 'status' => 'DISETUJUI', 'permintaanId' => $pm]);
+});
+
+it('refuses replacement for unknown shifts, other divisions and clashes', function () {
+    $bar = loginAs(officeUser('u-arif'));
+    $this->withToken($bar)->postJson('/api/v1/dw/assignments/AJtidakada/replace', ['dwBaru' => 'DWmty9fok2781'])
+        ->assertStatus(404);
+
+    $kitchen = dwSetuju1('DWmtxzw6fd369', '2031-05-06', 'kitchen');
+    $this->withToken($bar)->postJson('/api/v1/dw/assignments/'.$kitchen.'/replace', ['dwBaru' => 'DWmty9fok2781'])
+        ->assertStatus(403);
+
+    $own = dwSetuju1('DWmtxzw6fd369', '2031-05-07', 'bar');
+    // same person and overlapping stand-ins stay 422 with the legacy message
+    $this->withToken($bar)->postJson('/api/v1/dw/assignments/'.$own.'/replace', ['dwBaru' => 'DWmtxzw6fd369'])
+        ->assertStatus(422)->assertJsonPath('error.code', 'rejected');
+    dwSetuju1('DWmty9fok2781', '2031-05-07', 'kitchen');
+    $this->withToken($bar)->postJson('/api/v1/dw/assignments/'.$own.'/replace', ['dwBaru' => 'DWmty9fok2781'])
+        ->assertStatus(422);
+});
+
+it('serves settings and lets HRD write them', function () {
+    $hrd = loginAs(officeUser('u-rizkiarfan'));
+    $this->withToken($hrd)->getJson('/api/v1/dw/settings')->assertOk()
+        ->assertJsonStructure(['data' => ['tarif']]);
+
+    $this->withToken($hrd)->putJson('/api/v1/dw/settings', ['tarif' => ['Bar Helper' => 7], 'hr' => ['u-rizkiarfan']])
+        ->assertOk()->assertJsonPath('data.saved', true);
+    $this->withToken($hrd)->getJson('/api/v1/dw/settings')->assertOk()
+        ->assertJsonPath('data.tarif.Bar Helper', 7);
+});
+
+it('refuses settings writes to non-HRD', function () {
+    $this->withToken(loginAs(officeUser('u-arif')))->putJson('/api/v1/dw/settings', ['tarif' => []])
+        ->assertStatus(403)->assertJsonPath('error.code', 'forbidden');
+});
+
+it('keeps hr and akses from the stored value for non-admin HRD over v1', function () {
+    // u-arif becomes HRD through the list (still not a module admin)
+    dwSvc1()->saveSetting(['tarif' => ['Bar Helper' => 1], 'hr' => ['u-arif'], 'akses' => ['menu' => 'x']],
+        officeUser('u-admin')['name'], true);
+
+    $this->withToken(loginAs(officeUser('u-arif')))->putJson('/api/v1/dw/settings', [
+        'tarif' => ['Bar Helper' => 2], 'hr' => ['u-nobody'], 'akses' => ['menu' => 'y'],
+    ])->assertOk();
+
+    $st = dwSvc1()->setting();
+    expect((array) $st->hr)->toBe(['u-arif'])
+        ->and((array) $st->akses)->toBe(['menu' => 'x'])
+        ->and((array) $st->tarif)->toBe(['Bar Helper' => 2]);
+});
+
+it('ticks payment marks as HRD only', function () {
+    $hrd = loginAs(officeUser('u-rizkiarfan'));
+    $this->withToken($hrd)->postJson('/api/v1/dw/payments/marks', ['senin' => '2031-05-11', 'kunci' => 'BANK::1', 'nyala' => true])
+        ->assertOk()->assertJsonPath('data.nyala', 1);
+    $this->withToken($hrd)->getJson('/api/v1/dw/settings')->assertOk()
+        ->assertJsonPath('data.bayarLunas.2031-05-11|BANK::1.oleh', officeUser('u-rizkiarfan')['name']);
+    $this->withToken($hrd)->postJson('/api/v1/dw/payments/marks', ['senin' => '2031-05-11', 'kunci' => 'BANK::1', 'nyala' => false])
+        ->assertOk()->assertJsonPath('data.nyala', 0);
+});
+
+it('refuses payment ticks to non-HRD', function () {
+    $this->withToken(loginAs(officeUser('u-arif')))->postJson('/api/v1/dw/payments/marks', ['senin' => '2031-05-11', 'kunci' => 'BANK::1', 'nyala' => true])
+        ->assertStatus(403)->assertJsonPath('error.code', 'forbidden');
+});
+
+it('clears the module as admin with the keyword', function () {
+    $admin = loginAs(officeUser('u-rizkiarfan'));
+    $wid = dwSvc1()->savePekerja(['nama' => 'V Bersih', 'hp' => '080000000061'], officeUser('u-rizkiarfan')['name'])['id'];
+    dwSetuju1($wid, '2031-05-12');
+
+    $this->withToken($admin)->postJson('/api/v1/dw/admin/clear', ['konfirmasi' => 'salah'])
+        ->assertStatus(422)->assertJsonPath('error.code', 'rejected');
+
+    $this->withToken($admin)->postJson('/api/v1/dw/admin/clear', ['konfirmasi' => 'HAPUS SEMUA'])
+        ->assertOk()->assertJsonPath('data.cleared', true)->assertJsonPath('data.ikutPekerja', false);
+    $this->withToken($admin)->getJson('/api/v1/dw/workers/'.$wid)->assertOk();
+});
+
+it('refuses the admin wipe to non-admins', function () {
+    $this->withToken(loginAs(officeUser('u-arif')))->postJson('/api/v1/dw/admin/clear', ['konfirmasi' => 'HAPUS SEMUA'])
+        ->assertStatus(403);
+});

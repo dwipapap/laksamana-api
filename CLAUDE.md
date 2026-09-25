@@ -126,6 +126,7 @@ the anonymised set from #9 can be restored in CI.
 | account | done | auth + admin | 139/139 |
 | jadwal | done | cells, shifts, requests, settings, heads | 35/35 |
 | marketing | done | full contract (docs/api/marketing.md) | 46/46 · frontend e2e 25/25 |
+| dw | done | full contract (docs/api/dw.md) | 110/110 · frontend e2e 25/25 |
 | konten | done | full contract (docs/api/konten.md) | 22/22 · frontend e2e 23/23 |
 | (others) | pending — see docs/modules/README.md | | |
 
