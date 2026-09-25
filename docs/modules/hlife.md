@@ -36,3 +36,9 @@ The legacy API expects `API_TOKEN='HL-5mHh8Lfu8bpiPMkgtRphSmvM'` on every data a
 
 - `/api/v1/hlife/{collection}` — CRUD per collection
 - `/api/v1/hlife/settings`
+
+## Port notes (M9)
+
+- **sql_mode.** Production MySQL is non-strict: dreams saved with `year: ""` are stored as `tahun = 0`, and so are the real rows. The legacy PDO never set `sql_mode`. Laravel's default `strict => true` would reject every `saveAll` of that data. So the hlife connection is marked `server_sql_mode` in `config/laksamana.php`, and Laravel leaves the mode to the server. `DB_HLIFE_SQL_MODE` can pin a mode, which the e2e does to mirror prod on a strict local server.
+- **CORS / OPTIONS.** Legacy sent no CORS headers and answered OPTIONS with 405. The compat route sits in the shared `legacy` group, which adds CORS headers and answers OPTIONS with 204. The frontend is same-origin and posts `text/plain`, so it never preflights.
+- **v1** is documented in `docs/api/hlife.md`. Versions are content hashes, because the tables have no version column.
