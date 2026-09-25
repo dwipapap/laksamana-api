@@ -29,8 +29,8 @@ $modules = [
     // event+ticketing share ONE connection (legacy_ems): the flag on either applies to both.
     'event' => ['env' => 'EMS',       'database' => 'lakk5493_db_ems',       'legacy' => 'event-api-mysql',     'data_dir' => '/home/lakk5493/event-db', 'server_sql_mode' => true],
     'ticketing' => ['env' => 'EMS',       'database' => 'lakk5493_db_ems',       'legacy' => 'ticketing-api'],
-    'finance' => ['env' => 'FINANCE',   'database' => 'lakk5493_db_finance',   'legacy' => 'finance-api-mysql'],
-    // server_sql_mode (hlife, bd, hr, event): do not force Laravel's strict sql_mode — the legacy PDO used
+    'finance' => ['env' => 'FINANCE',   'database' => 'lakk5493_db_finance',   'legacy' => 'finance-api-mysql', 'server_sql_mode' => true],
+    // server_sql_mode (hlife, bd, hr, event, finance): do not force Laravel's strict sql_mode — the legacy PDO used
     // the server default, and production (non-strict) stores e.g. hlife dreams year "" as
     // tahun=0. Strict mode would reject writes legacy accepted (see #97 for the other modules).
     'hlife' => ['env' => 'HLIFE',     'database' => 'lakk5493_db_hlife',     'legacy' => 'howandi-life-api-mysql', 'server_sql_mode' => true],
