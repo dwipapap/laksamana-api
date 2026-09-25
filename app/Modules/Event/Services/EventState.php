@@ -97,14 +97,7 @@ class EventState
     /** Run $fn under the legacy ems_save lock, with the legacy busy message. */
     public static function locked(\Closure $fn): mixed
     {
-        try {
-            return NamedLock::run('event', EventSchema::LOCK, $fn);
-        } catch (RuntimeException $e) {
-            if ($e->getMessage() === 'server sibuk, coba lagi') {
-                throw new RuntimeException(EventSchema::BUSY);
-            }
-            throw $e;
-        }
+        return NamedLock::run('event', EventSchema::LOCK, $fn, 10, EventSchema::BUSY);
     }
 
     /** save_all(): the lock is taken BEFORE the payload is checked, like legacy. */
