@@ -13,7 +13,12 @@ Route::middleware(['auth:sanctum', 'module:reservasi'])->prefix('reservasi')->gr
 
     Route::get('master', [C::class, 'master']);
     Route::put('master', [C::class, 'putMaster']);
+    Route::get('master/{section}', [C::class, 'section']);
+    Route::put('master/{section}', [C::class, 'putSection']);
+    Route::put('master/{section}/{id}', [C::class, 'putItem']);
+    Route::delete('master/{section}/{id}', [C::class, 'deleteItem']);
     Route::get('audit', [C::class, 'audit']);
+    Route::post('audit', [C::class, 'storeAudit']);
     Route::get('files/{key}', [C::class, 'file'])->where('key', '.+');
     Route::put('files/{key}', [C::class, 'putFile'])->where('key', '.+');
 });

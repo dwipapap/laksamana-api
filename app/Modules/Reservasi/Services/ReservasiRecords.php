@@ -64,9 +64,9 @@ class ReservasiRecords
      *
      * @return array{row:array,version:int}
      */
-    public function put(array $row, ?int $base, bool $mustExist): array
+    public function put(array $row, ?int $base, bool $mustExist, ?array $audit = null): array
     {
-        return $this->state->writeLocked(function () use ($row, $base, $mustExist) {
+        return $this->state->writeLocked(function () use ($row, $base, $mustExist, $audit) {
             $id = (string) $row['id'];
             $cur = $this->find($id, true);
             if ($mustExist && ! $cur) {
@@ -81,16 +81,22 @@ class ReservasiRecords
             $now = (int) floor(microtime(true) * 1000);
             $row['updatedAt'] = max($now, ($cur['version'] ?? 0) + 1);
             $row['createdAt'] = $cur['row']['createdAt'] ?? ($row['createdAt'] ?? $now);
+            if ($audit) {
+                $row['log'] = array_slice([ReservasiState::logEntry($audit), ...array_values(is_array($row['log'] ?? null) ? $row['log'] : [])], 0, 20);
+            }
             $this->state->upsertRow($this->state->externalizeOne('reservation', $row)); // photos never stay inline
+            if ($audit) {
+                $this->state->appendAudit($audit);
+            }
             $this->state->bumpVer();
 
             return $this->find($id);
         });
     }
 
-    public function delete(string $id, int $base): bool
+    public function delete(string $id, int $base, ?array $audit = null): bool
     {
-        return $this->state->writeLocked(function () use ($id, $base) {
+        return $this->state->writeLocked(function () use ($id, $base, $audit) {
             $cur = $this->find($id, true);
             if (! $cur) {
                 return false;
@@ -100,18 +106,116 @@ class ReservasiRecords
             }
             $this->db()->delete('DELETE FROM reservations WHERE id = ?', [$id]);
             $this->state->deleteRowFiles($cur['row']);
+            if ($audit) {
+                $this->state->appendAudit($audit);
+            }
             $this->state->bumpVer();
 
             return true;
         });
     }
 
+    /** The ID-bearing master collections that get item-level writes. */
+    public const ITEM_SECTIONS = ['reviews', 'feedbacks', 'waitlist'];
+
+    /** POST /audit — an action that belongs to no reservation row. */
+    public function logAudit(string $action, string $detail, array $actor, ?string $res = null): array
+    {
+        if (trim($action) === '') {
+            throw new RuntimeException('action is required');
+        }
+
+        return $this->state->writeLocked(function () use ($action, $detail, $actor, $res) {
+            $row = $this->state->auditEntry($action, $detail, $actor, $res);
+            $this->state->appendAudit($row);
+            $this->state->bumpVer();
+
+            return $row;
+        });
+    }
+
+    /** Every master part is versioned by its own content, like Kompas's blob parts. */
+    public static function version(mixed $value): string
+    {
+        return substr(sha1(json_encode($value)), 0, 16);
+    }
+
     /** @return array{value:mixed,version:string} master blob (shared with Service Excellent) and its content hash */
     public function master(): array
     {
-        $m = $this->state->read()['master'];
+        $m = $this->state->readMaster();
 
-        return ['value' => $m, 'version' => substr(sha1(json_encode($m)), 0, 16)];
+        return ['value' => $m, 'version' => self::version($m)];
+    }
+
+    public function section(string $name): mixed
+    {
+        return $this->state->readMaster()[$name] ?? null;
+    }
+
+    /**
+     * Replace ONE master section, guarded by that section's own content hash.
+     * A write to one screen therefore never conflicts with another section.
+     */
+    public function putSection(string $name, mixed $value, string $base): array
+    {
+        return $this->state->writeLocked(function () use ($name, $value, $base) {
+            $master = $this->lockedMaster();
+            $current = $master[$name] ?? null;
+            if (! hash_equals(self::version($current), $base)) {
+                throw new ReservasiConflict('stale', $current);
+            }
+            if ($value === null) {
+                unset($master[$name]);
+            } else {
+                $master[$name] = $value;
+            }
+            $master = $this->state->saveMasterRaw($this->state->externalizeSection($master, $name));
+            $this->state->bumpVer();
+
+            return ['value' => $master[$name] ?? null, 'version' => self::version($master[$name] ?? null)];
+        });
+    }
+
+    /** Replace one review / feedback / waitlist item, keeping every other item and section. */
+    public function putItem(string $section, string $id, array $item, string $base): array
+    {
+        return $this->state->writeLocked(function () use ($section, $id, $item, $base) {
+            $master = $this->lockedMaster();
+            $items = is_array($master[$section] ?? null) ? array_values($master[$section]) : [];
+            $at = $this->itemIndex($items, $id);
+            if ($at === null || ! hash_equals(self::version($items), $base)) {
+                throw new ReservasiConflict($at === null ? 'missing' : 'stale', $at === null ? null : $items);
+            }
+            $old = $items[$at];
+            $items[$at] = $this->state->externalizeItem($section, $item);
+            $master[$section] = $items;
+            $master = $this->state->saveMasterRaw($master);
+            $this->state->deleteItemFiles($section, $old, $items[$at]);
+            $this->state->bumpVer();
+
+            return ['value' => $master[$section][$at], 'version' => self::version($master[$section])];
+        });
+    }
+
+    public function deleteItem(string $section, string $id, string $base): array
+    {
+        return $this->state->writeLocked(function () use ($section, $id, $base) {
+            $master = $this->lockedMaster();
+            $items = is_array($master[$section] ?? null) ? array_values($master[$section]) : [];
+            $at = $this->itemIndex($items, $id);
+            if ($at === null || ! hash_equals(self::version($items), $base)) {
+                throw new ReservasiConflict($at === null ? 'missing' : 'stale', $at === null ? null : $items);
+            }
+            $old = $items[$at];
+            array_splice($items, $at, 1);
+            $master[$section] = $items;
+            $master = $this->state->saveMasterRaw($master);
+            $this->state->deleteItemFiles($section, $old);
+            $this->state->bumpVer();
+
+            return ['deleted' => true, 'version' => self::version($items)];
+        });
     }
 
     public function putMaster(mixed $value, string $base): array
@@ -131,5 +235,24 @@ class ReservasiRecords
 
             return $this->master();
         });
+    }
+
+    /** serialise with legacy saveAll, then lock the exact master row being edited */
+    private function lockedMaster(): array
+    {
+        $this->db()->selectOne("SELECT v FROM settings WHERE k='_ver' FOR UPDATE");
+
+        return $this->state->readMaster(true) ?? [];
+    }
+
+    private function itemIndex(array $items, string $id): ?int
+    {
+        foreach ($items as $i => $item) {
+            if (is_array($item) && (string) ($item['id'] ?? '') === $id) {
+                return $i;
+            }
+        }
+
+        return null;
     }
 }

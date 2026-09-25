@@ -42,12 +42,13 @@ class ReservasiController
     public function store(Request $r): JsonResponse
     {
         $row = $r->json()->all();
+        unset($row['_audit']);
         if ($row === [] || array_is_list($row)) {
             return ApiResponse::error('validation_failed', 'The body must be a JSON object.', 422);
         }
         $row['id'] = isset($row['id']) && is_string($row['id']) && $row['id'] !== '' ? substr($row['id'], 0, 64) : 'r'.base_convert((string) (int) (microtime(true) * 1000), 10, 36).bin2hex(random_bytes(3));
 
-        return $this->write(fn () => $this->records->put($row, null, false), 201);
+        return $this->write(fn () => $this->records->put($row, null, false, $this->reservationAudit($r, $row['id'])), 201);
     }
 
     public function update(Request $r, string $id): JsonResponse
@@ -63,6 +64,7 @@ class ReservasiController
     private function replace(Request $r, string $id, bool $merge): JsonResponse
     {
         $body = $r->json()->all();
+        unset($body['_audit']);
         if (isset($body['id']) && (string) $body['id'] !== $id) {
             return ApiResponse::error('validation_failed', 'The id in the body does not match the URL.', 422);
         }
@@ -75,7 +77,7 @@ class ReservasiController
         }
         $row = ['id' => $id] + ($merge ? array_replace($cur['row'], $body) : $body);
 
-        return $this->write(fn () => $this->records->put($row, (int) $v, true));
+        return $this->write(fn () => $this->records->put($row, (int) $v, true, $this->reservationAudit($r, $id)));
     }
 
     public function destroy(Request $r, string $id): JsonResponse
@@ -84,7 +86,7 @@ class ReservasiController
             return self::versionRequired();
         }
 
-        return $this->write(fn () => $this->records->delete($id, (int) $v) ? ['deleted' => true] : null);
+        return $this->write(fn () => $this->records->delete($id, (int) $v, $this->reservationAudit($r, $id)) ? ['deleted' => true] : null);
     }
 
     public function master(): JsonResponse
@@ -109,9 +111,83 @@ class ReservasiController
         });
     }
 
+    /** One master section, versioned by its own content so two screens never contend. */
+    public function section(Request $r, string $section): JsonResponse
+    {
+        if ($bad = self::badSection($section)) {
+            return $bad;
+        }
+        $value = $this->records->section($section);
+        $version = ReservasiRecords::version($value);
+
+        return ApiResponse::ok($value, ['version' => $version, 'ver' => $this->state->ver()], 200, ['ETag' => '"'.$version.'"']);
+    }
+
+    /** Body {value: …}; `null` removes the section. If-Match = that section's version. */
+    public function putSection(Request $r, string $section): JsonResponse
+    {
+        if ($bad = self::badSection($section)) {
+            return $bad;
+        }
+        if (($v = self::version($r)) === null) {
+            return self::versionRequired();
+        }
+        $body = $r->json()->all();
+        if (! array_key_exists('value', $body)) {
+            return ApiResponse::error('validation_failed', 'Send {"value": …}.', 422);
+        }
+
+        return $this->write(fn () => $this->records->putSection($section, $body['value'], $v));
+    }
+
+    /** Replace one review / feedback / waitlist item without touching its neighbours. */
+    public function putItem(Request $r, string $section, string $id): JsonResponse
+    {
+        if ($bad = self::badItemSection($section)) {
+            return $bad;
+        }
+        if (($v = self::version($r)) === null) {
+            return self::versionRequired();
+        }
+        $value = $r->json('value');
+        if (! is_array($value) || array_is_list($value) || ! isset($value['id']) || (string) $value['id'] !== $id) {
+            return ApiResponse::error('validation_failed', 'Send {"value": {…,"id":"'.$id.'"}} with the id matching the URL.', 422);
+        }
+
+        return $this->write(fn () => $this->records->putItem($section, $id, $value, $v));
+    }
+
+    public function deleteItem(Request $r, string $section, string $id): JsonResponse
+    {
+        if ($bad = self::badItemSection($section)) {
+            return $bad;
+        }
+        if (($v = self::version($r)) === null) {
+            return self::versionRequired();
+        }
+
+        return $this->write(fn () => $this->records->deleteItem($section, $id, $v));
+    }
+
     public function audit(): JsonResponse
     {
-        return ApiResponse::ok($this->state->read()['audit']);
+        return ApiResponse::ok($this->state->readAudit());
+    }
+
+    /** An action that belongs to no reservation row (settings, roles, targets, …). */
+    public function storeAudit(Request $r): JsonResponse
+    {
+        return $this->write(function () use ($r) {
+            $action = $r->json('action');
+            $detail = $r->json('detail', '');
+            $res = $r->json('res');
+            if (! is_string($action) || trim($action) === '' || ! is_string($detail) || (! is_null($res) && ! is_string($res))) {
+                throw new RuntimeException('Send {action, detail?, res?} with a non-empty action.');
+            }
+            $row = $this->records->logAudit($action, $detail, $this->actor($r), $res === '' ? null : $res);
+
+            return ['__value' => $row, 'ver' => $this->state->ver()];
+        }, 201);
     }
 
     public function file(string $key): JsonResponse
@@ -122,7 +198,9 @@ class ReservasiController
     /** Body {data: "data:…"} — empty deletes the file. */
     public function putFile(Request $r, string $key): JsonResponse
     {
-        return ApiResponse::ok($this->state->putFile(['key' => $key, 'data' => (string) $r->json('data', '')]));
+        $out = $this->state->putFileV1(['key' => $key, 'data' => (string) $r->json('data', '')]);
+
+        return ApiResponse::ok($out, ['ver' => $this->state->ver()]);
     }
 
     // ─────────────────────────── helpers ──
@@ -135,7 +213,7 @@ class ReservasiController
             return match ($e->getMessage()) {
                 'exists' => ApiResponse::error('already_exists', 'A reservation with this id already exists.', 409),
                 'missing' => self::notFound(),
-                default => ApiResponse::error('version_conflict', 'Changed by someone else. Reload and apply your change again.', 409, ['current' => $e->current['row'] ?? $e->current]),
+                default => ApiResponse::error('version_conflict', 'Changed by someone else. Reload and apply your change again.', 409, ['current' => is_array($e->current) && isset($e->current['row']) ? $e->current['row'] : $e->current]),
             };
         } catch (RuntimeException $e) {
             return ApiResponse::error('invalid_request', $e->getMessage(), 422);
@@ -143,11 +221,55 @@ class ReservasiController
         if ($out === null) {
             return self::notFound();
         }
+        if (isset($out['__value'])) {
+            return ApiResponse::ok($out['__value'], ['ver' => $out['ver']], $status);
+        }
         if (isset($out['__version'])) {
-            return ApiResponse::ok($out['value'], ['version' => $out['__version']]);
+            return ApiResponse::ok($out['value'], ['version' => $out['__version']], $status, ['ETag' => '"'.$out['__version'].'"']);
+        }
+        if (array_key_exists('value', $out) && isset($out['version'])) {
+            return ApiResponse::ok($out['value'], ['version' => $out['version']], $status, ['ETag' => '"'.$out['version'].'"']);
         }
 
         return isset($out['row']) ? self::withVersion($out, $status) : ApiResponse::ok($out, [], $status);
+    }
+
+    /** The acting User always comes from the token, never from the body. */
+    private function actor(Request $r): array
+    {
+        $user = $r->user();
+
+        return ['id' => (string) $user->getKey(), 'name' => (string) $user->name];
+    }
+
+    /** Optional `_audit: {action, detail?}` on a reservation write. */
+    private function reservationAudit(Request $r, string $res): ?array
+    {
+        $raw = $r->json('_audit');
+        if ($raw === null) {
+            return null;
+        }
+        $action = is_array($raw) ? ($raw['action'] ?? null) : null;
+        $detail = is_array($raw) ? ($raw['detail'] ?? '') : '';
+        if (! is_string($action) || trim($action) === '' || ! is_string($detail)) {
+            throw new RuntimeException('_audit must be {action, detail?} with a non-empty action.');
+        }
+
+        return $this->state->auditEntry($action, $detail, $this->actor($r), $res);
+    }
+
+    private static function badSection(string $section): ?JsonResponse
+    {
+        return preg_match('/^[A-Za-z][A-Za-z0-9_]{0,40}$/', $section)
+            ? null
+            : ApiResponse::error('validation_failed', 'Unknown master section.', 422);
+    }
+
+    private static function badItemSection(string $section): ?JsonResponse
+    {
+        return in_array($section, ReservasiRecords::ITEM_SECTIONS, true)
+            ? null
+            : ApiResponse::error('not_found', 'Not found.', 404);
     }
 
     private static function withVersion(array $row, int $status = 200): JsonResponse
