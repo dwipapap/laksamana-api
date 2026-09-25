@@ -1,6 +1,15 @@
 # stock — purchasing, ordering, central kitchen, usage/waste, HPP
 
-**Status:** part 1 (#34) done — `items.php`, `vendors.php`, `orders.php`, `stock.php` on Laravel (`app/Modules/Stock`), v1 in [docs/api/stock.md](../api/stock.md), parity `tools/parity/cases/stock.json`. Part 2 (#35) done — `ck.php`, `usage.php`, `waste.php`, `serah.php`, `opname.php`, `log.php`; Usage Panel e2e `tools/e2e/stock-usage.mjs`. Part 3 (#36) done — `hpp.php`; HPP Panel e2e `tools/e2e/stock-hpp.mjs`. Part 4 (#37) pending.
+**Status:** part 1 (#34) done — `items.php`, `vendors.php`, `orders.php`, `stock.php` on Laravel (`app/Modules/Stock`), v1 in [docs/api/stock.md](../api/stock.md), parity `tools/parity/cases/stock.json`. Part 2 (#35) done — `ck.php`, `usage.php`, `waste.php`, `serah.php`, `opname.php`, `log.php`; Usage Panel e2e `tools/e2e/stock-usage.mjs`. Part 3 (#36) done — `hpp.php`; HPP Panel e2e `tools/e2e/stock-hpp.mjs`. Part 4 (#37) done — `users.php`, `ordering-users.php`, `ordering-settings.php`, `purchasing-settings.php`, `training.php`; Ordering & Purchasing Panels e2e `tools/e2e/stock-admin.mjs`. **All 19 legacy files are on Laravel and the v1 surface of this module is complete.**
+
+Port notes (part 4):
+- **`stock_settings` is missing** in the restored production and dev dumps. The old `ordering-settings.php` / `purchasing-settings.php` therefore answer `500 kesalahan server` on GET and on every save, and that is kept byte-for-byte. v1 does not invent a table: reads return the empty default with `meta.available: false`, writes answer `503 settings_unavailable`.
+- `purchasing-settings.php` reads the old flat `data` as the permission matrix and writes back the wrapped `{perms, templates}` shape, so the first save through the old screen migrates the row. v1 always speaks the wrapped shape.
+- **PINs.** `users.php` and `ordering-users.php` return the PIN — that wire shape is frozen and kept. **v1 never returns a PIN**: it is accepted on write and never read back. Hashing the stored PINs is [#80](../security-followups.md), a separate issue.
+- v1 `PATCH` merges: a `pin` that is not sent keeps the old one. The old endpoints replace every sent field, so an update without a `pin` blanks it — kept for compat, not repeated in v1.
+- The last `admin` of `users` cannot be deleted (`tidak bisa menghapus admin terakhir` on the old screen, `409 last_admin` in v1). `ordering_users` has no such guard in legacy, so v1 does not add one.
+- `training.php` is a **file store**: the Panel POSTs a raw POS `.xlsx`/`.xls` export as base64 into `TRAINING_DIR/<target>/`, and the server never parses the workbook. The stored name is `Ymd-His_<sanitised stem>.<ext>`, `list`/`get` need `API_TOKEN` (`403` when empty), and the summary reads the archive status from the filenames. v1 adds a 12 MB cap and a magic-byte check on top of the extension rule.
+- Pohon Resep (`tree`) has no legacy server calls at all; v1 exposes the HPP recipes and ingredients to `module:tree` **read-only**, so the Panel can draw the recipe graph without getting write access it never had.
 
 Port notes (part 3):
 - `hpp.php` answers a thrown error as `500 {status:'error', message:'kesalahan server: <reason>'}` (the other stock files hide the reason); the port keeps it, with the PDO message for database errors.
