@@ -33,6 +33,9 @@ jobs:
       - name: Code style (Pint check mode)
         run: php vendor/bin/pint --test
 
+      - name: Anonymiser self-check (no database)
+        run: node --version && node tools/anonymise.mjs --self-check
+
       - name: Prepare environment
         run: |
           cp .env.example .env
