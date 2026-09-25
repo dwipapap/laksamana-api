@@ -120,3 +120,10 @@ Response envelope is `{ok,data}`, except that `getAll` adds a top-level `ts`.
 - `voidList/voidSetting/voidSimpan/voidBatal` and `briList/briUnggah/briTambah/briCocok/briBatal/briAbai` are ported in `App\Modules\Kompas\Services\VoidBri`, byte-identical to legacy (parity, with rows seeded through `setupSql`).
 - The runtime DDL and column checks (`void_pastikan`, `bri_pastikan`, `bri_abai_pastikan`) are not ported: the tables exist live.
 - v1: `/api/v1/kompas/voids` and `/api/v1/kompas/bri` (`docs/api/kompas.md`). Row versions are the `diubah` column.
+
+## Port notes (#30: investor & analytics)
+
+- Legacy fetched marketing/event/bd `getAll` and finance `brankasGet` over HTTP for the investor agenda and dividends. The port reads `MarketingState`, `EventState`, `BdState` and `Brankas` in-process; a module that fails is listed in `gagal`.
+- Parity cannot compare those fields: under `php -S` the legacy URLs are built from SERVER_NAME without the port, so they always fail. They are ignored there and asserted in Pest instead.
+- Report PDFs go to `<KOMPAS_DATA_DIR>/lapor/lp_<hex>.pdf`, the same layout as legacy.
+- Analytics stays open on the compat route, as in legacy. v1 gates it by the `analytics` Modul.

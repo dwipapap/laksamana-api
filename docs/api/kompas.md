@@ -9,7 +9,7 @@ This is the contract for **laksamana-office-vue**, the old laksamana-office if i
   - failure: `{error: {code, message, details?}}`
 - **Money:** amounts in the blob may be JSON numbers or formatted strings (`"3.855.000"`). The server reads them the way the app's `num()` does: it keeps only digits and `-`.
 
-Status: the **revenue core** (#28) is in place (the omset blob, targets, Rekap Penjualan, daily figures, and per-PIC and per-division revenue), together with the **void log and QRIS BRI matching** (#29). Investor and analytics are added by their own issue.
+Status: complete. The contract covers the **revenue core** (#28), the **void log and QRIS BRI matching** (#29), and **Investor Compass and Analytics** (#30).
 
 ## Screen → endpoint map (this cluster)
 
@@ -78,6 +78,27 @@ These are accountability records: **nothing is deleted**. A wrong entry is cance
 | DELETE | `/bri/ignored/{dpId}` | Lifts the mark |
 
 Validation failures keep the legacy Indonesian messages → `422 invalid_request` (with `details.kurang` or `details.gagal`).
+
+## Investor Compass — `/investor` (module investor)
+
+Figures investors see are **already summed** from the single daily map: no staff names, no per-cashier breakdown, no receivables.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/investor/summary` | Today, yesterday, this month (with the company target) and last month, in all three conventions, plus: `tahunan` (net sales per month, `null` = no data), `harian`, `labaRugi` (the CFO Profit & Loss lines this system knows, newest month first), `lapor` (the reports list), `dividen` (capital returns from Finance → Brankas), `terakhir` and `adaData`. `meta.canUpload` = investor admin. |
+| GET | `/investor/agenda` | Upcoming events from Marketing and Event (max 200, nearest first; events without a time go last in their day) and running or upcoming promos from BD (max 50, running first). Titles, dates and places only: no clients and no prices. `gagal` names any module that could not be read. |
+| GET | `/investor/reports` | `{bulan: {balance\|ledger: {nama, ukuran, at, oleh}}}` |
+| GET | `/investor/reports/{YYYY-MM}/{balance\|ledger}` | The PDF (binary) |
+| PUT | `/investor/reports/{YYYY-MM}/{balance\|ledger}` | **Investor admin.** `{dataBase64, fileName?}`: must be a PDF (checked by its content) of at most 12 MB. Replaces that month's report; the old file is removed only after the new one is written. |
+| DELETE | `/investor/reports/{YYYY-MM}/{balance\|ledger}` | **Investor admin** |
+
+## Analytics — `/analytics` (module analytics)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/analytics` | `{data: {laporan, setting, …}, akses, peran, ts}`: summaries of the uploaded POS reports plus the page × role matrix. `meta.version` = `ts`; `meta.accessVersion` = hash of matrix + roles |
+| PUT | `/analytics` | `{data}` replaces the whole analytics state. **If-Match = version** |
+| PUT | `/analytics/access` | **Analytics admin.** `{matrix?, roles?}`: each one given replaces its whole map (`tingkat` is clamped to 0–2). If-Match = `accessVersion` |
 
 ## Errors
 

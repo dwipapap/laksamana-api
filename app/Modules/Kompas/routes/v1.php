@@ -1,5 +1,6 @@
 <?php
 
+use App\Modules\Kompas\Http\V1\InvestorAnalyticsController as IA;
 use App\Modules\Kompas\Http\V1\KompasController as C;
 use App\Modules\Kompas\Http\V1\VoidBriController as V;
 use Illuminate\Support\Facades\Route;
@@ -28,4 +29,15 @@ Route::middleware('auth:sanctum')->prefix('kompas')->group(function () {
     Route::post('bri/ignored', [V::class, 'ignoreDp']);
     Route::delete('bri/ignored/{dpId}', [V::class, 'unignoreDp']);
     Route::post('bri/{id}/cancel', [V::class, 'cancelMutation']);
+
+    // Investor Compass (module investor; report writes: its admin) and Analytics (module analytics)
+    Route::get('investor/summary', [IA::class, 'summary']);
+    Route::get('investor/agenda', [IA::class, 'agenda']);
+    Route::get('investor/reports', [IA::class, 'reports']);
+    Route::get('investor/reports/{bulan}/{jenis}', [IA::class, 'report'])->where('bulan', '\d{4}-\d{2}');
+    Route::put('investor/reports/{bulan}/{jenis}', [IA::class, 'putReport']);
+    Route::delete('investor/reports/{bulan}/{jenis}', [IA::class, 'deleteReport']);
+    Route::get('analytics', [IA::class, 'analytics']);
+    Route::put('analytics', [IA::class, 'putAnalytics']);
+    Route::put('analytics/access', [IA::class, 'putAccess']);
 });
