@@ -3,6 +3,7 @@
 namespace App\Modules\Hr\Http\V1;
 
 use App\Auth\OfficeAccess;
+use App\Modules\Akademi\Services\AkademiStats;
 use App\Modules\Hr\Services\HrMiss;
 use App\Modules\Hr\Services\HrRecords;
 use App\Modules\Hr\Services\HrState;
@@ -29,6 +30,7 @@ class HrController
         private readonly HrState $state,
         private readonly HrRecords $records,
         private readonly OfficeAccess $access,
+        private readonly AkademiStats $akademi,
     ) {}
 
     public function state(): JsonResponse
@@ -41,6 +43,12 @@ class HrController
     public function stats(): JsonResponse
     {
         return ApiResponse::ok($this->state->stats());
+    }
+
+    /** Akademi training completion per Office user id (akademi trainingStats, read in-process). */
+    public function trainingStats(): JsonResponse
+    {
+        return ApiResponse::ok($this->akademi->trainingStats());
     }
 
     // ─────────────────────────── collections ──
@@ -71,6 +79,9 @@ class HrController
 
     public function patch(Request $r, string $resource, string $id): JsonResponse
     {
+        if ($denied = $this->opsOnly($r, $resource)) {
+            return $denied;
+        }
         $body = self::body($r);
         if (! $body) {
             return self::badBody();
@@ -88,6 +99,9 @@ class HrController
 
     private function putRecord(Request $r, string $resource, ?string $id, bool $mustExist, ?stdClass $rec = null): JsonResponse
     {
+        if ($denied = $this->opsOnly($r, $resource)) {
+            return $denied;
+        }
         $rec ??= self::body($r);
         if (! $rec) {
             return self::badBody();
@@ -118,6 +132,9 @@ class HrController
 
     public function destroy(Request $r, string $resource, string $id): JsonResponse
     {
+        if ($denied = $this->opsOnly($r, $resource)) {
+            return $denied;
+        }
         if (($base = self::baseVersion($r)) === null) {
             return self::versionRequired();
         }
@@ -237,6 +254,16 @@ class HrController
         }
 
         return ApiResponse::ok($data instanceof \Closure ? $data() : $data, ['version' => $res['rev']], $status, ['ETag' => '"'.$res['rev'].'"']);
+    }
+
+    /** Kru and Kalender HR are `manageOps` pages: writes need the Office hr module admin. */
+    private function opsOnly(Request $r, string $resource): ?JsonResponse
+    {
+        if (in_array($resource, ['employees', 'calendar'], true) && ! $this->access->isModuleAdmin((string) $r->user()->getKey(), 'hr')) {
+            return ApiResponse::error('forbidden', 'Admin rights for module [hr] required.', 403);
+        }
+
+        return null;
     }
 
     private function actor(Request $r): string

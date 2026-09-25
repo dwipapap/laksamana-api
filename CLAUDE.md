@@ -132,6 +132,7 @@ the anonymised set from #9 can be restored in CI.
 | akademi | done | full contract (docs/api/akademi.md) | 25/25 · frontend e2e 31/31 |
 | hlife | done | full contract (docs/api/hlife.md) | 22/22 · frontend e2e 28/28 |
 | bd | done | full contract (docs/api/bd.md) | 32/32 · frontend e2e 34/34 |
+| hr | done | full contract (docs/api/hr.md) | 21/21 · frontend e2e 47/47 |
 | (others) | pending — see docs/modules/README.md | | |
 
 ## Agent skills

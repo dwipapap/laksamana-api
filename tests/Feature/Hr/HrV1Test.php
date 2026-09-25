@@ -2,7 +2,7 @@
 
 use App\Support\Modules;
 
-/* u-andry holds module `hr`; u-adit's grant is revoked. */
+/* u-andry holds module `hr`; u-rizkiarfan is also the hr module admin (manageOps); u-adit's grant is revoked. */
 
 function hrDocRev(): int
 {
@@ -22,7 +22,7 @@ it('lists a collection with the document rev as version', function () {
 });
 
 it('creates, patches and deletes a record, each write bumping the rev as the session user', function () {
-    $token = loginAs(officeUser('u-andry'));
+    $token = loginAs(officeUser('u-rizkiarfan'));
     $rev = hrDocRev();
 
     $this->withToken($token)->postJson('/api/v1/hr/calendar', ['title' => 'Rapat'])->assertStatus(428);
@@ -34,7 +34,7 @@ it('creates, patches and deletes a record, each write bumping the rev as the ses
     $id = $res->json('data.id');
     $row = Modules::db('hr')->selectOne('SELECT judul, tanggal, data FROM calendar WHERE id = ?', [$id]);
     expect($row->judul)->toBe('Rapat')->and($row->tanggal)->toBe('2026-10-01')->and($row->data)->toContain('"meta":{}')
-        ->and(Modules::db('hr')->selectOne('SELECT saved_by FROM meta')->saved_by)->toBe(officeUser('u-andry')['name']);
+        ->and(Modules::db('hr')->selectOne('SELECT saved_by FROM meta')->saved_by)->toBe(officeUser('u-rizkiarfan')['name']);
 
     $this->withToken($token)->patchJson('/api/v1/hr/calendar/'.$id.'?version='.($rev + 1), ['kind' => 'event'])
         ->assertOk()->assertJsonPath('data.title', 'Rapat')->assertJsonPath('data.kind', 'event')->assertJsonPath('meta.version', $rev + 2);
@@ -44,7 +44,7 @@ it('creates, patches and deletes a record, each write bumping the rev as the ses
 });
 
 it('writes kpi actual cells and settings keys', function () {
-    $token = loginAs(officeUser('u-andry'));
+    $token = loginAs(officeUser('u-rizkiarfan'));
     $rev = hrDocRev();
     $this->withToken($token)->putJson("/api/v1/hr/kpi-actuals/dX/2026-09/iX?version=$rev", ['value' => 42.5])
         ->assertOk()->assertJsonPath('data.iX', 42.5);
@@ -65,4 +65,19 @@ it('writes an attendance month into extra:attendance when its tables are missing
 it('appends audit entries as the session user', function () {
     $this->withToken(loginAs(officeUser('u-andry')))->postJson('/api/v1/hr/audit', ['action' => 'EXPORT', 'detail' => 'csv', 'userName' => 'spoof'])
         ->assertCreated()->assertJsonPath('data.userName', officeUser('u-andry')['name'])->assertJsonPath('data.action', 'EXPORT');
+});
+
+it('keeps the manageOps pages (Kru, Kalender HR, Pengaturan, Audit Log) to the hr module admin', function () {
+    $token = loginAs(officeUser('u-andry'));
+    $rev = hrDocRev();
+    $this->withToken($token)->postJson("/api/v1/hr/employees?version=$rev", ['name' => 'X'])->assertStatus(403)->assertJsonPath('error.code', 'forbidden');
+    $this->withToken($token)->putJson("/api/v1/hr/settings/k?version=$rev", ['value' => 1])->assertStatus(403);
+    $this->withToken($token)->getJson('/api/v1/hr/audit')->assertStatus(403);
+    // ...while every hr user may read them and write the other pages
+    $this->withToken($token)->getJson('/api/v1/hr/employees')->assertOk();
+    $this->withToken($token)->postJson("/api/v1/hr/okrs?version=$rev", ['ownerType' => 'div'])->assertCreated();
+});
+
+it('serves akademi training stats in-process', function () {
+    $this->withToken(loginAs(officeUser('u-andry')))->getJson('/api/v1/hr/training-stats')->assertOk()->assertJsonStructure(['data']);
 });

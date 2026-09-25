@@ -19,7 +19,7 @@ source disagree, the source wins; then correct the spec.
 | akademi | [akademi.md](akademi.md) | **done** | full contract, see docs/api/akademi.md | 25/25 | 31 |
 | bd | [bd.md](bd.md) | **done** | full contract, see docs/api/bd.md | 32/32 | 6 + 5 |
 | event | [event.md](event.md) | pending | pending | — | — |
-| hr | [hr.md](hr.md) | pending | pending | — | — |
+| hr | [hr.md](hr.md) | **done** | full contract, see docs/api/hr.md | 21/21 | 7 + 8 |
 | hlife | [hlife.md](hlife.md) | **done** | full contract, see docs/api/hlife.md | 22/22 | 6 + 7 |
 | kompas | [kompas.md](kompas.md) | pending | pending | — | — |
 | finance | [finance.md](finance.md) | pending | pending | — | — |
