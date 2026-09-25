@@ -1,58 +1,1174 @@
 {
-  "dir": "kompas-mysql",
-  "legacyPath": "kompas-api-mysql",
-  "dbEnv": "KOMPAS",
-  "db": "lakk5493_db_kompas",
-  "ignore": ["data.ts", "data.backend", "data.db", "data.waktu"],
-  "sessions": {"mkt": "SELECT CONCAT(name,'|',pin) FROM users WHERE id='u-aurel'"},
-  "cases": [
-    {"name": "ping", "method": "GET", "query": {"action": "ping"}},
-    {"name": "stats", "method": "GET", "query": {"action": "stats"}},
-    {"name": "getAll", "method": "GET", "query": {"action": "getAll"}},
-    {"name": "getAll is the GET default", "method": "GET", "query": {}},
-    {"name": "unknown action", "body": {"action": "voidLost"}},
-
-    {"name": "omsetPic August–September", "method": "GET", "query": {"action": "omsetPic", "dari": "2026-08-01", "sampai": "2026-09-30"}},
-    {"name": "omsetPic reversed range", "method": "GET", "query": {"action": "omsetPic", "dari": "2026-09-15", "sampai": "2026-09-01"}},
-    {"name": "omsetPic bad date", "method": "GET", "query": {"action": "omsetPic", "dari": "2026-9-1", "sampai": "2026-09-30"}},
-    {"name": "omsetPic without a range", "method": "GET", "query": {"action": "omsetPic"}},
-
-    {"name": "performaDivisi without a session", "body": {"action": "performaDivisi", "dari": "2026-08-01", "sampai": "2026-09-30"}},
-    {"name": "performaDivisi marketing", "body": {"action": "performaDivisi", "sesi": "$sesi:mkt", "divi": "marketing", "dari": "2026-08-01", "sampai": "2026-09-30"}},
-    {"name": "performaDivisi range from the query", "query": {"action": "performaDivisi", "dari": "2026-09-01", "sampai": "2026-08-20"}, "body": {"action": "performaDivisi", "sesi": "$sesi:mkt"}},
-    {"name": "performaDivisi event without the Event module", "body": {"action": "performaDivisi", "sesi": "$sesi:mkt", "divi": "event", "dari": "2026-08-01", "sampai": "2026-09-30"}},
-    {"name": "performaDivisi bad range", "body": {"action": "performaDivisi", "sesi": "$sesi:mkt", "dari": "x", "sampai": "2026-09-30"}},
-
-    {"name": "saveAll without data", "body": {"action": "saveAll"}},
-    {"name": "saveAll stale baseTs is refused", "body": {"action": "saveAll", "baseTs": 1, "data": {"daily": []}}},
-
-    {"name": "simpanTarget without data", "body": {"action": "simpanTarget"}},
-    {"name": "simpanTarget patches targets only", "body": {"action": "simpanTarget", "data": {
-      "companyMonthlyTarget": "1.500.000.000", "useWorkingDays": 1, "workingDaysPerMonth": "0",
-      "target": {"nope-id": 5}, "by": "Parity Finance"}}},
-    {"name": "stats after target", "method": "GET", "query": {"action": "stats"}, "ignore": ["data.updated_at"]},
-
-    {"name": "simpanRekap without data", "body": {"action": "simpanRekap"}},
-    {"name": "simpanRekap without days", "body": {"action": "simpanRekap", "data": {"by": "x"}}},
-    {"name": "simpanRekap setoran without days", "body": {"action": "simpanRekap", "data": {"hari": {}, "setoran": {"tambah": [{"tgl": "2026-09-20", "hari": ["bad"]}]}}}},
-    {"name": "simpanRekap setoran bad date", "body": {"action": "simpanRekap", "data": {"hari": {}, "setoran": {"tambah": [{"tgl": "20-09-2026", "hari": ["2026-09-10"]}]}}}},
-    {"name": "simpanRekap marks, aktual, mdrManual, unknown group", "body": {"action": "simpanRekap", "data": {"by": "Parity Finance", "hari": {
-      "2026-09-10": {"setor": true, "mdr": {"edc_bri": "12.500", "unknownBank": 9}, "aktual": {"qris_bri": "1.000.000", "edc_bca": ""}, "mdrManual": {"gofood": -5, "grabfood": "2500"}, "esb": {"cash": 1, "newGroup": true, "0": true}},
-      "2026-09-11": {"aktual": {"edc_bri": null}, "mdrManual": {"gofood": ""}},
-      "bad-date": {"setor": true},
+ "dir": "kompas-mysql",
+ "legacyPath": "kompas-api-mysql",
+ "dbEnv": "KOMPAS",
+ "db": "lakk5493_db_kompas",
+ "ignore": [
+  "data.ts",
+  "data.backend",
+  "data.db",
+  "data.waktu"
+ ],
+ "sessions": {
+  "mkt": "SELECT CONCAT(name,'|',pin) FROM users WHERE id='u-aurel'",
+  "fin": "SELECT CONCAT(name,'|',pin) FROM users WHERE id='u-novi'",
+  "adm": "SELECT CONCAT(name,'|',pin) FROM users WHERE id='u-wandi'",
+  "none": "SELECT CONCAT(name,'|',pin) FROM users WHERE id='u-adit'"
+ },
+ "cases": [
+  {
+   "name": "ping",
+   "method": "GET",
+   "query": {
+    "action": "ping"
+   }
+  },
+  {
+   "name": "stats",
+   "method": "GET",
+   "query": {
+    "action": "stats"
+   }
+  },
+  {
+   "name": "getAll",
+   "method": "GET",
+   "query": {
+    "action": "getAll"
+   }
+  },
+  {
+   "name": "getAll is the GET default",
+   "method": "GET",
+   "query": {}
+  },
+  {
+   "name": "unknown action",
+   "body": {
+    "action": "voidLost"
+   }
+  },
+  {
+   "name": "omsetPic August–September",
+   "method": "GET",
+   "query": {
+    "action": "omsetPic",
+    "dari": "2026-08-01",
+    "sampai": "2026-09-30"
+   }
+  },
+  {
+   "name": "omsetPic reversed range",
+   "method": "GET",
+   "query": {
+    "action": "omsetPic",
+    "dari": "2026-09-15",
+    "sampai": "2026-09-01"
+   }
+  },
+  {
+   "name": "omsetPic bad date",
+   "method": "GET",
+   "query": {
+    "action": "omsetPic",
+    "dari": "2026-9-1",
+    "sampai": "2026-09-30"
+   }
+  },
+  {
+   "name": "omsetPic without a range",
+   "method": "GET",
+   "query": {
+    "action": "omsetPic"
+   }
+  },
+  {
+   "name": "performaDivisi without a session",
+   "body": {
+    "action": "performaDivisi",
+    "dari": "2026-08-01",
+    "sampai": "2026-09-30"
+   }
+  },
+  {
+   "name": "performaDivisi marketing",
+   "body": {
+    "action": "performaDivisi",
+    "sesi": "$sesi:mkt",
+    "divi": "marketing",
+    "dari": "2026-08-01",
+    "sampai": "2026-09-30"
+   }
+  },
+  {
+   "name": "performaDivisi range from the query",
+   "query": {
+    "action": "performaDivisi",
+    "dari": "2026-09-01",
+    "sampai": "2026-08-20"
+   },
+   "body": {
+    "action": "performaDivisi",
+    "sesi": "$sesi:mkt"
+   }
+  },
+  {
+   "name": "performaDivisi event without the Event module",
+   "body": {
+    "action": "performaDivisi",
+    "sesi": "$sesi:mkt",
+    "divi": "event",
+    "dari": "2026-08-01",
+    "sampai": "2026-09-30"
+   }
+  },
+  {
+   "name": "performaDivisi bad range",
+   "body": {
+    "action": "performaDivisi",
+    "sesi": "$sesi:mkt",
+    "dari": "x",
+    "sampai": "2026-09-30"
+   }
+  },
+  {
+   "name": "saveAll without data",
+   "body": {
+    "action": "saveAll"
+   }
+  },
+  {
+   "name": "saveAll stale baseTs is refused",
+   "body": {
+    "action": "saveAll",
+    "baseTs": 1,
+    "data": {
+     "daily": []
+    }
+   }
+  },
+  {
+   "name": "simpanTarget without data",
+   "body": {
+    "action": "simpanTarget"
+   }
+  },
+  {
+   "name": "simpanTarget patches targets only",
+   "body": {
+    "action": "simpanTarget",
+    "data": {
+     "companyMonthlyTarget": "1.500.000.000",
+     "useWorkingDays": 1,
+     "workingDaysPerMonth": "0",
+     "target": {
+      "nope-id": 5
+     },
+     "by": "Parity Finance"
+    }
+   }
+  },
+  {
+   "name": "stats after target",
+   "method": "GET",
+   "query": {
+    "action": "stats"
+   },
+   "ignore": [
+    "data.updated_at"
+   ]
+  },
+  {
+   "name": "simpanRekap without data",
+   "body": {
+    "action": "simpanRekap"
+   }
+  },
+  {
+   "name": "simpanRekap without days",
+   "body": {
+    "action": "simpanRekap",
+    "data": {
+     "by": "x"
+    }
+   }
+  },
+  {
+   "name": "simpanRekap setoran without days",
+   "body": {
+    "action": "simpanRekap",
+    "data": {
+     "hari": {},
+     "setoran": {
+      "tambah": [
+       {
+        "tgl": "2026-09-20",
+        "hari": [
+         "bad"
+        ]
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "simpanRekap setoran bad date",
+   "body": {
+    "action": "simpanRekap",
+    "data": {
+     "hari": {},
+     "setoran": {
+      "tambah": [
+       {
+        "tgl": "20-09-2026",
+        "hari": [
+         "2026-09-10"
+        ]
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "simpanRekap marks, aktual, mdrManual, unknown group",
+   "body": {
+    "action": "simpanRekap",
+    "data": {
+     "by": "Parity Finance",
+     "hari": {
+      "2026-09-10": {
+       "setor": true,
+       "mdr": {
+        "edc_bri": "12.500",
+        "unknownBank": 9
+       },
+       "aktual": {
+        "qris_bri": "1.000.000",
+        "edc_bca": ""
+       },
+       "mdrManual": {
+        "gofood": -5,
+        "grabfood": "2500"
+       },
+       "esb": {
+        "0": true,
+        "cash": 1,
+        "newGroup": true
+       }
+      },
+      "2026-09-11": {
+       "aktual": {
+        "edc_bri": null
+       },
+       "mdrManual": {
+        "gofood": ""
+       }
+      },
+      "bad-date": {
+       "setor": true
+      },
       "2026-09-12": "not an object"
-    }}}},
-    {"name": "simpanRekap deletes one deposit and adds a capped partial one", "ignore": ["data.setoran.*.id", "data.setoran.*.at"], "body": {"action": "simpanRekap", "data": {"by": "Kasir Parity", "hari": {},
-      "setoran": {"hapus": ["st1a0add5bb0069c", "nope"], "tambah": [{"tgl": "2026-09-18", "tujuan": " BRI ", "catatan": " sebagian ", "hari": ["2026-09-08", "2026-09-07", "2026-09-07", "junk"], "jumlah": {"2026-09-07": "999.999.999", "2026-09-08": -3}}]}}}},
-    {"name": "simpanRekap a deposit for already-covered days is zero", "body": {"action": "simpanRekap", "data": {"hari": {}, "setoran": {"tambah": [{"tgl": "2026-09-18", "hari": ["2026-09-07"]}]}}}},
-    {"name": "getAll after the narrow writes", "method": "GET", "query": {"action": "getAll"}, "ignore": ["ts", "data.rekap_setoran.*.id", "data.rekap_setoran.*.at"]},
-    {"name": "omsetPic after the writes", "method": "GET", "query": {"action": "omsetPic", "dari": "2026-08-01", "sampai": "2026-09-30"}},
-
-    {"name": "saveAll with baseTs 0 replaces the blob (arrays stay arrays)", "body": {"action": "saveAll", "baseTs": 0, "data": {"_savedBy": "Parity", "daily": [{"date": "2026-10-01", "food": "1.000", "bd": {"marketing": [{"picId": "p1", "amount": 10, "ob": true, "obAmount": "5"}]}}], "settings": {}, "employees": {"marketing": [{"id": "p1", "name": "PIC Satu", "officeUserId": "u-aurel"}]}}}},
-    {"name": "getAll after saveAll", "method": "GET", "query": {"action": "getAll"}, "ignore": ["ts"]},
-    {"name": "saveAll with an old baseTs after that is refused", "body": {"action": "saveAll", "baseTs": 1790095951190, "data": {"daily": []}}, "ignore": ["ts"]},
-    {"name": "omsetPic on the new blob", "method": "GET", "query": {"action": "omsetPic", "dari": "2026-10-01", "sampai": "2026-10-01"}},
-    {"name": "simpanTarget on the new blob", "body": {"action": "simpanTarget", "data": {"target": {"p1": "7.000.000", "gone": 1}}}},
-    {"name": "stats at the end", "method": "GET", "query": {"action": "stats"}, "ignore": ["data.updated_at"]}
-  ]
+     }
+    }
+   }
+  },
+  {
+   "name": "simpanRekap deletes one deposit and adds a capped partial one",
+   "ignore": [
+    "data.setoran.*.id",
+    "data.setoran.*.at"
+   ],
+   "body": {
+    "action": "simpanRekap",
+    "data": {
+     "by": "Kasir Parity",
+     "hari": {},
+     "setoran": {
+      "hapus": [
+       "st1a0add5bb0069c",
+       "nope"
+      ],
+      "tambah": [
+       {
+        "tgl": "2026-09-18",
+        "tujuan": " BRI ",
+        "catatan": " sebagian ",
+        "hari": [
+         "2026-09-08",
+         "2026-09-07",
+         "2026-09-07",
+         "junk"
+        ],
+        "jumlah": {
+         "2026-09-07": "999.999.999",
+         "2026-09-08": -3
+        }
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "simpanRekap a deposit for already-covered days is zero",
+   "body": {
+    "action": "simpanRekap",
+    "data": {
+     "hari": {},
+     "setoran": {
+      "tambah": [
+       {
+        "tgl": "2026-09-18",
+        "hari": [
+         "2026-09-07"
+        ]
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "getAll after the narrow writes",
+   "method": "GET",
+   "query": {
+    "action": "getAll"
+   },
+   "ignore": [
+    "ts",
+    "data.rekap_setoran.*.id",
+    "data.rekap_setoran.*.at"
+   ]
+  },
+  {
+   "name": "omsetPic after the writes",
+   "method": "GET",
+   "query": {
+    "action": "omsetPic",
+    "dari": "2026-08-01",
+    "sampai": "2026-09-30"
+   }
+  },
+  {
+   "name": "saveAll with baseTs 0 replaces the blob (arrays stay arrays)",
+   "body": {
+    "action": "saveAll",
+    "baseTs": 0,
+    "data": {
+     "_savedBy": "Parity",
+     "daily": [
+      {
+       "date": "2026-10-01",
+       "food": "1.000",
+       "bd": {
+        "marketing": [
+         {
+          "picId": "p1",
+          "amount": 10,
+          "ob": true,
+          "obAmount": "5"
+         }
+        ]
+       }
+      }
+     ],
+     "settings": {},
+     "employees": {
+      "marketing": [
+       {
+        "id": "p1",
+        "name": "PIC Satu",
+        "officeUserId": "u-aurel"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "getAll after saveAll",
+   "method": "GET",
+   "query": {
+    "action": "getAll"
+   },
+   "ignore": [
+    "ts"
+   ]
+  },
+  {
+   "name": "saveAll with an old baseTs after that is refused",
+   "body": {
+    "action": "saveAll",
+    "baseTs": 1790095951190,
+    "data": {
+     "daily": []
+    }
+   },
+   "ignore": [
+    "ts"
+   ]
+  },
+  {
+   "name": "omsetPic on the new blob",
+   "method": "GET",
+   "query": {
+    "action": "omsetPic",
+    "dari": "2026-10-01",
+    "sampai": "2026-10-01"
+   }
+  },
+  {
+   "name": "simpanTarget on the new blob",
+   "body": {
+    "action": "simpanTarget",
+    "data": {
+     "target": {
+      "p1": "7.000.000",
+      "gone": 1
+     }
+    }
+   }
+  },
+  {
+   "name": "voidList",
+   "method": "GET",
+   "query": {
+    "action": "voidList",
+    "dari": "2026-09-01",
+    "sampai": "2026-09-30"
+   }
+  },
+  {
+   "name": "voidList without a range",
+   "method": "GET",
+   "query": {
+    "action": "voidList"
+   }
+  },
+  {
+   "name": "voidList bad dates",
+   "method": "GET",
+   "query": {
+    "action": "voidList",
+    "dari": "2026-02-31",
+    "sampai": "x"
+   }
+  },
+  {
+   "name": "voidSetting without a session",
+   "body": {
+    "action": "voidSetting",
+    "data": {
+     "tax": 11,
+     "service": 5
+    }
+   }
+  },
+  {
+   "name": "voidSetting by a non-admin",
+   "body": {
+    "action": "voidSetting",
+    "sesi": "$sesi:fin",
+    "data": {
+     "tax": 11,
+     "service": 5
+    }
+   }
+  },
+  {
+   "name": "voidSetting out of range",
+   "body": {
+    "action": "voidSetting",
+    "sesi": "$sesi:adm",
+    "data": {
+     "tax": 101,
+     "service": 5
+    }
+   }
+  },
+  {
+   "name": "voidSetting missing service",
+   "body": {
+    "action": "voidSetting",
+    "sesi": "$sesi:adm",
+    "data": {
+     "tax": 11
+    }
+   }
+  },
+  {
+   "name": "voidSetting saved",
+   "ignore": [
+    "data.id",
+    "data.ids",
+    "data.setting.diubah",
+    "data.baris.*.id",
+    "data.baris.*.dibuat",
+    "data.baris.*.diubah",
+    "data.baris.*.batalAt",
+    "data.baris.*.cocokAt",
+    "data.abai.*.at"
+   ],
+   "body": {
+    "action": "voidSetting",
+    "sesi": "$sesi:adm",
+    "data": {
+     "tax": "11.5",
+     "service": 4
+    }
+   }
+  },
+  {
+   "name": "voidSimpan without the module",
+   "body": {
+    "action": "voidSimpan",
+    "sesi": "$sesi:none",
+    "data": {}
+   }
+  },
+  {
+   "name": "voidSimpan not an object",
+   "body": {
+    "action": "voidSimpan",
+    "sesi": "$sesi:fin",
+    "data": "x"
+   }
+  },
+  {
+   "name": "voidSimpan old screen",
+   "body": {
+    "action": "voidSimpan",
+    "sesi": "$sesi:fin",
+    "data": {
+     "tgl": "2026-09-12",
+     "pemesan": "Tamu"
+    }
+   }
+  },
+  {
+   "name": "voidSimpan missing fields",
+   "body": {
+    "action": "voidSimpan",
+    "sesi": "$sesi:fin",
+    "data": {
+     "tgl": "2026-02-31",
+     "bill": " B-9 ",
+     "oleh": "spoof"
+    }
+   }
+  },
+  {
+   "name": "voidSimpan negative",
+   "body": {
+    "action": "voidSimpan",
+    "sesi": "$sesi:fin",
+    "data": {
+     "tgl": "2026-09-12",
+     "bill": "B-9",
+     "item": "Kopi",
+     "penginput": "A",
+     "salah": "B",
+     "alasan": "x",
+     "subtotal": -1
+    }
+   }
+  },
+  {
+   "name": "voidSimpan one row (nominal computed)",
+   "ignore": [
+    "data.id",
+    "data.ids",
+    "data.setting.diubah",
+    "data.baris.*.id",
+    "data.baris.*.dibuat",
+    "data.baris.*.diubah",
+    "data.baris.*.batalAt",
+    "data.baris.*.cocokAt",
+    "data.abai.*.at"
+   ],
+   "body": {
+    "action": "voidSimpan",
+    "sesi": "$sesi:fin",
+    "data": {
+     "tgl": "2026-09-12",
+     "bill": "B-9",
+     "item": "Kopi",
+     "penginput": "A",
+     "salah": "B",
+     "alasan": "x",
+     "subtotal": "25000",
+     "service": 1250.4,
+     "tax": 2500,
+     "nominal": 1
+    }
+   }
+  },
+  {
+   "name": "voidSimpan old payload without subtotal",
+   "ignore": [
+    "data.id",
+    "data.ids",
+    "data.setting.diubah",
+    "data.baris.*.id",
+    "data.baris.*.dibuat",
+    "data.baris.*.diubah",
+    "data.baris.*.batalAt",
+    "data.baris.*.cocokAt",
+    "data.abai.*.at"
+   ],
+   "body": {
+    "action": "voidSimpan",
+    "sesi": "$sesi:fin",
+    "data": {
+     "tgl": "2026-09-12",
+     "bill": "B-10",
+     "item": "Teh",
+     "penginput": "A",
+     "salah": "B",
+     "alasan": "x",
+     "nominal": 8000,
+     "service": 99
+    }
+   }
+  },
+  {
+   "name": "voidSimpan edit a seeded row",
+   "body": {
+    "action": "voidSimpan",
+    "sesi": "$sesi:fin",
+    "data": {
+     "id": "vseed1",
+     "tgl": "2026-09-10",
+     "bill": "B-1",
+     "item": "Es Teh Manis",
+     "penginput": "Kasir A",
+     "salah": "Kasir A",
+     "alasan": "salah ketik lagi",
+     "subtotal": 12000,
+     "service": 600,
+     "tax": 1200
+    }
+   }
+  },
+  {
+   "name": "voidSimpan many items, bill-level split",
+   "ignore": [
+    "data.id",
+    "data.ids",
+    "data.setting.diubah",
+    "data.baris.*.id",
+    "data.baris.*.dibuat",
+    "data.baris.*.diubah",
+    "data.baris.*.batalAt",
+    "data.baris.*.cocokAt",
+    "data.abai.*.at"
+   ],
+   "body": {
+    "action": "voidSimpan",
+    "sesi": "$sesi:fin",
+    "data": {
+     "tgl": "2026-09-13",
+     "bill": "B-20",
+     "penginput": "A",
+     "salah": "B",
+     "alasan": "meja batal",
+     "service": 1000,
+     "tax": "2001",
+     "items": [
+      {
+       "item": "A",
+       "subtotal": 3333
+      },
+      {
+       "item": ""
+      },
+      "junk",
+      {
+       "item": "B",
+       "subtotal": 3333
+      },
+      {
+       "item": "C",
+       "subtotal": 3334
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "voidSimpan many items, all subtotal zero",
+   "ignore": [
+    "data.id",
+    "data.ids",
+    "data.setting.diubah",
+    "data.baris.*.id",
+    "data.baris.*.dibuat",
+    "data.baris.*.diubah",
+    "data.baris.*.batalAt",
+    "data.baris.*.cocokAt",
+    "data.abai.*.at"
+   ],
+   "body": {
+    "action": "voidSimpan",
+    "sesi": "$sesi:fin",
+    "data": {
+     "tgl": "2026-09-13",
+     "bill": "B-21",
+     "penginput": "A",
+     "salah": "B",
+     "alasan": "compliment",
+     "service": 500,
+     "items": [
+      {
+       "item": "X",
+       "subtotal": 0
+      },
+      {
+       "item": "Y",
+       "subtotal": 0
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "voidSimpan many without names",
+   "body": {
+    "action": "voidSimpan",
+    "sesi": "$sesi:fin",
+    "data": {
+     "tgl": "2026-09-13",
+     "bill": "",
+     "penginput": "A",
+     "salah": "B",
+     "alasan": "x",
+     "items": [
+      {
+       "item": " "
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "voidSimpan many negative bill tax",
+   "body": {
+    "action": "voidSimpan",
+    "sesi": "$sesi:fin",
+    "data": {
+     "tgl": "2026-09-13",
+     "bill": "B-22",
+     "penginput": "A",
+     "salah": "B",
+     "alasan": "x",
+     "tax": -5,
+     "items": [
+      {
+       "item": "Z",
+       "subtotal": 1
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "voidBatal without reason",
+   "body": {
+    "action": "voidBatal",
+    "sesi": "$sesi:fin",
+    "id": "vseed2",
+    "alasan": " "
+   }
+  },
+  {
+   "name": "voidBatal unknown",
+   "body": {
+    "action": "voidBatal",
+    "sesi": "$sesi:fin",
+    "id": "nope",
+    "alasan": "x"
+   }
+  },
+  {
+   "name": "voidBatal",
+   "body": {
+    "action": "voidBatal",
+    "sesi": "$sesi:fin",
+    "id": "vseed2",
+    "alasan": "dobel"
+   }
+  },
+  {
+   "name": "voidBatal twice",
+   "body": {
+    "action": "voidBatal",
+    "sesi": "$sesi:fin",
+    "id": "vseed2",
+    "alasan": "dobel"
+   }
+  },
+  {
+   "name": "voidSimpan edit a cancelled row",
+   "body": {
+    "action": "voidSimpan",
+    "sesi": "$sesi:fin",
+    "data": {
+     "id": "vseed2",
+     "tgl": "2026-09-11",
+     "bill": "B-2",
+     "item": "Nasi",
+     "penginput": "A",
+     "salah": "B",
+     "alasan": "x"
+    }
+   }
+  },
+  {
+   "name": "voidList after writes",
+   "method": "GET",
+   "ignore": [
+    "data.id",
+    "data.ids",
+    "data.setting.diubah",
+    "data.baris.*.id",
+    "data.baris.*.dibuat",
+    "data.baris.*.diubah",
+    "data.baris.*.batalAt",
+    "data.baris.*.cocokAt",
+    "data.abai.*.at"
+   ],
+   "query": {
+    "action": "voidList",
+    "dari": "2026-09-01",
+    "sampai": "2026-09-30"
+   }
+  },
+  {
+   "name": "briList",
+   "method": "GET",
+   "query": {
+    "action": "briList",
+    "dari": "2026-09-01",
+    "sampai": "2026-09-30"
+   }
+  },
+  {
+   "name": "briUnggah without the module",
+   "body": {
+    "action": "briUnggah",
+    "sesi": "$sesi:none",
+    "data": {
+     "baris": []
+    }
+   }
+  },
+  {
+   "name": "briUnggah nothing",
+   "body": {
+    "action": "briUnggah",
+    "sesi": "$sesi:fin",
+    "data": {
+     "baris": []
+    }
+   }
+  },
+  {
+   "name": "briUnggah only junk",
+   "body": {
+    "action": "briUnggah",
+    "sesi": "$sesi:fin",
+    "data": {
+     "baris": [
+      {
+       "tgl": "x",
+       "nominal": 5
+      },
+      {
+       "tgl": "2026-09-10",
+       "nominal": 0
+      },
+      "junk"
+     ]
+    }
+   }
+  },
+  {
+   "name": "briUnggah upsert (existing sidik keeps its match, duplicates get #k)",
+   "body": {
+    "action": "briUnggah",
+    "sesi": "$sesi:fin",
+    "data": {
+     "baris": [
+      {
+       "tgl": "2026-09-10",
+       "jam": "15.46",
+       "nominal": "300000",
+       "ket": "QRIS A baru",
+       "settle": "2026-09-11",
+       "booking": "bad"
+      },
+      {
+       "tgl": "2026-09-12",
+       "jam": 0.6013888,
+       "nominal": 150000,
+       "ket": ""
+      },
+      {
+       "tgl": "2026-09-12",
+       "jam": "14:26",
+       "nominal": 150000,
+       "ket": "dua"
+      },
+      {
+       "tgl": "2026-09-12",
+       "jam": "",
+       "nominal": 75000.6
+      },
+      {
+       "tgl": "2026-09-31",
+       "nominal": 5
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "briTambah missing",
+   "body": {
+    "action": "briTambah",
+    "sesi": "$sesi:fin",
+    "data": {
+     "tgl": "2026-09-12",
+     "nominal": 0
+    }
+   }
+  },
+  {
+   "name": "briTambah",
+   "ignore": [
+    "data.id",
+    "data.ids",
+    "data.setting.diubah",
+    "data.baris.*.id",
+    "data.baris.*.dibuat",
+    "data.baris.*.diubah",
+    "data.baris.*.batalAt",
+    "data.baris.*.cocokAt",
+    "data.abai.*.at"
+   ],
+   "body": {
+    "action": "briTambah",
+    "sesi": "$sesi:fin",
+    "data": {
+     "tgl": "2026-09-12",
+     "jam": "15:46",
+     "nominal": 300000,
+     "ket": "Sewa videotron"
+    }
+   }
+  },
+  {
+   "name": "briCocok nothing decided",
+   "body": {
+    "action": "briCocok",
+    "sesi": "$sesi:fin",
+    "data": {
+     "id": "bseed1"
+    }
+   }
+  },
+  {
+   "name": "briCocok match",
+   "body": {
+    "action": "briCocok",
+    "sesi": "$sesi:fin",
+    "data": {
+     "id": "bseed1",
+     "cara": "cocok",
+     "resId": "r1",
+     "dpId": "dp1",
+     "resNama": " Andi ",
+     "resTgl": "2026-09-20"
+    }
+   }
+  },
+  {
+   "name": "briCocok same DP on another row is refused",
+   "body": {
+    "action": "briCocok",
+    "sesi": "$sesi:fin",
+    "data": {
+     "id": "bseed2",
+     "cara": "cocok",
+     "resId": "r1",
+     "dpId": "dp1"
+    }
+   }
+  },
+  {
+   "name": "briCocok bulk, partial failure",
+   "body": {
+    "action": "briCocok",
+    "sesi": "$sesi:fin",
+    "data": {
+     "items": [
+      {
+       "id": "bseed2",
+       "cara": "bukan",
+       "catatan": " event corporate "
+      },
+      {
+       "id": "nope",
+       "cara": "lepas"
+      },
+      {
+       "id": "bseed2",
+       "cara": "bukan"
+      },
+      "junk"
+     ]
+    }
+   }
+  },
+  {
+   "name": "briBatal",
+   "body": {
+    "action": "briBatal",
+    "sesi": "$sesi:fin",
+    "id": "bseed2",
+    "alasan": "salah unggah"
+   }
+  },
+  {
+   "name": "briCocok on a cancelled row",
+   "body": {
+    "action": "briCocok",
+    "sesi": "$sesi:fin",
+    "data": {
+     "id": "bseed2",
+     "cara": "lepas"
+    }
+   }
+  },
+  {
+   "name": "briCocok release",
+   "body": {
+    "action": "briCocok",
+    "sesi": "$sesi:fin",
+    "data": {
+     "id": "bseed1",
+     "cara": "lepas"
+    }
+   }
+  },
+  {
+   "name": "briAbai without dpId",
+   "body": {
+    "action": "briAbai",
+    "sesi": "$sesi:fin",
+    "data": {}
+   }
+  },
+  {
+   "name": "briAbai without reason",
+   "body": {
+    "action": "briAbai",
+    "sesi": "$sesi:fin",
+    "data": {
+     "dpId": "dp9"
+    }
+   }
+  },
+  {
+   "name": "briAbai",
+   "body": {
+    "action": "briAbai",
+    "sesi": "$sesi:fin",
+    "data": {
+     "dpId": "dp9",
+     "resId": "r9",
+     "nama": "Budi",
+     "tgl": "2026-09-15",
+     "nominal": "250000",
+     "alasan": "tidak valid"
+    }
+   }
+  },
+  {
+   "name": "briAbai without a date",
+   "body": {
+    "action": "briAbai",
+    "sesi": "$sesi:fin",
+    "data": {
+     "dpId": "dp8",
+     "alasan": "x"
+    }
+   }
+  },
+  {
+   "name": "briList after writes",
+   "method": "GET",
+   "ignore": [
+    "data.id",
+    "data.ids",
+    "data.setting.diubah",
+    "data.baris.*.id",
+    "data.baris.*.dibuat",
+    "data.baris.*.diubah",
+    "data.baris.*.batalAt",
+    "data.baris.*.cocokAt",
+    "data.abai.*.at"
+   ],
+   "query": {
+    "action": "briList",
+    "dari": "2026-09-01",
+    "sampai": "2026-09-30"
+   }
+  },
+  {
+   "name": "briAbai pulih",
+   "body": {
+    "action": "briAbai",
+    "sesi": "$sesi:fin",
+    "data": {
+     "dpId": "dp9",
+     "pulih": 1
+    }
+   }
+  },
+  {
+   "name": "briList at the end (no range)",
+   "method": "GET",
+   "ignore": [
+    "data.id",
+    "data.ids",
+    "data.setting.diubah",
+    "data.baris.*.id",
+    "data.baris.*.dibuat",
+    "data.baris.*.diubah",
+    "data.baris.*.batalAt",
+    "data.baris.*.cocokAt",
+    "data.abai.*.at"
+   ],
+   "query": {
+    "action": "briList"
+   }
+  },
+  {
+   "name": "stats at the end",
+   "method": "GET",
+   "query": {
+    "action": "stats"
+   },
+   "ignore": [
+    "data.updated_at"
+   ]
+  }
+ ],
+ "setupSql": [
+  "INSERT INTO void_log (id,tgl,bill,item,penginput,salah,alasan,nominal,subtotal,service,tax,oleh,oleh_id,dibuat,diubah,diubah_oleh) VALUES ('vseed1','2026-09-10','B-1','Es Teh','Kasir A','Kasir A','salah ketik',11500,10000,500,1000,'Seed','u-seed',1790000000000,1790000000000,'Seed'),('vseed2','2026-09-11','B-2','Nasi','Kasir B','Dapur','batal',20000,0,0,0,'Seed','u-seed',1790000000001,1790000000001,'Seed')",
+  "INSERT INTO bri_mutasi (id,sidik,tgl,jam,nominal,ket,settle,booking,oleh,dibuat,diubah) VALUES ('bseed1','2026-09-10|15:46|300000|#0','2026-09-10','15:46',300000,'QRIS A',NULL,NULL,'Seed',1790000000000,1790000000000),('bseed2','2026-09-10|16:00|300000|#0','2026-09-10','16:00',300000,'QRIS B',NULL,NULL,'Seed',1790000000001,1790000000001)"
+ ]
 }
