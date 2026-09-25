@@ -3,8 +3,6 @@
 namespace App\Auth;
 
 use App\Modules\Jadwal\Services\HeadDirectory;
-use App\Support\Modules;
-use Illuminate\Database\ConnectionInterface;
 use Throwable;
 
 /**
@@ -46,12 +44,10 @@ class OfficeAccess
 
     private ?array $activeModules = null;
 
-    public function __construct(private readonly HeadDirectory $heads) {}
-
-    private function db(): ConnectionInterface
-    {
-        return Modules::db('account');
-    }
+    public function __construct(
+        private readonly HeadDirectory $heads,
+        private readonly AccountRepository $users,
+    ) {}
 
     private static function s(mixed $v): string
     {
@@ -69,12 +65,6 @@ class OfficeAccess
         'joinDate' => 'join_date',
     ];
 
-    public static function userColumnsSql(): string
-    {
-        return 'id, name, pin, active, keterangan, no_hp, talenta_id, username, '
-            .implode(', ', array_values(self::HR_COLUMNS));
-    }
-
     /** @return array<string,mixed>|null */
     public function userById(string $id): ?array
     {
@@ -82,9 +72,8 @@ class OfficeAccess
         if (array_key_exists($id, $this->userCache)) {
             return $this->userCache[$id];
         }
-        $r = $this->db()->selectOne('SELECT '.self::userColumnsSql().' FROM `users` WHERE id = ? LIMIT 1', [$id]);
 
-        return $this->userCache[$id] = $r ? (array) $r : null;
+        return $this->userCache[$id] = $this->users->userById($id);
     }
 
     public function forgetUser(string $id): void
@@ -101,27 +90,7 @@ class OfficeAccess
      */
     public function userByCredentials(string $login, string $pin): ?array
     {
-        $u = mb_strtolower(trim(self::s($login)), 'UTF-8');
-        if ($u === '') {
-            return null;
-        }
-        $pin = self::s($pin);
-        $cols = 'id, name, pin, active, keterangan, talenta_id, username';
-
-        $r = $this->db()->selectOne(
-            "SELECT $cols FROM `users`
-             WHERE TRIM(username) <> '' AND LOWER(TRIM(username)) = ? AND TRIM(pin) = ? AND active = 1 LIMIT 1",
-            [$u, $pin]
-        );
-        if ($r) {
-            return (array) $r;
-        }
-        $r = $this->db()->selectOne(
-            "SELECT $cols FROM `users` WHERE LOWER(TRIM(name)) = ? AND TRIM(pin) = ? AND active = 1 LIMIT 1",
-            [$u, $pin]
-        );
-
-        return $r ? (array) $r : null;
+        return $this->users->userByCredentials($login, $pin);
     }
 
     // ---------------------------------------------------------------- rules
@@ -206,17 +175,7 @@ class OfficeAccess
 
     public function activeModules(): array
     {
-        if ($this->activeModules !== null) {
-            return $this->activeModules;
-        }
-        $out = [];
-        foreach ($this->db()->select('SELECT `key` FROM `modules` WHERE active = 1 ORDER BY urut ASC, `key` ASC') as $r) {
-            if (self::s($r->key) !== '') {
-                $out[] = self::s($r->key);
-            }
-        }
-
-        return $this->activeModules = $out;
+        return $this->activeModules ??= $this->users->activeModuleKeys();
     }
 
     /** @return array<int,string> modules this user ADMINISTERS ('*' = superadmin). */
@@ -226,12 +185,7 @@ class OfficeAccess
         if (isset($this->adminCache[$uid])) {
             return $this->adminCache[$uid];
         }
-        $out = [];
-        foreach ($this->db()->select('SELECT `module` FROM `admins` WHERE user_id = ?', [$uid]) as $r) {
-            if (self::s($r->module) !== '') {
-                $out[] = self::s($r->module);
-            }
-        }
+        $out = $this->users->adminModules($uid);
         if (! in_array('*', $out, true)) {
             try {
                 $u = $this->userById($uid);
@@ -317,17 +271,17 @@ class OfficeAccess
     public function modules(string $userId): array
     {
         $uid = self::s($userId);
-        $rows = $this->db()->select('SELECT `module`, `access` FROM `grants` WHERE user_id = ?', [$uid]);
+        $rows = $this->users->grantRows($uid);
 
         $eff = [];
         foreach ($this->builtinModules($uid) as $k) {          // 0) built-in
             $eff[$k] = true;
         }
         foreach ($rows as $g) {                                // 1) '*'
-            if (self::s($g->module) !== '*') {
+            if ($g['module'] !== '*') {
                 continue;
             }
-            if ((int) $g->access === 1) {
+            if ($g['access'] === 1) {
                 foreach ($this->activeModules() as $k) {
                     $eff[$k] = true;
                 }
@@ -335,11 +289,11 @@ class OfficeAccess
         }
         $explicit = [];
         foreach ($rows as $g) {                                // 2) per module
-            $m = self::s($g->module);
+            $m = $g['module'];
             if ($m === '' || $m === '*') {
                 continue;
             }
-            if ((int) $g->access === 1) {
+            if ($g['access'] === 1) {
                 $eff[$m] = true;
                 $explicit[$m] = true;
             } else {
@@ -370,14 +324,7 @@ class OfficeAccess
     /** Raw grant rows (for the Kelola Akses checkboxes). */
     public function rawGrants(string $userId, int $access): array
     {
-        $out = [];
-        foreach ($this->db()->select('SELECT `module` FROM `grants` WHERE user_id = ? AND access = ?', [$userId, $access]) as $r) {
-            if (self::s($r->module) !== '') {
-                $out[] = self::s($r->module);
-            }
-        }
-
-        return $out;
+        return $this->users->grantModulesByAccess($userId, $access);
     }
 
     /**
