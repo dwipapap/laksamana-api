@@ -6,7 +6,9 @@ use Illuminate\Support\Facades\Route;
 Route::middleware(['auth:sanctum', 'module:jadwal'])->prefix('jadwal')->group(function () {
     Route::get('cells', [C::class, 'cells']);
     Route::put('cells', [C::class, 'saveCells']);
+    Route::delete('cells', [C::class, 'clearAll'])->middleware('module:jadwal,admin');
     Route::get('shifts', [C::class, 'shifts']);
+    Route::get('roster', [C::class, 'roster']);
     Route::get('requests', [C::class, 'requests']);
     Route::post('requests', [C::class, 'createRequest']);
     Route::post('requests/{id}/decision', [C::class, 'decide']);

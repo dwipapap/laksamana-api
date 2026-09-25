@@ -26,6 +26,7 @@ Cell fields are the legacy `jadwal_sel` columns, abbreviated as in the old app:
 |---|---|---|
 | GET | `/cells?from=&to=` | `data` = `[{u,d,t,m,s,n}]` in range. `meta` = `{from, to}`. |
 | PUT | `/cells` | Body `{cells: [{u,d,t,m?,s?,n?}], clear: [{u,d}]}`. Upserts `cells`, deletes `clear` cells, in one transaction. `m/s` accept `HH:MM` (max 5 chars); `n` max 120 chars. Returns `{saved, isi, hapus, ts}`. Behaves exactly like the legacy `simpanSel` rows. |
+| DELETE | `/cells` | Wipe everything (Admin Modul only). Body `{konfirmasi: 'HAPUS SEMUA'}` — any other value returns 422 and nothing is deleted. Deletes all cells and all requests, keeps settings. Returns `{cleared, sel, pengajuan, oleh, ts}`. Same rules as the legacy `kosongkanSemua`. |
 
 ## Shifts (read model for absensi and other modules)
 
@@ -37,10 +38,16 @@ Cell fields are the legacy `jadwal_sel` columns, abbreviated as in the old app:
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/requests` | `data` = pengajuan list (all in progress plus the 200 most recently decided). |
+| GET | `/requests` | Filters (all optional, combine freely): `mine=1` (caller's own — wins over `user`), `user=<id>`, `status=<a,b>` (comma-separated, uppercase), `from=`/`to=` (`YYYY-MM-DD`; a request matches if it spans at least one day inside the range). Full table, newest first — no row cap. Same visibility as legacy `getAll`: any module holder sees all rows, filters only narrow. |
 | POST | `/requests` | Body `{userId?, jenis, dari, sampai?, alasan?, shift?, jamMulai?, jamSelesai?}`. `userId` is forced to the caller unless an admin. `status` is always `MENUNGGU`. Returns 201 `{saved, id}`. |
 | POST | `/requests/{id}/decision` | Body `{status: MENUNGGU_HRD\|DISETUJUI\|DITOLAK\|MENUNGGU, nota?}`. Two-step approval enforced: Kepala Divisi forwards `MENUNGGU` → `MENUNGGU_HRD`, then HRD (admin) approves → `DISETUJUI`; either step may `DITOLAK`. |
 | DELETE | `/requests/{id}` | The requester or a head may delete. Returns `{deleted, id}`. |
+
+## Roster (Divisi + crew read model)
+
+| Method | Path | Returns |
+|---|---|---|
+| GET | `/roster` | Every Office User with their Divisi attached: `[{id, name, keterangan, noHp, talentaId, active, branch, organization, jobPosition, jobLevel, employmentStatus, joinDate, divisi}]`. `divisi` follows the legacy `jdw_divisi_user` rule: Penempatan Divisi (`divOverride`) wins, then Tim words (`bar`/`bartender`, `kitchen`/`dapur`, `floor`/`service`/`waiter`/…, `cashier`/`kasir`), with `office`/`kantor` winning over every division word; otherwise `nonshift`. Combine with `/heads` to sort heads first, as the screens do. |
 
 ## Settings and heads
 

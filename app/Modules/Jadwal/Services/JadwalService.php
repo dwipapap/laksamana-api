@@ -136,6 +136,19 @@ class JadwalService
         return self::DIV_NONSHIFT;
     }
 
+    /** Office roster with each User's Divisi attached (read model for new apps). */
+    public function rosterWithDivisi(): array
+    {
+        $out = [];
+        foreach ($this->sesi->roster() as $uid => $m) {
+            $m = (array) $m;
+            $m['divisi'] = $this->divisiUser((string) $uid);
+            $out[] = $m;
+        }
+
+        return $out;
+    }
+
     public function isHead(?array $u, string $div): bool
     {
         if (! $u) {
@@ -280,6 +293,49 @@ class JadwalService
         ));
 
         return ['setting' => $this->setting(), 'sel' => $sel, 'pengajuan' => $aju];
+    }
+
+    /**
+     * Filtered request listing for v1 (Pengajuan + Jadwal Saya screens).
+     * Same visibility as legacy getAll — any module holder sees all rows,
+     * filters only narrow. Full table, newest first (no 200-row cap).
+     * Supported keys: userId, status[] (uppercase), dari / sampai (YYYY-MM-DD,
+     * overlap: the request spans at least one day inside the range).
+     */
+    public function listRequests(array $f): array
+    {
+        $sql = 'SELECT * FROM `jadwal_pengajuan` WHERE 1 = 1';
+        $par = [];
+        if (($f['userId'] ?? '') !== '') {
+            $sql .= ' AND `user_id` = ?';
+            $par[] = $f['userId'];
+        }
+        $st = array_values(array_filter(
+            array_map(fn ($s) => strtoupper(trim((string) $s)), (array) ($f['status'] ?? [])),
+            fn ($s) => $s !== ''
+        ));
+        if (count($st) > 0) {
+            $sql .= ' AND `status` IN ('.implode(',', array_fill(0, count($st), '?')).')';
+            foreach ($st as $s) {
+                $par[] = $s;
+            }
+        }
+        $dari = self::tglValid($f['dari'] ?? '');
+        $sampai = self::tglValid($f['sampai'] ?? '');
+        if ($dari !== '' && $sampai !== '' && $sampai < $dari) {
+            [$dari, $sampai] = [$sampai, $dari];
+        }
+        if ($dari !== '') {
+            $sql .= ' AND `tgl_selesai` >= ?';
+            $par[] = $dari;
+        }
+        if ($sampai !== '') {
+            $sql .= ' AND `tgl_mulai` <= ?';
+            $par[] = $sampai;
+        }
+        $sql .= ' ORDER BY `dibuat_at` DESC';
+
+        return array_map(fn ($r) => $this->pengajuanJson((array) $r), $this->db()->select($sql, $par));
     }
 
     public function pengajuanJson(array $r): array
