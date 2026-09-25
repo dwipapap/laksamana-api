@@ -1,6 +1,7 @@
 <?php
 
 use App\Modules\Stock\Http\V1\StockController as C;
+use App\Modules\Stock\Http\V1\StockEntriesController as E;
 use Illuminate\Support\Facades\Route;
 
 // One Backend, several Panels (Office Modul): ordering, purchasing, hpp, usage.
@@ -47,4 +48,38 @@ Route::middleware(['auth:sanctum', 'module:purchasing'])->prefix('stock')->group
     Route::post('orders/archive', [C::class, 'archive'])->defaults('to', 'archive');
     Route::post('orders/unarchive', [C::class, 'archive'])->defaults('to', 'unarchive');
     Route::post('orders/import', [C::class, 'import']);
+});
+
+// ─── #35: Central Kitchen, Usage Panel records, activity log ───
+
+// CK ledger: everyone who sees stock reads it; manual movements are Purchasing's
+// Central Kitchen tab; the outlet → CK delivery is sent from Ordering.
+Route::middleware(['auth:sanctum', $any])->prefix('stock/ck')->group(function () {
+    Route::get('balance', [E::class, 'ckBalance']);
+    Route::get('movements', [E::class, 'index'])->defaults('kind', 'ck');
+    Route::get('movements/{id}', [E::class, 'show'])->defaults('kind', 'ck');
+});
+Route::middleware(['auth:sanctum', 'module:purchasing'])->prefix('stock/ck')->group(function () {
+    Route::post('movements', [E::class, 'store'])->defaults('kind', 'ck');
+    Route::patch('movements/{id}', [E::class, 'update'])->defaults('kind', 'ck');
+    Route::delete('movements/{id}', [E::class, 'destroy'])->defaults('kind', 'ck');
+});
+Route::middleware(['auth:sanctum', 'module:ordering|purchasing'])->prefix('stock')->group(function () {
+    Route::post('ck/deliveries', [E::class, 'ckDeliver']);
+    Route::post('logs', [E::class, 'logStore']);
+});
+// Log Aktivitas is an admin page of Purchasing (it names people and what they changed).
+Route::middleware(['auth:sanctum', 'module:purchasing,admin'])->get('stock/logs', [E::class, 'logIndex']);
+
+// The Usage Panel (Pemakaian): Daily SO, event usage, waste, serah terima.
+Route::middleware(['auth:sanctum', 'module:usage'])->prefix('stock')->group(function () {
+    foreach (['usage', 'waste', 'handovers', 'opname'] as $k) {
+        Route::get($k, [E::class, 'index'])->defaults('kind', $k);
+        Route::post($k, [E::class, 'store'])->defaults('kind', $k);
+        Route::get("$k/{id}", [E::class, 'show'])->defaults('kind', $k);
+        Route::patch("$k/{id}", [E::class, 'update'])->defaults('kind', $k);
+        Route::delete("$k/{id}", [E::class, 'destroy'])->defaults('kind', $k);
+    }
+    Route::get('waste/{id}/photo', [E::class, 'photo'])->defaults('kind', 'waste');
+    Route::get('handovers/{id}/photo', [E::class, 'photo'])->defaults('kind', 'handovers');
 });
