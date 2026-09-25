@@ -9,6 +9,7 @@ This is the contract for **laksamana-office-vue**, the old laksamana-office if i
   - failure: `{error: {code, message, details?}}`
 - **Fields:** records are the app's own objects (`name`, `divId`, `empId`, `month`, `date`, …), exactly as stored in each row's `data` JSON. Empty objects stay `{}`.
 - **Personal data:** `employees` rows contain personal data and access PINs, just as the legacy `getAll` returns them. The module gate is the only protection, as in the old app. Nothing in this module logs request bodies or query bindings.
+- **Admin pages:** the frontend gates Kru, Kalender HR, Pengaturan and Audit Log behind `manageOps`, which is the Office **hr module admin** status. v1 enforces it on the server: writes to `employees` and `calendar`, `PUT /settings/{key}` and `GET /audit` need the module admin (superadmin or an hr admin), or they return `403 forbidden`. Reading `employees`/`calendar`/`settings` stays open to every hr user, because every page needs the roster. The other in-app permissions (`appRole`: ceo/hr/manager) are data the UI applies, exactly as in the old app.
 
 ## Concurrency: one version for the whole document
 
@@ -48,6 +49,7 @@ Pages of `deploy/hr/index.html` (`go('…')`):
 |---|---|---|
 | GET | `/state` | The full document, the same as legacy `getAll` (collections, `audit`, `kpiActuals`, `monthlyInputs`, `attendance`, `settings`, `version`, `_rev`, `_savedAt`, `_savedBy`). `meta.version` = rev. |
 | GET | `/stats` | Row counts, `_rev`, `env`, `db` |
+| GET | `/training-stats` | Akademi training completion per Office user id (`{userId: {mandPct, mandTotal, mandDone, total, done, certified}}`), read in-process from the akademi service. The old page fetched akademi's `trainingStats` itself. |
 
 ## Records
 
