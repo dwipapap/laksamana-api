@@ -13,7 +13,8 @@
   "mkt": "SELECT CONCAT(name,'|',pin) FROM users WHERE id='u-aurel'",
   "fin": "SELECT CONCAT(name,'|',pin) FROM users WHERE id='u-novi'",
   "adm": "SELECT CONCAT(name,'|',pin) FROM users WHERE id='u-wandi'",
-  "none": "SELECT CONCAT(name,'|',pin) FROM users WHERE id='u-adit'"
+  "none": "SELECT CONCAT(name,'|',pin) FROM users WHERE id='u-adit'",
+  "inv": "SELECT CONCAT(name,'|',pin) FROM users WHERE id='u-dwipa'"
  },
  "cases": [
   {
@@ -1154,6 +1155,253 @@
    ],
    "query": {
     "action": "briList"
+   }
+  },
+  {
+   "name": "investorRingkas without a session",
+   "body": {
+    "action": "investorRingkas"
+   }
+  },
+  {
+   "name": "investorRingkas without the module",
+   "body": {
+    "action": "investorRingkas",
+    "sesi": "$sesi:none"
+   }
+  },
+  {
+   "name": "investorRingkas",
+   "ignore": [
+    "data.ts",
+    "data.dividen",
+    "data.event",
+    "data.eventLebih",
+    "data.promo",
+    "data.promoLebih",
+    "data.gagal"
+   ],
+   "body": {
+    "action": "investorRingkas",
+    "sesi": "$sesi:inv"
+   }
+  },
+  {
+   "name": "investorAgenda",
+   "ignore": [
+    "data.ts",
+    "data.dividen",
+    "data.event",
+    "data.eventLebih",
+    "data.promo",
+    "data.promoLebih",
+    "data.gagal"
+   ],
+   "body": {
+    "action": "investorAgenda",
+    "sesi": "$sesi:inv"
+   }
+  },
+  {
+   "name": "investorLaporUpload by a non-admin",
+   "body": {
+    "action": "investorLaporUpload",
+    "sesi": "$sesi:inv",
+    "bulan": "2026-08",
+    "berkas": {
+     "balance": {
+      "dataBase64": "JVBERi0xLjQKJSBwYXJpdHkgdGVzdAoxIDAgb2JqIDw8Pj4gZW5kb2JqCnRyYWlsZXIgPDw+PgolJUVPRgo="
+     }
+    }
+   }
+  },
+  {
+   "name": "investorLaporUpload nothing",
+   "body": {
+    "action": "investorLaporUpload",
+    "sesi": "$sesi:adm",
+    "bulan": "2026-08",
+    "berkas": {}
+   }
+  },
+  {
+   "name": "investorLaporUpload all failing",
+   "body": {
+    "action": "investorLaporUpload",
+    "sesi": "$sesi:adm",
+    "bulan": "2026-8",
+    "berkas": {
+     "balance": {
+      "dataBase64": "JVBERi0xLjQKJSBwYXJpdHkgdGVzdAoxIDAgb2JqIDw8Pj4gZW5kb2JqCnRyYWlsZXIgPDw+PgolJUVPRgo="
+     }
+    }
+   }
+  },
+  {
+   "name": "investorLaporUpload partial",
+   "ignore": [
+    "data.lapor.*.*.at",
+    "data.lapor.*.*.oleh"
+   ],
+   "body": {
+    "action": "investorLaporUpload",
+    "sesi": "$sesi:adm",
+    "bulan": "2026-08",
+    "berkas": {
+     "balance": {
+      "dataBase64": "data:application/pdf;base64,JVBERi0xLjQKJSBwYXJpdHkgdGVzdAoxIDAgb2JqIDw8Pj4gZW5kb2JqCnRyYWlsZXIgPDw+PgolJUVPRgo=",
+      "fileName": "Balance Agu.pdf"
+     },
+     "ledger": {
+      "dataBase64": "bm90IGEgcGRm"
+     },
+     "cash": {
+      "dataBase64": "JVBERi0xLjQKJSBwYXJpdHkgdGVzdAoxIDAgb2JqIDw8Pj4gZW5kb2JqCnRyYWlsZXIgPDw+PgolJUVPRgo="
+     }
+    }
+   }
+  },
+  {
+   "name": "investorLaporUpload bad base64 and empty",
+   "ignore": [
+    "data.lapor.*.*.at",
+    "data.lapor.*.*.oleh"
+   ],
+   "body": {
+    "action": "investorLaporUpload",
+    "sesi": "$sesi:adm",
+    "bulan": "2026-09",
+    "berkas": {
+     "balance": {
+      "dataBase64": "!!!"
+     },
+     "ledger": {}
+    }
+   }
+  },
+  {
+   "name": "investorLaporUpload replaces",
+   "ignore": [
+    "data.lapor.*.*.at",
+    "data.lapor.*.*.oleh"
+   ],
+   "body": {
+    "action": "investorLaporUpload",
+    "sesi": "$sesi:adm",
+    "bulan": "2026-08",
+    "berkas": {
+     "balance": {
+      "dataBase64": "JVBERi0xLjQKJSBwYXJpdHkgdGVzdAoxIDAgb2JqIDw8Pj4gZW5kb2JqCnRyYWlsZXIgPDw+PgolJUVPRgo=",
+      "fileName": "Balance v2.pdf"
+     }
+    }
+   }
+  },
+  {
+   "name": "investorLaporFile",
+   "body": {
+    "action": "investorLaporFile",
+    "sesi": "$sesi:inv",
+    "bulan": "2026-08",
+    "jenis": "balance"
+   }
+  },
+  {
+   "name": "investorLaporFile missing",
+   "body": {
+    "action": "investorLaporFile",
+    "sesi": "$sesi:inv",
+    "bulan": "2026-08",
+    "jenis": "ledger"
+   }
+  },
+  {
+   "name": "investorLaporHapus by a non-admin",
+   "body": {
+    "action": "investorLaporHapus",
+    "sesi": "$sesi:inv",
+    "bulan": "2026-08",
+    "jenis": "balance"
+   }
+  },
+  {
+   "name": "investorLaporHapus",
+   "body": {
+    "action": "investorLaporHapus",
+    "sesi": "$sesi:adm",
+    "bulan": "2026-08",
+    "jenis": "balance"
+   }
+  },
+  {
+   "name": "analyticsGet",
+   "method": "GET",
+   "query": {
+    "action": "analyticsGet"
+   }
+  },
+  {
+   "name": "analyticsSave not an object",
+   "body": {
+    "action": "analyticsSave",
+    "data": "x"
+   }
+  },
+  {
+   "name": "analyticsSave",
+   "body": {
+    "action": "analyticsSave",
+    "oleh": "Parity",
+    "data": {
+     "laporan": {
+      "2026-08": {
+       "url": "a/b",
+       "total": 1.5
+      }
+     },
+     "setting": {},
+     "promo": []
+    }
+   }
+  },
+  {
+   "name": "analyticsAkses not an object",
+   "body": {
+    "action": "analyticsAkses",
+    "akses": "x"
+   }
+  },
+  {
+   "name": "analyticsAkses",
+   "body": {
+    "action": "analyticsAkses",
+    "akses": {
+     "staf": {
+      "harian": 9,
+      "menu": -1
+     },
+     "x": "junk"
+    }
+   }
+  },
+  {
+   "name": "analyticsPeran",
+   "body": {
+    "action": "analyticsPeran",
+    "peran": {
+     "#u-a": "manajemen",
+     "#u-b": "viewer-with-a-very-long-role-name"
+    }
+   }
+  },
+  {
+   "name": "analyticsGet after",
+   "method": "GET",
+   "ignore": [
+    "data.ts"
+   ],
+   "query": {
+    "action": "analyticsGet"
    }
   },
   {
