@@ -60,3 +60,10 @@ Response envelope: `{ok, data}`, always HTTP 200. The default action is `getAll`
 - `/api/v1/reservasi/reservations/{id}/dp`: DP payments and their proof files.
 - `/api/v1/reservasi/master`: versioned with `_ver`.
 - `/api/v1/reservasi/files/{key}`
+
+## Port notes (#32: compat core)
+
+- Ported: `getAll` (+ `_ver`), `getFile`, `putFile`, `stats`, `ping` and `saveAll` (`APP_LAWAS`, the global `_ver` under `FOR UPDATE`, photo externalisation to `@f:` files, file GC driven by the payload, the `updated_at`-guarded upsert, delete-missing that never empties the table from an empty payload, audit `INSERT IGNORE` trimmed to 500, master) in `App\Modules\Reservasi\Services\ReservasiState`. Byte-identical per parity, with the three tables diffed as well.
+- Writes take the legacy `flock` on `<DATA_DIR>/.lock` (so old and new backends serialise during cutover) inside a NamedLock.
+- The connection keeps the server sql_mode (`server_sql_mode`, #97).
+- v1 core: `docs/api/reservasi.md`. #33 completes it per screen and carries the milestone.

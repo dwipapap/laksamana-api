@@ -1,0 +1,53 @@
+{
+  "dir": "reservasi-mysql",
+  "legacyPath": "reservasi-api-mysql",
+  "dbEnv": "RESERVASI",
+  "db": "lakk5493_db_reservasi",
+  "ignore": ["data.ts", "data.backend", "data.db", "data.folderFoto", "data.amanDiLuarWeb"],
+  "cases": [
+    {"name": "ping", "method": "GET", "query": {"action": "ping"}},
+    {"name": "getAll", "method": "GET", "query": {"action": "getAll"}},
+    {"name": "getAll is the GET default", "method": "GET", "query": {}},
+    {"name": "stats", "method": "GET", "query": {"action": "stats"}},
+    {"name": "unknown action", "body": {"action": "hapusSemua"}},
+    {"name": "POST without action", "body": {}},
+
+    {"name": "getFile without a key", "method": "GET", "query": {"action": "getFile"}},
+    {"name": "getFile missing file", "method": "GET", "query": {"action": "getFile", "key": "r:nope:dp"}},
+    {"name": "putFile without a key", "body": {"action": "putFile", "data": {"data": "x"}}},
+    {"name": "putFile", "body": {"action": "putFile", "data": {"key": "r:abc/../x:dp", "data": "data:image/png;base64,AAAA"}}},
+    {"name": "getFile via GET (key sanitised)", "method": "GET", "query": {"action": "getFile", "key": "r:abc/../x:dp"}},
+    {"name": "getFile via POST data.key", "body": {"action": "getFile", "data": {"key": "r:abc/../x:dp"}}},
+    {"name": "getFile via POST key", "body": {"action": "getFile", "key": "r:abc/../x:dp"}},
+    {"name": "putFile empty deletes", "body": {"action": "putFile", "data": {"key": "r:abc/../x:dp", "data": ""}}},
+    {"name": "getFile after delete", "method": "GET", "query": {"action": "getFile", "key": "r:abc/../x:dp"}},
+
+    {"name": "saveAll data not an object", "body": {"action": "saveAll", "data": "x", "baseVer": 6064}},
+    {"name": "saveAll without baseVer (APP_LAWAS)", "body": {"action": "saveAll", "data": {"reservations": []}}},
+    {"name": "saveAll stale baseVer -> conflict", "body": {"action": "saveAll", "baseVer": 1, "data": {"reservations": []}}},
+    {"name": "saveAll empty payload keeps the table", "body": {"action": "saveAll", "baseVer": "6064", "data": {"reservations": [], "audit": []}}},
+    {"name": "stats after empty save", "method": "GET", "query": {"action": "stats"}},
+    {"name": "saveAll subset: upsert, delete-missing, photos to disk, audit, master", "body": {"action": "saveAll", "baseVer": 6065, "data": {
+      "reservations": [
+        {"id": "rpar1", "name": "Parity Satu", "phone": "0812", "date": "2026-10-01", "time": "19:30:00-extra", "pax": "12", "status": "Confirmed", "picName": "Host", "source": "IG", "dpAmount": "500000", "updatedAt": 1790000000000, "createdAt": 1790000000000,
+         "dpProofData": "data:image/png;base64,QUJD", "docReqData": "@f:r:rpar1:doc", "dps": [{"id": "dp1", "proofData": "data:image/jpeg;base64,REVG", "nominal": 500000}, {"proofData": "data:x"}], "meta": {}},
+        {"id": "rpar2", "name": 12345, "date": "bad", "updatedAt": 5},
+        {"name": "no id"}, "junk"
+      ],
+      "audit": [{"id": "apar1", "ts": 1790000000001, "msg": "a/b"}, {"ts": 1}],
+      "master": {"reviews": [{"id": "rv1", "proofData": "data:a", "proof2Data": "data:b"}], "feedbacks": [{"id": "fb1", "proofData": "data:c"}, {"proofData": "data:d"}], "tables": ["Meja 1"]}
+    }}},
+    {"name": "getAll after subset save", "method": "GET", "query": {"action": "getAll"}},
+    {"name": "stats after subset save", "method": "GET", "query": {"action": "stats"}},
+    {"name": "getFile an externalised DP proof", "method": "GET", "query": {"action": "getFile", "key": "p:rpar1:dp1"}},
+    {"name": "getFile proof2 (rv2:, not rv:)", "method": "GET", "query": {"action": "getFile", "key": "rv2:rv1"}},
+    {"name": "saveAll older updatedAt does not overwrite; unreferenced files are collected", "body": {"action": "saveAll", "baseVer": 6066, "data": {
+      "reservations": [{"id": "rpar1", "name": "OLDER", "updatedAt": 1, "dpProofData": "@f:r:rpar1:dp"}],
+      "audit": []
+    }}},
+    {"name": "getAll at the end", "method": "GET", "query": {"action": "getAll"}},
+    {"name": "stats at the end", "method": "GET", "query": {"action": "stats"}},
+    {"name": "getFile a collected file", "method": "GET", "query": {"action": "getFile", "key": "p:rpar1:dp1"}},
+    {"name": "getFile a kept file", "method": "GET", "query": {"action": "getFile", "key": "r:rpar1:dp"}}
+  ]
+}
