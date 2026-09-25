@@ -1,6 +1,11 @@
 # stock — purchasing, ordering, central kitchen, usage/waste, HPP
 
-**Status:** part 1 (#34) done — `items.php`, `vendors.php`, `orders.php`, `stock.php` on Laravel (`app/Modules/Stock`), v1 in [docs/api/stock.md](../api/stock.md), parity `tools/parity/cases/stock.json`. Parts 2–4 (#35–#37) pending.
+**Status:** part 1 (#34) done — `items.php`, `vendors.php`, `orders.php`, `stock.php` on Laravel (`app/Modules/Stock`), v1 in [docs/api/stock.md](../api/stock.md), parity `tools/parity/cases/stock.json`. Part 2 (#35) done — `ck.php`, `usage.php`, `waste.php`, `serah.php`, `opname.php`, `log.php`; Usage Panel e2e `tools/e2e/stock-usage.mjs`. Parts 3–4 (#36–#37) pending.
+
+Port notes (part 2):
+- **`pur_ada_baris()` quirk kept (#113).** Its closed table list lacks `serah_terima` and `ck_stock`: a serah terima edit is saved and then answered 500; a CK `simpan` with an `id` answers 500 before writing. The compat route does the same; v1 is not affected.
+- `activity_log`'s runtime `CREATE TABLE IF NOT EXISTS` is not ported (the table exists live); a missing table gives legacy's swallowed answers (`dicatat: 0`, `[]`).
+- v1 applies the team scope to single reads, photos and writes too (legacy scoped lists only).
 
 Port notes (part 1):
 - **Time is WIB, explicitly.** Legacy used `date()`, i.e. the hosting's zone; the stored order times (peaking 16:00–01:00) show that zone is WIB. Order numbers, batch ids, `waktu` and CK row ids use `Asia/Jakarta`.
