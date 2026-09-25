@@ -1,0 +1,95 @@
+{
+  "dir": "stock-mysql",
+  "legacyPath": "stock-api-mysql",
+  "dbEnv": "STOCK",
+  "db": "lakk5493_db_stock",
+  "ignore": ["time", "db"],
+  "cases": [
+    { "name": "items ping (before token and DB)", "file": "items.php", "method": "GET", "query": { "action": "ping" } },
+    { "name": "orders ping", "file": "orders.php", "method": "GET", "query": { "action": "ping" } },
+    { "name": "items GET", "file": "items.php", "method": "GET", "query": { "t": "1" } },
+    { "name": "vendors GET", "file": "vendors.php", "method": "GET", "query": {} },
+    { "name": "orders GET (bare array)", "file": "orders.php", "method": "GET", "query": {} },
+    { "name": "orders stats", "file": "orders.php", "method": "GET", "query": { "action": "stats" } },
+    { "name": "orders batches all", "file": "orders.php", "method": "GET", "query": { "action": "batches" } },
+    { "name": "orders batches per team + date", "file": "orders.php", "method": "GET", "query": { "action": "batches", "tim": " Kitchen ", "tgl": "2026-09-23" } },
+    { "name": "orders batches per team", "file": "orders.php", "method": "GET", "query": { "action": "batches", "tim": "$each" }, "each": "SELECT DISTINCT tim FROM orders WHERE tim <> ''" },
+    { "name": "stock GET (empty table)", "file": "stock.php", "method": "GET", "query": { "type": "stock" } },
+
+    { "name": "items POST not JSON object", "file": "items.php", "body": "x" },
+    { "name": "items unknown action", "file": "items.php", "body": { "action": "nope" } },
+    { "name": "vendors POST without action", "file": "vendors.php", "body": {} },
+    { "name": "orders unknown action", "file": "orders.php", "body": { "action": "zap" } },
+
+    { "name": "addProduct empty name", "file": "items.php", "body": { "action": "addProduct", "productName": "  " } },
+    { "name": "addProduct new (HPP row born)", "file": "items.php", "body": { "action": "addProduct", "productName": "Parity Tepung", "primaryVendor": "Air Angkasa", "backupVendors": "399 Rasa Sayang, ,Air Angkasa", "units": "Kg, Gram,Kg", "kategori": " DRY ITEM ", "area": "Bar,bar, Floor", "caraBeli": "JEMPUT", "satuanDasar": "Gram", "isi": { "Kg": 1000, "gram": 5, "Dus": 0, "Sak": "25000" } } },
+    { "name": "addProduct preserve-if-null keeps the rest", "file": "items.php", "body": { "action": "addProduct", "productName": "Parity Tepung", "primaryVendor": "399 Rasa Sayang" } },
+    { "name": "addProduct CK product forces Pack units", "file": "items.php", "body": { "action": "addProduct", "productName": "Parity Sambal CK", "primaryVendor": "", "units": ["Botol"], "sumber": "ck", "packIsi": 500, "packSatuan": "Gram", "diOutlet": true } },
+    { "name": "addProduct both adds Pack units", "file": "items.php", "body": { "action": "addProduct", "productName": "Parity Both", "primaryVendor": "Air Angkasa", "units": ["Dus"], "sumber": "BOTH", "packIsi": 0, "packSatuan": "Pcs", "diOutlet": false, "aktif": false } },
+    { "name": "addProduct rename follows into HPP", "file": "items.php", "body": { "action": "addProduct", "productName": "Alpukat Mentega Parity", "primaryVendor": "Lisa", "oldProductName": "Alpukat Mentega" } },
+    { "name": "importProducts not a list", "file": "items.php", "body": { "action": "importProducts", "rows": { "a": 1 } } },
+    { "name": "importProducts upsert by name", "file": "items.php", "body": { "action": "importProducts", "rows": [
+      { "nama": "parity tepung", "utama": "Air Angkasa" }, { "nama": "Parity Import Baru", "satuan": "Liter", "area": ["Kitchen"] }, { "nama": " " }, 5 ] } },
+    { "name": "deleteProduct", "file": "items.php", "body": { "action": "deleteProduct", "productName": "Parity Both" } },
+    { "name": "items GET after writes", "file": "items.php", "method": "GET", "query": {} },
+
+    { "name": "addVendor empty name", "file": "vendors.php", "body": { "action": "addVendor", "vendorName": "" } },
+    { "name": "addVendor new", "file": "vendors.php", "body": { "action": "addVendor", "vendorName": "Parity Vendor", "vendorPhone": "6281", "perluJadwalJemput": 1, "tutupHari": "6,0,0,9,x", "penerima": " CV Parity ", "bank": "BCA", "norek": " 123 " } },
+    { "name": "addVendor preserve-if-null keeps bank", "file": "vendors.php", "body": { "action": "addVendor", "vendorName": "Parity Vendor", "vendorPhone": "6282" } },
+    { "name": "addVendor rename", "file": "vendors.php", "body": { "action": "addVendor", "vendorName": "Parity Vendor 2", "vendorPhone": "6283", "oldVendorName": "Parity Vendor" } },
+    { "name": "importVendors", "file": "vendors.php", "body": { "action": "importVendors", "rows": [{ "nama": "PARITY VENDOR 2", "whatsapp": "6284" }, { "nama": "Parity Vendor 3", "tutupHari": [1, 1, 3] }, null] } },
+    { "name": "deleteVendor", "file": "vendors.php", "body": { "action": "deleteVendor", "vendorName": "Parity Vendor 3" } },
+    { "name": "vendors GET after writes", "file": "vendors.php", "method": "GET", "query": {} },
+
+    { "name": "batchOrder empty", "file": "orders.php", "body": { "action": "batchOrder", "orders": [] } },
+    { "name": "batchOrder unknown target batch", "file": "orders.php", "body": { "action": "batchOrder", "batchId": "BATCH-NOPE", "orders": [{ "item": "X", "qty": 1, "unit": "Kg" }] } },
+    { "name": "batchOrder new batch", "file": "orders.php", "body": { "action": "batchOrder", "batchName": "Parity", "tim": "Bar", "orders": [
+      { "item": "Parity Lemon", "qty": "2", "unit": "Kg", "note": "", "tglDatang": "2031-01-02", "pic": "Kru" },
+      { "item": "", "qty": 1 }, "x",
+      { "item": "12 Botol", "qty": 1.5, "unit": "Botol", "note": "dingin", "tglDatang": "2031-01-02", "pic": "Kru" }
+    ] }, "ignore": ["batchId", "orders.*.nomorOrder", "orders.*.timestamp", "orders.*.batchId"] },
+    { "name": "batchOrder join a batch: same item+unit summed, other unit new row, target date wins", "file": "orders.php", "body": { "action": "batchOrder", "batchId": "BATCH-260922-191021-789F", "orders": [
+      { "item": "buntut", "qty": 2, "unit": "Kg", "note": "tambahan", "tglDatang": "2031-05-05" },
+      { "item": "Buntut", "qty": 1, "unit": "Kg", "note": "-" },
+      { "item": "Buntut", "qty": 3, "unit": "Pack" }
+    ] }, "ignore": ["orders.*.nomorOrder", "orders.*.timestamp"] },
+    { "name": "archive by orderIds", "file": "orders.php", "body": { "action": "archive", "orderIds": ["$each"] }, "each": "SELECT nomor_order FROM orders WHERE row_index = 2622" },
+    { "name": "archive by rows", "file": "orders.php", "body": { "action": "archive", "rows": [2621, 0, "x", 2623] } },
+    { "name": "archive rows all invalid", "file": "orders.php", "body": { "action": "archive", "rows": [0, -1] } },
+    { "name": "archive nothing pointed at", "file": "orders.php", "body": { "action": "archive" } },
+    { "name": "unarchive by rowIndex", "file": "orders.php", "body": { "action": "unarchive", "rowIndex": 2621 } },
+    { "name": "updateKedatangan empty", "file": "orders.php", "body": { "action": "updateKedatangan", "updates": [] } },
+    { "name": "updateKedatangan plain + with receive date", "file": "orders.php", "body": { "action": "updateKedatangan", "updates": [
+      { "rowIndex": 2622, "kedatangan": "Datang", "catatanAktual": 4.5 },
+      { "rowIndex": 2623, "kedatangan": "Datang", "catatanAktual": "20", "tglTerima": "23/09/2026", "catatanTerima": "  kurang satu  " },
+      { "rowIndex": 0, "kedatangan": "Datang" }, { "kedatangan": "Datang" }
+    ] } },
+    { "name": "updateKedatangan Central Kitchen rows sync CK stock", "file": "orders.php", "body": { "action": "updateKedatangan", "updates": [
+      { "rowIndex": 2633, "kedatangan": "Datang", "catatanAktual": "" }, { "rowIndex": 2632, "kedatangan": "", "catatanAktual": "" }
+    ] } },
+    { "name": "updateTglJemput bad date stops everything", "file": "orders.php", "body": { "action": "updateTglJemput", "updates": [
+      { "rowIndex": 2621, "tglJemput": "2031-01-09" }, { "rowIndex": 2622, "tglJemput": "9/1/2031" } ] } },
+    { "name": "updateTglJemput set + clear", "file": "orders.php", "body": { "action": "updateTglJemput", "updates": [
+      { "rowIndex": 2621, "tglJemput": " 2031-01-09 " }, { "rowIndex": 2622, "tglJemput": "" } ] } },
+    { "name": "updateOrderQty bad row", "file": "orders.php", "body": { "action": "updateOrderQty", "rowIndex": 0, "newQty": 3 } },
+    { "name": "updateOrderQty bad qty", "file": "orders.php", "body": { "action": "updateOrderQty", "rowIndex": 2621, "newQty": "tiga" } },
+    { "name": "updateOrderQty", "file": "orders.php", "body": { "action": "updateOrderQty", "rowIndex": 2621, "newQty": "7.25" } },
+    { "name": "deleteRow bad row", "file": "orders.php", "body": { "action": "deleteRow", "rowIndex": "abc" } },
+    { "name": "deleteRow", "file": "orders.php", "body": { "action": "deleteRow", "rowIndex": 2624 } },
+    { "name": "import empty", "file": "orders.php", "body": { "action": "import", "orders": [] } },
+    { "name": "import keeps numbers and statuses", "file": "orders.php", "body": { "action": "import", "orders": [
+      { "nomorOrder": "LKS-PARITY-1", "rowIndex": 99001, "timestamp": "2031-01-01 10:00:00", "item": "Parity Import", "qty": "3", "unit": "Kg", "tglDatang": "2031-01-02", "pic": "Kru", "status": "Arsip", "note": "x/y" },
+      { "nomorOrder": "LKS-PARITY-2", "item": "No Row" }, { "item": "No Number" }, 7 ] } },
+    { "name": "orders GET after writes", "file": "orders.php", "method": "GET", "query": {}, "ignore": ["*.nomorOrder", "*.timestamp", "*.batchId"] },
+    { "name": "orders batches after writes", "file": "orders.php", "method": "GET", "query": { "action": "batches", "tim": "Bar" }, "ignore": ["*.batchId", "*.waktu"] },
+    { "name": "orders stats after writes", "file": "orders.php", "method": "GET", "query": { "action": "stats" } },
+
+    { "name": "stock POST empty map refused", "file": "stock.php", "body": { "type": "stock", "as_of": "2031-01-01", "stock": {} } },
+    { "name": "stock POST list refused", "file": "stock.php", "body": { "type": "stock", "stock": [1] } },
+    { "name": "stock POST snapshot", "file": "stock.php", "body": { "type": "stock", "as_of": "2031-01-01 08:00", "stock": {
+      "Ayam Hainan": { "stock_now": "12.5", "stock_unit": "Pack", "extra": { "a": {} } }, "Gula": { "stock_now": "x" }, "": { "stock_now": 1 }, "Kosong": null } } },
+    { "name": "stock GET after snapshot", "file": "stock.php", "method": "GET", "query": {} },
+    { "name": "stock POST replaces everything", "file": "stock.php", "body": { "stock": { "Air": { "stock_now": 3, "stock_unit": "Galon" } } } },
+    { "name": "stock GET after replace", "file": "stock.php", "method": "GET", "query": {} }
+  ]
+}
