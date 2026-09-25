@@ -114,6 +114,11 @@ node tools/e2e/marketing.mjs             # headless walkthrough of deploy/market
 php artisan route:list --path=api/v1
 ```
 
+CI (`.github/workflows/ci.yml`) runs on every push and PR: `php -l`, Pint `--test`,
+the DB-free Unit suite (`php artisan test --testsuite=Unit`), and `route:list`.
+Feature tests need the restored dumps (§0), so CI skips them explicitly until
+the anonymised set from #9 can be restored in CI.
+
 ## 5. Status
 
 | module | legacy compat | v1 | parity |

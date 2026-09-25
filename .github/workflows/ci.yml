@@ -1,0 +1,45 @@
+# Every push and every PR: PHP lint, Pint style check, the DB-free Unit
+# suite, and route:list (catches broken route files). No MySQL service on
+# purpose: the Unit suite and route:list make zero DB connections (verified
+# locally against a closed port). The Feature suite needs the restored
+# databases (CLAUDE.md section 0) and stays local until the anonymised data
+# set from issue #9 can be restored in CI — that exclusion is deliberate,
+# not an oversight.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: bcmath, curl, fileinfo, mbstring, openssl, pdo, pdo_mysql, tokenizer, xml, zip
+          coverage: none
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: PHP syntax lint
+        run: find app bootstrap config database routes tests -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Code style (Pint check mode)
+        run: php vendor/bin/pint --test
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Unit tests (no database)
+        run: php artisan test --testsuite=Unit
+
+      - name: Route list
+        run: php artisan route:list --path=api/v1
