@@ -1,0 +1,53 @@
+{
+  "dir": "konten-mysql",
+  "legacyPath": "konten-api-mysql",
+  "dbEnv": "KONTEN",
+  "db": "lakk5493_db_konten",
+  "ignore": ["data.ts", "data.backend", "data.db", "data.folderBerkas", "data.amanDiLuarWeb"],
+  "cases": [
+    { "name": "ping", "method": "GET", "query": { "action": "ping" } },
+    { "name": "stats", "method": "GET", "query": { "action": "stats" } },
+    { "name": "getAll (default GET)", "method": "GET", "query": {} },
+    { "name": "unknown action", "body": { "action": "nope" } },
+    { "name": "saveAll invalid payload", "body": { "action": "saveAll" } },
+    { "name": "saveAll new brand + content + log + extra key", "body": { "action": "saveAll", "data": {
+      "brands": [
+        { "id": "b_par1", "name": "Parity Brand", "updatedAt": 1790100000000 },
+        { "id": "b_par2", "name": "Parity New", "updatedAt": 1790200000000 }
+      ],
+      "content": [{ "id": "ct_par1", "title": "Parity Konten", "brand": "b_par1", "platform": "IG", "status": "Idea", "priority": "high", "pic": "u-andry", "contentType": "Feed / Carousel", "deadline": "2026-09-24", "publishDate": "bad", "publishRecord": null, "perf": { "IG": { "reach": 5 } }, "updatedAt": 1790100000000, "createdAt": 1790100000000 }],
+      "logs": [{ "id": "lg_par1", "by": "Parity", "action": "uji", "target": "b_par1", "at": "2026-09-24T03:00:00.000Z" }, { "noid": true }],
+      "parityExtra": { "a": 1, "list": [1, 2] }
+    } } },
+    { "name": "saveAll edit with correct base", "body": { "action": "saveAll", "data": {
+      "brands": [{ "id": "b_par1", "name": "Parity Brand 2", "updatedAt": 1790100000500, "baseUpdatedAt": 1790100000000 }]
+    } } },
+    { "name": "saveAll stale base -> bentrok", "body": { "action": "saveAll", "data": {
+      "brands": [{ "id": "b_par1", "name": "Someone else", "updatedAt": 1790100000900, "baseUpdatedAt": 1790100000000 }]
+    } } },
+    { "name": "saveAll stale base but identical content -> still bentrok (no sidik escape)", "body": { "action": "saveAll", "data": {
+      "brands": [{ "name": "Parity Brand 2", "id": "b_par1", "updatedAt": 1790100000777, "baseUpdatedAt": 1790100000000 }]
+    } } },
+    { "name": "saveAll cap bump: column goes server+1, data.updatedAt stays sent", "body": { "action": "saveAll", "data": {
+      "brands": [{ "id": "b_par1", "name": "Parity Brand 3", "updatedAt": 1790100000400, "baseUpdatedAt": 1790100000500 }]
+    } } },
+    { "name": "saveAll unchanged reflection with older stamp is not written", "body": { "action": "saveAll", "data": {
+      "brands": [{ "id": "b_par1", "name": "SHOULD NOT WRITE", "updatedAt": 1790100000400 }]
+    } } },
+    { "name": "getAll after writes", "method": "GET", "query": { "action": "getAll" } },
+    { "name": "saveAll unbounded delete removes even the newer row (legacy, no _sejak)", "body": { "action": "saveAll", "data": {
+      "brands": [{ "id": "b_par1", "name": "Parity Brand 3", "updatedAt": 1790100000400 }]
+    } } },
+    { "name": "getAll after unbounded delete", "method": "GET", "query": { "action": "getAll" } },
+    { "name": "saveAll empty list deletes nothing", "body": { "action": "saveAll", "data": {
+      "brands": []
+    } } },
+    { "name": "uploadReceipt empty", "body": { "action": "uploadReceipt" } },
+    { "name": "uploadReceipt bad base64", "body": { "action": "uploadReceipt", "dataBase64": "@@@", "mimeType": "image/png" } },
+    { "name": "uploadReceipt png", "body": { "action": "uploadReceipt", "dataBase64": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "mimeType": "image/png", "fileName": "dot.png" }, "ignore": ["data.key"] },
+    { "name": "uploadReceipt pdf by name", "body": { "action": "uploadReceipt", "dataBase64": "aGVsbG8=", "fileName": "x.PDF" }, "ignore": ["data.key"] },
+    { "name": "receipt missing file", "method": "GET", "query": { "action": "receipt", "key": "rc_nope.png" } },
+    { "name": "receipt traversal", "method": "GET", "query": { "action": "receipt", "key": "../x" } },
+    { "name": "stats after writes", "method": "GET", "query": { "action": "stats" } }
+  ]
+}
