@@ -11,16 +11,42 @@ This is the contract for **laksamana-office-vue**, the old laksamana-office if i
 
 Status: complete. The contract covers the **revenue core** (#28), the **void log and QRIS BRI matching** (#29), and **Investor Compass and Analytics** (#30).
 
-## Screen → endpoint map (this cluster)
+## Screen → endpoint map (all five kompas-backed frontends)
 
-| Screen | Endpoints |
+**Cashier** (`deploy/cashier`, module cashier):
+
+| Page | Endpoints |
 |---|---|
-| Finance › Omset: Input Omset Harian, Daily Report; Cashier | `GET /state`, `PUT /state` |
-| Finance › Kas Kecil: Pengaturan Target | `PUT /targets` |
-| Finance › Kas Kecil: Rekap Penjualan (MDR, aktual masuk, POS ticks, deposits) | `PUT /rekap`, `GET /state` |
-| Dashboards that show daily revenue | `GET /daily` |
-| Marketing › Performance ("menurut Breakdown") | `GET /omset-pic` |
-| Marketing / Event › Performa (bonus calculator inputs) | `GET /performa/{marketing\|event}` |
+| Report (Daily Report) | `GET/PUT /reports/{date}` |
+| Kasir (per-cashier revenue rows of a day) | `GET/PUT /days/{date}` |
+| Compliment | `GET/PUT /sections/compliments` |
+| Piutang | `GET/PUT /sections/piutang` |
+| Rokok, Rekap Rokok, Setelan Rokok | `GET/PUT /sections/rokok`, `/sections/rokok_items` |
+| Void (Catatan Void) | `/voids`, `/voids/settings` |
+| QRIS BRI, DP | `/bri` (DPs themselves: reservasi contract) |
+| Akses | `GET/PUT /sections/settings` (the page matrix lives in the blob's settings) |
+
+**Finance › Omset** (`deploy/finance/omset`): Input Omset Harian and Breakdown Sumber Omset use `GET/PUT /days/{date}` (the breakdown lives in the day rows' `bd`); Report uses `/reports/{date}`; Compliment uses `/sections/compliments`; Piutang uses `/sections/piutang`; Akses uses `/sections/settings`. Employees and PICs use `/sections/employees`.
+
+**Finance › Kas Kecil** (the pages kompas serves): Pengaturan Target uses `PUT /targets`; Rekap Penjualan (MDR, actual received, POS ticks, deposits) uses `PUT /rekap` + `GET /state`; Void uses `/voids`; BRI uses `/bri`.
+
+**Analytics** (`deploy/analytics`, module analytics): every page (ringkasan, tren, hari, menu, kategori, kunjungan, meja, talent, error, voidb, promo, event, marketing, konten, desain, unggah, pengaturan, akses) reads `GET /analytics`. Unggah writes `PUT /analytics`, and Akses writes `PUT /analytics/access`. The Void & Cancel page also reads `/voids`. Promo, event, marketing and konten comparisons use those modules' own contracts.
+
+**Investor Compass** (`investor/`, module investor): Ringkasan, Dividen and Laporan use `/investor/summary` + `/investor/reports*`; Event and Promo use `/investor/agenda`.
+
+**Other modules:** dashboards use `GET /daily`; Marketing › Performance uses `GET /omset-pic`; Marketing and Event › Performa use `GET /performa/{marketing|event}`.
+
+## Granular parts of the blob
+
+Legacy screens send the **whole** blob with `saveAll`, so a stale tab conflicts with everything. v1 edits one part at a time instead. Each part carries **its own version**, a hash of its content, so two people editing different days or different sections never conflict.
+
+| Method | Path | Body | Part |
+|---|---|---|---|
+| GET / PUT | `/sections/{key}` | `{value}` (`null` removes it) | one top-level key of the blob: `compliments`, `piutang`, `rokok`, `rokok_items`, `employees`, `owners`, `settings`, … |
+| GET / PUT | `/reports/{YYYY-MM-DD}` | `{value}` (`null` removes it) | one Daily Report (`reports[date]`: `pay`, `mdr`, `aktual`, `setor`, …) |
+| GET / PUT | `/days/{YYYY-MM-DD}` | `{rows: [...]}` | all `daily` rows of that date, replaced together (each row is stamped with that `date`; the breakdown lives in `bd`) |
+
+A PUT needs `If-Match: "<part version>"` → `428` / `409` with `details.current`. The response carries the new part `version`, plus `meta.blobVersion` (the blob's `updated_at`, which a legacy tab would see). Writes take the same `kompas_save` lock as `saveAll` and record the session user as `updated_by`.
 
 ## Endpoints
 

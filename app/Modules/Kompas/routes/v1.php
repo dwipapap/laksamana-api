@@ -10,6 +10,11 @@ Route::middleware('auth:sanctum')->prefix('kompas')->group(function () {
     Route::get('state', [C::class, 'state']);
     Route::put('state', [C::class, 'putState']);
     Route::put('targets', [C::class, 'putTargets']);
+    // granular parts of the blob (Cashier / Omset screens): each with its own version
+    foreach (['sections' => 'section', 'reports' => 'report', 'days' => 'day'] as $path => $kind) {
+        Route::get("$path/{key}", [C::class, 'part'])->defaults('kind', $kind);
+        Route::put("$path/{key}", [C::class, 'putPart'])->defaults('kind', $kind);
+    }
     Route::put('rekap', [C::class, 'putRekap']);
     Route::get('daily', [C::class, 'daily']);
     Route::get('omset-pic', [C::class, 'omsetPic']);

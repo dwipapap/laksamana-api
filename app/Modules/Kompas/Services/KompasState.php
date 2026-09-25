@@ -235,6 +235,75 @@ class KompasState
         }, 10, self::BUSY);
     }
 
+    // ───────────────────────────── v1 granular parts ──
+
+    /**
+     * One part of the blob: a top-level section ('compliments', 'piutang',
+     * 'rokok', …), one Daily Report (`report`, key = date) or the `daily` rows
+     * of one date (`day`). Arrays, as the legacy narrow writers read them.
+     */
+    public static function part(array $s, string $kind, string $key): mixed
+    {
+        return match ($kind) {
+            'section' => $s[$key] ?? null,
+            'report' => $s['reports'][$key] ?? null,
+            'day' => array_values(array_filter(is_array($s['daily'] ?? null) ? $s['daily'] : [], fn ($d) => is_array($d) && ($d['date'] ?? null) === $key)),
+        };
+    }
+
+    public static function partVersion(mixed $v): string
+    {
+        return substr(sha1(self::enc($v)), 0, 16);
+    }
+
+    /**
+     * Replace ONE part under the kompas_save lock, guarded by that part's own
+     * content hash — edits to other parts (another day, another section) never
+     * conflict. null removes a report / a section; a day's rows are all
+     * replaced (each forced to that date). Throws KompasConflict on a stale hash
+     * (with the stored blob version) or RuntimeException when nothing is stored yet.
+     *
+     * @return array{value:mixed, version:string, ts:int}
+     */
+    public function savePart(string $kind, string $key, mixed $value, string $baseHash, string $by): array
+    {
+        return NamedLock::run('kompas', 'kompas_save', function () use ($kind, $key, $value, $baseHash, $by) {
+            $s = $this->assoc();
+            if (! $s) {
+                throw new RuntimeException('Data omset belum pernah tersimpan — buka panel Input Omset Harian lebih dulu');
+            }
+            if (! hash_equals(self::partVersion(self::part($s, $kind, $key)), $baseHash)) {
+                throw new KompasConflict($this->ts());
+            }
+            if ($kind === 'section') {
+                if ($value === null) {
+                    unset($s[$key]);
+                } else {
+                    $s[$key] = $value;
+                }
+            } elseif ($kind === 'report') {
+                if ($value === null) {
+                    unset($s['reports'][$key]);
+                } else {
+                    $s['reports'][$key] = $value;
+                }
+            } else {
+                $rows = array_values(array_filter(is_array($s['daily'] ?? null) ? $s['daily'] : [], fn ($d) => ! (is_array($d) && ($d['date'] ?? null) === $key)));
+                foreach (is_array($value) ? $value : [] as $row) {
+                    if (is_array($row)) {
+                        $rows[] = ['date' => $key] + $row;
+                    }
+                }
+                $s['daily'] = $rows;
+            }
+            $ts = max(self::nowMs(), $this->ts() + 1);
+            $this->write($s, $by, $ts);
+            $now = self::part($s, $kind, $key);
+
+            return ['value' => $now, 'version' => self::partVersion($now), 'ts' => $ts];
+        }, 10, self::BUSY);
+    }
+
     /** kp_cash_hari — cash actual of one day (the Daily Report). */
     public static function cashDay(array $s, string $h): int
     {

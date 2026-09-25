@@ -98,6 +98,61 @@ class KompasController
         return ApiResponse::ok($out, ['version' => $ts], 200, ['ETag' => '"'.$ts.'"']);
     }
 
+    // ─────────────────────────── granular parts of the blob ──
+
+    /** GET sections/{key} | reports/{date} | days/{date} — one part with its own version (content hash). */
+    public function part(Request $r, string $key): JsonResponse
+    {
+        $kind = (string) $r->route('kind');
+        if ($denied = $this->anyOf($r, self::OMSET) ?? $this->badKey($kind, $key)) {
+            return $denied;
+        }
+        $v = KompasState::part($this->kompas->assoc(), $kind, $key);
+
+        return ApiResponse::ok($v, ['version' => KompasState::partVersion($v)], 200, ['ETag' => '"'.KompasState::partVersion($v).'"']);
+    }
+
+    /**
+     * PUT one part. Body {value} for a section or a Daily Report (null removes
+     * it), {rows: [...]} for the daily rows of one date. If-Match = that part's
+     * version: edits to OTHER days/sections never conflict.
+     */
+    public function putPart(Request $r, string $key): JsonResponse
+    {
+        $kind = (string) $r->route('kind');
+        if ($denied = $this->anyOf($r, self::OMSET) ?? $this->badKey($kind, $key)) {
+            return $denied;
+        }
+        $h = $r->header('If-Match');
+        $base = is_string($h) && $h !== '' ? trim($h, ' "W/') : $r->query('version');
+        if (! is_string($base) || $base === '') {
+            return ApiResponse::error('version_required', 'Send the version of this part as If-Match (or ?version=).', 428);
+        }
+        $body = $r->json()->all();
+        $field = $kind === 'day' ? 'rows' : 'value';
+        if (! array_key_exists($field, $body) || ($kind === 'day' && ! is_array($body['rows']))) {
+            return ApiResponse::error('validation_failed', "Send {\"$field\": …}.", 422);
+        }
+        try {
+            $out = $this->kompas->savePart($kind, $key, $body[$field], $base, $this->actor($r));
+        } catch (KompasConflict $e) {
+            return ApiResponse::error('version_conflict', 'This part was changed by someone else. Reload it and apply your change again.', 409,
+                ['current' => KompasState::part($this->kompas->assoc(), $kind, $key)]);
+        } catch (RuntimeException $e) {
+            return ApiResponse::error('invalid_request', $e->getMessage(), 422);
+        }
+
+        return ApiResponse::ok($out['value'], ['version' => $out['version'], 'blobVersion' => $out['ts']], 200, ['ETag' => '"'.$out['version'].'"']);
+    }
+
+    private function badKey(string $kind, string $key): ?JsonResponse
+    {
+        $ok = $kind === 'section' ? (bool) preg_match('/^[A-Za-z][A-Za-z0-9_]{0,40}$/', $key) && $key !== '_savedBy'
+            : KompasState::tgl($key) !== null;
+
+        return $ok ? null : ApiResponse::error('validation_failed', 'Unknown section or date (YYYY-MM-DD).', 422);
+    }
+
     /** Daily revenue from THE daily map, with the three conventions (net / tagihan / netSales). */
     public function daily(Request $r): JsonResponse
     {
