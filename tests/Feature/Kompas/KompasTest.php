@@ -93,3 +93,23 @@ it('v1: omset-pic and performa follow the module gates', function () {
     $this->withToken($token)->getJson('/api/v1/kompas/performa/event?from=2026-08-01&to=2026-09-30')->assertStatus(403);
     $this->withToken($token)->getJson('/api/v1/kompas/state')->assertStatus(403);
 });
+
+it('v1: granular parts are versioned by their own content, so edits to other parts never conflict', function () {
+    $token = loginAs(officeUser('u-novi'));
+    $day = $this->withToken($token)->getJson('/api/v1/kompas/days/2026-09-10')->assertOk();
+    $comp = $this->withToken($token)->getJson('/api/v1/kompas/sections/compliments')->assertOk();
+
+    // write the day …
+    $rows = $day->json('data');
+    $rows[] = ['food' => 1000, 'kasir' => 'Test'];
+    $this->withToken($token)->putJson('/api/v1/kompas/days/2026-09-10?version='.$day->json('meta.version'), ['rows' => $rows])
+        ->assertOk()->assertJsonPath('data.'.(count($rows) - 1).'.date', '2026-09-10');
+    // … the compliments version read BEFORE is still valid (a different part)
+    $list = $comp->json('data');
+    $this->withToken($token)->putJson('/api/v1/kompas/sections/compliments?version='.$comp->json('meta.version'), ['value' => $list])->assertOk();
+    // but the stale day version is refused
+    $this->withToken($token)->putJson('/api/v1/kompas/days/2026-09-10?version='.$day->json('meta.version'), ['rows' => []])->assertStatus(409);
+    $this->withToken($token)->putJson('/api/v1/kompas/reports/2026-09-10', ['value' => []])->assertStatus(428);
+    $this->withToken($token)->getJson('/api/v1/kompas/reports/bad-date')->assertStatus(422);
+    expect(Modules::db('kompas')->selectOne('SELECT updated_by FROM app_state')->updated_by)->toBe(officeUser('u-novi')['name']);
+});
