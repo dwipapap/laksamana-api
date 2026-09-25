@@ -116,3 +116,91 @@ it('accepts an old Office session token on the legacy route', function () {
     $this->get('/jadwal-api-mysql/api.php?action=getAll&dari=2026-09-01&sampai=2026-09-30&sesi='.$sesi)
         ->assertOk()->assertJsonPath('ok', true);
 });
+
+it('lets an Admin Modul wipe all cells and requests with the confirmation words', function () {
+    Modules::db('jadwal')->insert("INSERT INTO jadwal_sel (user_id,tgl,shift) VALUES ('u-yuzaalfarel','2026-11-02','PAGI')");
+    Modules::db('jadwal')->insert("INSERT INTO jadwal_pengajuan (id,user_id,jenis,tgl_mulai,tgl_selesai,status) VALUES ('Awipe1','u-yuzaalfarel','OFF','2026-11-02','2026-11-02','MENUNGGU')");
+
+    $this->withToken(loginAs(officeUser('u-rizkiarfan')))->deleteJson('/api/v1/jadwal/cells', ['konfirmasi' => 'HAPUS SEMUA'])
+        ->assertOk()->assertJsonPath('data.cleared', true)->assertJsonStructure(['data' => ['sel', 'pengajuan']]);
+
+    expect(Modules::db('jadwal')->selectOne("SELECT COUNT(*) n FROM jadwal_sel WHERE user_id='u-yuzaalfarel' AND tgl='2026-11-02'")->n)->toBe(0)
+        ->and(Modules::db('jadwal')->selectOne("SELECT COUNT(*) n FROM jadwal_pengajuan WHERE id='Awipe1'")->n)->toBe(0)
+        // settings are kept, like the legacy route
+        ->and(Modules::db('jadwal')->selectOne('SELECT COUNT(*) n FROM jadwal_setting WHERE id = 1')->n)->toBe(1);
+});
+
+it('refuses the wipe with wrong confirmation and keeps the data', function () {
+    Modules::db('jadwal')->insert("INSERT INTO jadwal_pengajuan (id,user_id,jenis,tgl_mulai,tgl_selesai,status) VALUES ('Awipe2','u-yuzaalfarel','OFF','2026-11-03','2026-11-03','MENUNGGU')");
+
+    $this->withToken(loginAs(officeUser('u-rizkiarfan')))->deleteJson('/api/v1/jadwal/cells', ['konfirmasi' => 'yes'])
+        ->assertStatus(422);
+
+    expect(Modules::db('jadwal')->selectOne("SELECT COUNT(*) n FROM jadwal_pengajuan WHERE id='Awipe2'")->n)->toBe(1);
+});
+
+it('refuses the wipe for non-admins', function () {
+    $this->withToken(loginAs(officeUser('u-arif')))->deleteJson('/api/v1/jadwal/cells', ['konfirmasi' => 'HAPUS SEMUA'])
+        ->assertStatus(403)->assertJsonPath('error.code', 'forbidden');
+});
+
+it('filters requests by mine, status, user and date range', function () {
+    Modules::db('jadwal')->insert("INSERT INTO jadwal_pengajuan (id,user_id,jenis,tgl_mulai,tgl_selesai,status) VALUES ('Aflt1','u-yuzaalfarel','CUTI','2026-11-05','2026-11-07','MENUNGGU')");
+    Modules::db('jadwal')->insert("INSERT INTO jadwal_pengajuan (id,user_id,jenis,tgl_mulai,tgl_selesai,status) VALUES ('Aflt2','u-yuzaalfarel','OFF','2026-11-20','2026-11-20','DISETUJUI')");
+    Modules::db('jadwal')->insert("INSERT INTO jadwal_pengajuan (id,user_id,jenis,tgl_mulai,tgl_selesai,status) VALUES ('Aflt3','u-mella','CUTI','2026-11-06','2026-11-06','DITOLAK')");
+    Modules::db('jadwal')->insert("INSERT INTO jadwal_pengajuan (id,user_id,jenis,tgl_mulai,tgl_selesai,status) VALUES ('Aflt4','u-mella','OFF','2026-12-01','2026-12-03','MENUNGGU_HRD')");
+    $token = loginAs(officeUser('u-yuzaalfarel'));
+    $ids = fn ($q) => array_column($this->withToken($token)->getJson('/api/v1/jadwal/requests'.$q)->assertOk()->json('data'), 'id');
+
+    expect($ids('?mine=1'))->toContain('Aflt1', 'Aflt2')->not->toContain('Aflt3', 'Aflt4');
+    expect($ids('?user=u-mella'))->toContain('Aflt3', 'Aflt4')->not->toContain('Aflt1');
+    expect($ids('?status=MENUNGGU,DISETUJUI'))->toContain('Aflt1', 'Aflt2')->not->toContain('Aflt3', 'Aflt4');
+    expect($ids('?from=2026-11-06&to=2026-11-06'))->toContain('Aflt1', 'Aflt3')->not->toContain('Aflt2', 'Aflt4');
+    expect($ids('?user=nobody'))->toBe([]);
+});
+
+it('serves the roster with the same Divisi legacy jdw_divisi_user gives every User', function () {
+    $token = loginAs(officeUser('u-arif'));
+    $rows = $this->withToken($token)->getJson('/api/v1/jadwal/roster')->assertOk()->json('data');
+    expect($rows)->not->toBe([]);
+
+    // Independent port of legacy jdw_divisi_user (lib_jadwal_mysql.php): the test
+    // guards the endpoint wiring, the anchors below guard the algorithm itself.
+    $override = json_decode(Modules::db('jadwal')->selectOne('SELECT data FROM jadwal_setting WHERE id = 1')->data, true)['divOverride'] ?? [];
+    $legacyDivisi = function (array $u) use ($override): string {
+        if (isset($override[$u['id']]) && $override[$u['id']] !== '') {
+            return (string) $override[$u['id']];
+        }
+        $kata = preg_split('/[^a-z]+/', strtolower((string) ($u['keterangan'] ?? '')), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        foreach (['office', 'kantor'] as $x) {
+            if (in_array($x, $kata, true)) {
+                return 'nonshift';
+            }
+        }
+        $sin = ['bar' => ['bar', 'bartender'], 'kitchen' => ['kitchen', 'dapur'],
+            'floor' => ['floor', 'service', 'waiter', 'waitress', 'host', 'hostess'],
+            'cashier' => ['cashier', 'kasir']];
+        foreach ($sin as $kode => $daftar) {
+            foreach ($daftar as $x) {
+                if (in_array($x, $kata, true)) {
+                    return $kode;
+                }
+            }
+        }
+
+        return 'nonshift';
+    };
+
+    $byId = [];
+    foreach ($rows as $row) {
+        expect($row)->toHaveKeys(['id', 'name', 'keterangan', 'active', 'divisi']);
+        expect($row['divisi'])->toBe($legacyDivisi($row), 'divisi of '.$row['id']);
+        $byId[$row['id']] = $row['divisi'];
+    }
+    // Anchors verified against the restored dump: Tim "Bar" -> bar, "Floor, FOH"
+    // -> floor, "Office, HRD" -> nonshift (office wins), empty/Superadmin -> nonshift.
+    expect($byId['u-arif'])->toBe('bar')->and($byId['u-yuzaalfarel'])->toBe('bar')
+        ->and($byId['u-mella'])->toBe('floor')->and($byId['u-rizkiarfan'])->toBe('nonshift')
+        ->and($byId['u-adit'])->toBe('kitchen')->and($byId['u-aurel'])->toBe('nonshift')
+        ->and($byId['u-andry'])->toBe('nonshift')->and($byId['u-admin'])->toBe('nonshift');
+});
