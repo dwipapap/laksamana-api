@@ -7,6 +7,9 @@
   "setupSql": [
     "INSERT INTO products (nama, data) VALUES ('Parity CK Saja', '{\"utama\":\"\",\"cadangan\":[],\"satuan\":[\"Pack\"],\"sumber\":\"ck\",\"packIsi\":0,\"packSatuan\":\"\",\"diOutlet\":false}')",
     "INSERT INTO ck_stock (id,tanggal,item,arah,qty,qty_input,unit_input,sebab,status,ref,tim,pic,waktu,data) VALUES ('CK-PARITY-1','2026-09-10','Ayam Katsu','masuk',500,500,'Gram','produksi','',NULL,'','Kru','2026-09-10 08:00:00','{\"catatan\":\"awal\",\"packIsi\":1000,\"packSatuan\":\"Gram\"}'), ('CK-PARITY-2','2026-09-11','Parity Hilang','masuk',3,3,'Pcs','produksi','pending',NULL,'','Kru','2026-09-11 08:00:00','rusak')",
+    "UPDATE hpp_bahan SET produk = CASE nama WHEN 'Almond Slice' THEN 'Almond Slice Parity' WHEN 'Baking Soda' THEN 'Air' WHEN 'Gula Merah' THEN 'Gula Merah' ELSE produk END WHERE nama IN ('Almond Slice','Baking Soda','Gula Merah')",
+    "INSERT INTO hpp_pakai (bulan,bahan,sa,beli,resep,spoil,team,rnd,comp,opname,updated_at,updated_by) VALUES ('2026-07','Brisket',1,2,3,0,0,0,0,1.5,1,'x'), ('2026-08','Brisket',4,0,0,0,0,0,0,4,1,'x'), ('2026-08','Brisket Parity',9,0,0,0,0,0,0,9,1,'x'), ('2026-07','Parity Bahan 2',1,1,1,1,1,1,1,1,1,'x')",
+    "INSERT INTO hpp_bulan (bulan,penjualan,catatan,updated_at,updated_by) VALUES ('2026-07',12500000,'Juli',1,'x'), ('2026-06',0,'',1,'x')",
     "INSERT INTO opname (id,tanggal,pic,tim,status,waktu,data) VALUES ('OPN-PARITY-1','2026-09-20','Kru','Bar','Draft','2026-09-20 22:00:00','{\"catatan\":\"rak A\",\"items\":[{\"item\":\"Gula\",\"unit\":\"Kg\",\"opening\":2,\"masuk\":null,\"sistem\":2,\"fisik\":null,\"note\":\"\"}]}')"
   ],
   "cases": [
@@ -190,6 +193,49 @@
       { "modul": "purchasing", "aksi": "parity_uji", "ringkas": "Parity dua" },
       { "modul": "", "aksi": "x" }, 5, null ] } },
     { "name": "log GET after catat (ordering)", "file": "log.php", "method": "GET", "query": { "q": "parity_uji", "modul": "ordering" }, "ignore": ["*.id", "*.waktu", "*.tanggal"] },
-    { "name": "log GET after catat (purchasing)", "file": "log.php", "method": "GET", "query": { "q": "Parity dua", "modul": "purchasing" }, "ignore": ["*.id", "*.waktu", "*.tanggal"] }
+    { "name": "log GET after catat (purchasing)", "file": "log.php", "method": "GET", "query": { "q": "Parity dua", "modul": "purchasing" }, "ignore": ["*.id", "*.waktu", "*.tanggal"] },
+
+    { "name": "hpp ping", "file": "hpp.php", "method": "GET", "query": { "action": "ping" } },
+    { "name": "hpp GET all (flat, no ok key)", "file": "hpp.php", "method": "GET", "query": { "action": "all" }, "ignore": ["ts", "bahan.*.updated_at"] },
+    { "name": "hpp GET without action = all", "file": "hpp.php", "method": "GET", "query": { "t": "1" }, "ignore": ["ts", "bahan.*.updated_at"] },
+    { "name": "hpp GET pakai month", "file": "hpp.php", "method": "GET", "query": { "action": "pakai", "bulan": " 2026-07 " } },
+    { "name": "hpp GET pakai bad month = this UTC month", "file": "hpp.php", "method": "GET", "query": { "action": "pakai", "bulan": "Juli" } },
+    { "name": "hpp bad JSON", "file": "hpp.php", "body": "5" },
+    { "name": "hpp unknown action", "file": "hpp.php", "body": { "action": "hapusSemua" } },
+    { "name": "hpp simpanBahan empty name (500 with reason)", "file": "hpp.php", "body": { "action": "simpanBahan", "data": { "nama": "  " } } },
+    { "name": "hpp simpanBahan without data", "file": "hpp.php", "body": { "action": "simpanBahan" } },
+    { "name": "hpp simpanBahan new registers in Purchasing", "file": "hpp.php", "body": { "action": "simpanBahan", "by": " Kru ", "data": { "nama": " Parity Bahan ", "satuan": "Gram", "qty_beli": "1.000", "harga_beli": "Rp 25.000", "vendor": "V", "kategori": "DRY", "catatan": "c", "sisi_harga": " BELI " } } },
+    { "name": "hpp simpanBahan off Purchasing, legacy dibeli_jadi", "file": "hpp.php", "body": { "action": "simpanBahan", "by": "Kru", "data": { "nama": "Parity Bahan 2", "satuan": "Ml", "qty_beli": 500, "harga_beli": 7000, "di_purchasing": false, "dibeli_jadi": true } } },
+    { "name": "hpp simpanBahan rename follows recipes and usage", "file": "hpp.php", "body": { "action": "simpanBahan", "by": "Kru", "data": { "nama": "Brisket Parity", "namaLama": "Brisket", "satuan": "Gram", "qty_beli": 1000, "harga_beli": 150000, "di_purchasing": 0 } } },
+    { "name": "hpp imporBahan rows not a list", "file": "hpp.php", "body": { "action": "imporBahan", "rows": { "a": 1 } } },
+    { "name": "hpp imporBahan upsert, never renames", "file": "hpp.php", "body": { "action": "imporBahan", "by": "Kru", "rows": [
+      { "nama": "gula", "satuan": "Kg", "qty_beli": 1, "harga_beli": 18000, "namaLama": "Gula Pasir" }, { "nama": "Parity Impor", "harga_beli": "5,5" }, { "nama": "" }, 3, [1] ] } },
+    { "name": "hpp gabungBahan same name refused", "file": "hpp.php", "body": { "action": "gabungBahan", "dari": "Gula", "ke": " Gula " } },
+    { "name": "hpp gabungBahan missing target", "file": "hpp.php", "body": { "action": "gabungBahan", "dari": "Parity Bahan 2", "ke": "Tidak Ada" } },
+    { "name": "hpp gabungBahan", "file": "hpp.php", "body": { "action": "gabungBahan", "dari": "Parity Bahan 2", "ke": "Parity Bahan" } },
+    { "name": "hpp tarikProduk", "file": "hpp.php", "body": { "action": "tarikProduk", "by": "Kru" } },
+    { "name": "hpp hapusBahan", "file": "hpp.php", "body": { "action": "hapusBahan", "nama": "Parity Impor" } },
+    { "name": "hpp hapusBahanSamaResep", "file": "hpp.php", "body": { "action": "hapusBahanSamaResep", "by": "Kru" } },
+    { "name": "hpp simpanResep empty name", "file": "hpp.php", "body": { "action": "simpanResep", "data": { "nama": "" } } },
+    { "name": "hpp simpanResep new CK base registers a product", "file": "hpp.php", "body": { "action": "simpanResep", "by": "Kru", "data": { "nama": "Parity Base", "jenis": "drink", "tipe": "base", "kode": " mtc02 ", "yield_qty": 0, "yield_unit": "Ml", "harga_baru": "30.000", "di_purchasing": true, "catatan": "c",
+      "bahan": [{ "nama": "Gula", "qty": "10", "satuan": "Gram" }, { "catatan": "  blender saring  " }, { "nama": "Base Chai", "qty": 1, "ref": "resep" }, { "nama": "" }, 7, { "catatan": "x", "nama": "Es", "ref": "RESEP" }] } }, "ignore": ["id"] },
+    { "name": "hpp simpanResep update by id", "file": "hpp.php", "body": { "action": "simpanResep", "by": "Kru", "data": { "id": "f-ad-batagor", "nama": "Batagor Ad. Parity", "tipe": "dish", "aktif": 0, "yield_qty": "2", "bahan": [{ "nama": "Ikan Tenggiri", "qty": 250, "satuan": "Gram" }] } } },
+    { "name": "hpp hapusResep", "file": "hpp.php", "body": { "action": "hapusResep", "id": "d-bunga-telang-extract" } },
+    { "name": "hpp impor refused when data exists", "file": "hpp.php", "body": { "action": "impor", "data": { "bahan": [], "resep": [] } } },
+    { "name": "hpp imporResep", "file": "hpp.php", "body": { "action": "imporResep", "by": "Kru", "rows": [
+      { "id": "d-base-chai", "nama": "Base Chai", "tipe": "base", "jenis": "drink", "bahan": [{ "nama": "Gula", "qty": 5 }] }, { "id": "parity-r1", "nama": "Parity Resep Impor" }, { "nama": "" }, "x" ] } },
+    { "name": "hpp imporResep without rows", "file": "hpp.php", "body": { "action": "imporResep" } },
+    { "name": "hpp samakanNama", "file": "hpp.php", "body": { "action": "samakanNama", "by": "Kru" } },
+    { "name": "hpp simpanPakai bad month (500 with reason)", "file": "hpp.php", "body": { "action": "simpanPakai", "data": { "bulan": "2026-7" } } },
+    { "name": "hpp simpanPakai", "file": "hpp.php", "body": { "action": "simpanPakai", "by": "Kru", "data": { "bulan": "2026-08", "penjualan": "Rp 90.000.000", "catatan": " Agustus ",
+      "baris": [{ "bahan": "Gula", "sa": 1, "beli": "2", "resep": 1.5, "opname": "1,5" }, { "bahan": "Brisket Parity", "sa": 10 }, { "bahan": "" }, 4] } } },
+    { "name": "hpp GET pakai after", "file": "hpp.php", "method": "GET", "query": { "action": "pakai", "bulan": "2026-08" }, "ignore": ["baris.*.updated_at"] },
+    { "name": "hpp simpanSetting only known keys", "file": "hpp.php", "body": { "action": "simpanSetting", "by": "Kru", "data": { "targetFood": "0,30", "buffer": 0.1, "baru": 5 } } },
+    { "name": "hpp GET all after writes", "file": "hpp.php", "method": "GET", "query": {}, "ignore": ["ts", "*.*.updated_at", "resep.*.id"] },
+    { "name": "hpp impor timpa stops half-way on a bad row (500)", "file": "hpp.php", "body": { "action": "impor", "timpa": 1, "by": "Kru", "data": {
+      "bahan": [{ "nama": "Parity Timpa", "qty_beli": 1, "harga_beli": 2 }, 5], "resep": [{ "nama": "Tidak Sampai" }] } } },
+    { "name": "hpp impor timpa", "file": "hpp.php", "body": { "action": "impor", "timpa": true, "by": "Kru", "data": {
+      "bahan": [{ "nama": "Parity Timpa", "qty_beli": 1, "harga_beli": 2 }], "resep": [{ "id": "parity-t1", "nama": "Parity Resep Timpa", "bahan": [{ "nama": "Parity Timpa", "qty": 1 }] }] } } },
+    { "name": "hpp GET all after timpa", "file": "hpp.php", "method": "GET", "query": {}, "ignore": ["ts", "*.*.updated_at"] }
   ]
 }
