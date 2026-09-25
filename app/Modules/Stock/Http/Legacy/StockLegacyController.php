@@ -5,6 +5,7 @@ namespace App\Modules\Stock\Http\Legacy;
 use App\Modules\Stock\Services\StockCatalog;
 use App\Modules\Stock\Services\StockCk;
 use App\Modules\Stock\Services\StockEntries;
+use App\Modules\Stock\Services\StockHpp;
 use App\Modules\Stock\Services\StockLog;
 use App\Modules\Stock\Services\StockOrders;
 use App\Modules\Stock\Services\StockSnapshot;
@@ -12,6 +13,7 @@ use App\Modules\Stock\Services\StockSupport;
 use App\Modules\Stock\Services\StockTeamScope;
 use App\Support\Modules;
 use Closure;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use stdClass;
@@ -44,6 +46,7 @@ class StockLegacyController
         private readonly StockEntries $entries,
         private readonly StockLog $log,
         private readonly StockTeamScope $scope,
+        private readonly StockHpp $hpp,
     ) {}
 
     public function items(Request $r): Response
@@ -188,6 +191,46 @@ class StockLegacyController
             });
     }
 
+    /**
+     * hpp.php: GET ?action=all (default) → {bahan, resep, setting, ts} with no `ok` key;
+     * ?action=pakai&bulan=YYYY-MM (else the current UTC month). `by` comes from the
+     * body, as legacy stored it.
+     */
+    public function hpp(Request $r): Response
+    {
+        return $this->serve($r, 'hpp',
+            function (array $q) {
+                if (($q['action'] ?? '') === 'pakai') {
+                    $bl = isset($q['bulan']) ? trim(StockSupport::str($q['bulan'])) : '';
+
+                    return $this->hpp->usage(preg_match('/^\d{4}-\d{2}$/', $bl) ? $bl : gmdate('Y-m'));
+                }
+
+                return $this->hpp->all();
+            },
+            function (string $a, stdClass $b) {
+                $by = $b->by ?? '';
+
+                return match ($a) {
+                    'simpanBahan' => $this->hpp->saveIngredientAction($b->data ?? new stdClass, $by),
+                    'imporBahan' => $this->hpp->importIngredients($b->rows ?? null, $by),
+                    'gabungBahan' => $this->hpp->merge($b->dari ?? '', $b->ke ?? ''),
+                    'tarikProduk' => $this->hpp->pullProducts(),
+                    'hapusBahan' => $this->hpp->deleteIngredient($b->nama ?? ''),
+                    'hapusBahanSamaResep' => $this->hpp->deleteShadows(),
+                    'simpanResep' => $this->hpp->saveRecipeAction($b->data ?? new stdClass, $by),
+                    'hapusResep' => $this->hpp->deleteRecipe($b->id ?? ''),
+                    'impor' => $this->hpp->import($b->data ?? new stdClass, $by, ! empty($b->timpa)),
+                    'imporResep' => $this->hpp->importRecipes($b->rows ?? [], $by),
+                    'samakanNama' => $this->hpp->alignNames($by),
+                    'simpanPakai' => $this->hpp->saveUsage($b->data ?? new stdClass, $by),
+                    'simpanSetting' => $this->hpp->saveSettings($b->data ?? null),
+                    default => null,
+                };
+            },
+            exposeError: true);
+    }
+
     /** pur_filter_tanggal()'s ?dari=&ke=, trimmed. */
     private static function range(array $q): array
     {
@@ -206,7 +249,7 @@ class StockLegacyController
      * @param  Closure(array $get): mixed  $get
      * @param  Closure(string $action, stdClass $body): mixed  $post  null = unknown action
      */
-    private function serve(Request $r, string $file, Closure $get, Closure $post, bool $actionless = false): Response
+    private function serve(Request $r, string $file, Closure $get, Closure $post, bool $actionless = false, bool $exposeError = false): Response
     {
         parse_str((string) $r->server('QUERY_STRING', ''), $q);
         $method = strtoupper($r->getMethod());
@@ -242,8 +285,10 @@ class StockLegacyController
         } catch (Throwable $e) {
             Log::error("[stock/$file] ".$e->getMessage());
             report($e);
+            // hpp.php (only) shows the reason: "kesalahan server: <PDO/Exception message>"
+            $why = $e instanceof QueryException && $e->getPrevious() ? $e->getPrevious()->getMessage() : $e->getMessage();
 
-            return self::error('kesalahan server', 500);
+            return self::error($exposeError ? 'kesalahan server: '.$why : 'kesalahan server', 500);
         }
     }
 

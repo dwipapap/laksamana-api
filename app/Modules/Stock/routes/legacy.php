@@ -15,3 +15,4 @@ Route::any('stock-api-mysql/waste.php', [C::class, 'waste']);
 Route::any('stock-api-mysql/serah.php', [C::class, 'serah']);
 Route::any('stock-api-mysql/opname.php', [C::class, 'opname']);
 Route::any('stock-api-mysql/log.php', [C::class, 'log']);
+Route::any('stock-api-mysql/hpp.php', [C::class, 'hpp']);

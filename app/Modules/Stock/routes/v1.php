@@ -1,5 +1,6 @@
 <?php
 
+use App\Modules\Stock\Http\V1\HppController as H;
 use App\Modules\Stock\Http\V1\StockController as C;
 use App\Modules\Stock\Http\V1\StockEntriesController as E;
 use Illuminate\Support\Facades\Route;
@@ -83,3 +84,31 @@ Route::middleware(['auth:sanctum', 'module:usage'])->prefix('stock')->group(func
     Route::get('waste/{id}/photo', [E::class, 'photo'])->defaults('kind', 'waste');
     Route::get('handovers/{id}/photo', [E::class, 'photo'])->defaults('kind', 'handovers');
 });
+
+// ─── #36: HPP & Resep (the HPP Panel) ───
+Route::middleware(['auth:sanctum', 'module:hpp'])->prefix('stock/hpp')->group(function () {
+    Route::get('ingredients', [H::class, 'ingredientIndex']);
+    Route::post('ingredients', [H::class, 'ingredientStore']);
+    Route::get('ingredients/{nama}', [H::class, 'ingredientShow'])->where('nama', '.+');
+    Route::patch('ingredients/{nama}', [H::class, 'ingredientUpdate'])->where('nama', '.+');
+    Route::delete('ingredients/{nama}', [H::class, 'ingredientDestroy'])->where('nama', '.+');
+    Route::post('ingredients-import', [H::class, 'ingredientImport']);
+    Route::post('ingredients-merge', [H::class, 'ingredientMerge']);
+    Route::post('pull-products', [H::class, 'pullProducts']);
+    Route::post('remove-shadows', [H::class, 'removeShadows']);
+    Route::post('align-names', [H::class, 'alignNames']);
+
+    Route::get('recipes', [H::class, 'recipeIndex']);
+    Route::post('recipes', [H::class, 'recipeStore']);
+    Route::get('recipes/{id}', [H::class, 'recipeShow']);
+    Route::patch('recipes/{id}', [H::class, 'recipeUpdate']);
+    Route::delete('recipes/{id}', [H::class, 'recipeDestroy']);
+    Route::post('recipes-import', [H::class, 'recipeImport']);
+
+    Route::get('usage/{bulan}', [H::class, 'monthShow']);
+    Route::patch('usage/{bulan}', [H::class, 'monthUpdate']);
+    Route::get('settings', [H::class, 'settingsShow']);
+    Route::patch('settings', [H::class, 'settingsUpdate']);
+});
+// The one-time move from Excel can wipe HPP (`replace`): HPP admins only.
+Route::middleware(['auth:sanctum', 'module:hpp,admin'])->post('stock/hpp/import', [H::class, 'import']);
