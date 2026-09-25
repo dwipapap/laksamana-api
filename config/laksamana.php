@@ -6,10 +6,11 @@
 |--------------------------------------------------------------------------
 | One entry per legacy `<modul>-mysql` backend of laksamana-office.
 |
-| - `connection`: the Laravel DB connection its models use. Today every module
-|   points at its own legacy database (hybrid phase). Consolidating a module
-|   into the unified `core` database later means copying its tables there and
-|   changing ONLY this value — models never hard-code a connection.
+| - `connection`: the Laravel DB connection its models use. Every Modul has
+|   its own DB_<KEY>_CONNECTION override, so event and ticketing can move to
+|   `core` independently even though they still share `legacy_ems` by default.
+| - `maintenance`: opt-in write guard for an offline cutover. Reads continue;
+|   set <KEY>_MAINTENANCE=true only after that Modul is ready to freeze.
 | - `database`: default legacy DB name (production naming). Override per
 |   environment with DB_<ENV_KEY>_DATABASE (dev: lakk5493_db_dev_<mod>).
 | - `data_dir`: existing on-disk folder the legacy backend writes files to.
@@ -26,7 +27,7 @@ $modules = [
     'akademi' => ['env' => 'AKADEMI',   'database' => 'lakk5493_db_akademi',   'legacy' => 'akademi-api-mysql',   'data_dir' => '/home/lakk5493/akademi-db'],
     'bd' => ['env' => 'BD',        'database' => 'lakk5493_db_bd',        'legacy' => 'bd-api-mysql', 'server_sql_mode' => true],
     'dw' => ['env' => 'DW',        'database' => 'lakk5493_db_dw',        'legacy' => 'dw-api-mysql'],
-    // event+ticketing share ONE connection (legacy_ems): the flag on either applies to both.
+    // event+ticketing share the legacy EMS database, but their connection and maintenance switches are independent.
     'event' => ['env' => 'EMS',       'database' => 'lakk5493_db_ems',       'legacy' => 'event-api-mysql',     'data_dir' => '/home/lakk5493/event-db', 'server_sql_mode' => true],
     'ticketing' => ['env' => 'EMS',       'database' => 'lakk5493_db_ems',       'legacy' => 'ticketing-api'],
     'finance' => ['env' => 'FINANCE',   'database' => 'lakk5493_db_finance',   'legacy' => 'finance-api-mysql', 'server_sql_mode' => true],
@@ -44,8 +45,14 @@ $modules = [
 ];
 
 foreach ($modules as $key => &$m) {
-    // event & ticketing share the EMS database -> share one connection.
-    $m['connection'] = env('DB_'.$m['env'].'_CONNECTION', 'legacy_'.strtolower($m['env']));
+    $envKey = strtoupper($key);
+    // A per-Modul override wins; the shared env connection keeps existing
+    // deployments unchanged, including event+ticketing on legacy_ems.
+    $m['connection'] = env(
+        'DB_'.$envKey.'_CONNECTION',
+        env('DB_'.$m['env'].'_CONNECTION', 'legacy_'.strtolower($m['env']))
+    );
+    $m['maintenance'] = filter_var(env($envKey.'_MAINTENANCE', false), FILTER_VALIDATE_BOOL);
     if (isset($m['data_dir'])) {
         $m['data_dir'] = env(strtoupper($key).'_DATA_DIR', $m['data_dir']);
     }

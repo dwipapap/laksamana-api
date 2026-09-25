@@ -46,6 +46,11 @@ final class Modules
         return self::config($module)['data_dir'] ?? null;
     }
 
+    public static function isInMaintenance(string $module): bool
+    {
+        return (bool) (self::config($module)['maintenance'] ?? false);
+    }
+
     public static function envLabel(): string
     {
         return (string) config('laksamana.env_label', 'lokal');
