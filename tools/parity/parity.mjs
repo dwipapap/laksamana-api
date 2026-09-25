@@ -23,6 +23,7 @@
  *   "legacyPath": "account-api-mysql",  URL prefix on the Laravel side
  *   "dbEnv": "ACCOUNT", "db": "lakk5493_db_account",
  *   "extraDbs": [{"dbEnv":"JADWAL","db":"lakk5493_db_jadwal"}],   optional (cloned for both sides)
+ *   "setupSql": ["CREATE TABLE ..."],   optional: run on both clones of the module DB before replaying
  *   "extraLegacy": [{"dir":"dw-mysql","legacyPath":"dw-api-mysql","db":"lakk5493_db_dw","root":"acc|old"}],
  *   "ignore": ["data.ts", "data.backend"],   global ignored paths ("*" = any key)
  *   "cases": [
@@ -75,6 +76,9 @@ if (!dbs.find(d => d.dbEnv === 'ACCOUNT')) dbs.push({ dbEnv: 'ACCOUNT', db: 'lak
 // ...and account asks jadwal for division heads (headIds)
 if (!dbs.find(d => d.dbEnv === 'JADWAL')) dbs.push({ dbEnv: 'JADWAL', db: 'lakk5493_db_jadwal' });
 for (const d of dbs) { cloneDb(d.db, `${P}_old_${d.db}`); cloneDb(d.db, `${P}_new_${d.db}`); }
+// Optional statements run on BOTH clones of the module DB (local copies only), e.g. to
+// create tables schema.sql declares but the restored dump lacks, so the legacy code path runs.
+for (const q of spec.setupSql || []) for (const side of ["old", "new"]) sql(q, `${P}_${side}_${spec.db}`);
 
 // ---- legacy side -----------------------------------------------------------
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), `parity-${mod}-`));

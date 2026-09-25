@@ -1,0 +1,73 @@
+{
+  "dir": "hr-mysql",
+  "legacyPath": "hr-api-mysql",
+  "dbEnv": "HR",
+  "db": "lakk5493_db_hr",
+  "setupSql": [
+    "CREATE TABLE IF NOT EXISTS attendance_months (bulan VARCHAR(10) NOT NULL, data LONGTEXT NOT NULL, imported_at VARCHAR(40) NOT NULL DEFAULT '', imported_by VARCHAR(120) NOT NULL DEFAULT '', PRIMARY KEY (bulan)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+    "CREATE TABLE IF NOT EXISTS attendance_days (bulan VARCHAR(10) NOT NULL, talenta_id VARCHAR(32) NOT NULL, tanggal VARCHAR(10) NOT NULL, emp_id VARCHAR(64) NOT NULL DEFAULT '', data LONGTEXT NOT NULL, PRIMARY KEY (bulan, talenta_id, tanggal), KEY idx_att_emp (emp_id, bulan), KEY idx_att_bulan (bulan)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+  ],
+  "ignore": ["data.time", "data.db", "data._savedAt", "savedAt"],
+  "cases": [
+    {"name": "ping", "method": "GET", "query": {"action": "ping"}},
+    {"name": "stats", "method": "GET", "query": {"action": "stats"}},
+    {"name": "getAll", "method": "GET", "query": {"action": "getAll"}},
+    {"name": "GET without action", "method": "GET", "query": {}},
+    {"name": "GET unknown action", "method": "GET", "query": {"action": "saveAll"}},
+    {"name": "POST body not an object", "body": "x"},
+    {"name": "POST unknown action", "body": {"action": "getAll"}},
+    {"name": "saveAll without data", "body": {"action": "saveAll", "baseRev": 129}},
+    {"name": "saveAll employees not a list", "body": {"action": "saveAll", "baseRev": 129, "data": {"employees": {}}}},
+    {"name": "saveAll action from the query string", "query": {"action": "saveAll"}, "body": {"baseRev": 129}},
+    {"name": "saveAll stale rev -> conflict", "body": {"action": "saveAll", "baseRev": 5, "by": "X", "data": {"employees": []}}},
+    {"name": "saveAll without baseRev on a used document -> conflict", "body": {"action": "saveAll", "by": "X", "data": {"employees": []}}},
+    {"name": "getAll unchanged after refusals", "method": "GET", "query": {"action": "getAll"}},
+
+    {"name": "saveAll full document", "body": {"action": "saveAll", "baseRev": 129, "by": "Parity Tester", "data": {
+      "version": 3,
+      "divisions": [{"id": "d1", "name": "Kitchen", "color": "#fff", "heads": {}}],
+      "employees": [
+        {"id": "e1", "name": "Satu", "role": "Cook", "divId": "d1", "level": "Staff", "appRole": "staff", "joinDate": "2026-01-01", "status": "active", "pin": "1234", "phone": "08xx"},
+        {"id": "e2", "name": "Dua", "divId": ["nested"], "status": null},
+        {"id": "", "name": "skipped"}, "junk"
+      ],
+      "kpiTemplates": [{"id": "k1", "divId": "d1", "items": [{"id": "i1", "w": 50}]}],
+      "okrs": [{"id": "o1", "ownerType": "div", "ownerId": "d1", "period": "2026-Q3", "krs": []}],
+      "reviews": [{"id": "r1", "empId": "e1", "month": "2026-09", "status": "draft", "layers": {}}],
+      "competencies": [], "careerPaths": [], "successions": [{"id": "s1", "position": "Head", "empId": "e1", "readiness": "1y"}],
+      "trainings": [{"id": "t1", "title": "Safety", "divId": "d1", "type": "wajib", "mandatory": true}],
+      "trainingRecords": [{"id": "tr1", "trainingId": "t1", "empId": "e1", "status": "done", "score": null, "date": "2026-09-01"}],
+      "coachings": [{"id": "c1", "empId": "e1", "coachId": "e2", "date": "2026-09-02", "status": "plan"}],
+      "rewards": [{"id": "rw1", "empId": "e1", "date": "2026-09-03", "type": "bonus", "points": 12.5}],
+      "badges": [{"id": "b1", "empId": "e1", "month": "2026-09", "badge": "star"}],
+      "violations": [{"id": "v1", "empId": "e2", "date": "2026-09-04", "type": "late", "severity": "low", "sp": "SP1", "status": "open"}],
+      "feedbacks": [{"id": "f1", "empId": "e1", "date": "2026-09-05", "kind": "praise"}],
+      "moods": [{"id": "m1", "empId": "e1", "date": "2026-09-06", "mood": null}, {"id": "m2", "empId": "e2", "date": "2026-09-06", "mood": 4}],
+      "suggestions": [{"id": "sg1", "empId": null, "date": "2026-09-07", "status": "new", "text": "anon"}],
+      "calendar": [{"id": "cal1", "date": "2026-09-08", "kind": "event", "title": "Rapat"}],
+      "audit": [{"id": "a1", "at": "2026-09-25T00:00:00Z", "userId": "u1", "userName": "Tester", "action": "save", "detail": null}],
+      "kpiActuals": {"d1": {"2026-09": {"i1": 80, "i2": "75.5", "i3": "x"}, "2026-10": {}}, "d2": "junk"},
+      "monthlyInputs": {"e1": {"2026-09": {"hadir": 20, "extra": {}}}, "e2": {}},
+      "attendance": {
+        "2026-08": {"fileName": "aug.xlsx", "importedAt": "2026-09-01", "importedBy": "HR", "unmatched": [],
+          "days": [{"talentaId": "T1", "date": "2026-08-01", "empId": "e1", "code": "H"}, {"talentaId": "T1", "date": "2026-08-02", "code": "A"}, {"talentaId": "", "date": "2026-08-03"}]},
+        "2026-09": {"fileName": "sep.xlsx", "days": []}
+      },
+      "settings": {"attendanceRules": {"late": 15}, "empty": {}},
+      "futureFeature": {"x": 1}
+    }}},
+    {"name": "getAll after full save", "method": "GET", "query": {"action": "getAll"}},
+    {"name": "stats after full save", "method": "GET", "query": {"action": "stats"}},
+
+    {"name": "saveAll second (prune attendance, audit append-only)", "body": {"action": "saveAll", "baseRev": "130", "by": "Parity Tester 2", "data": {
+      "employees": [{"id": "e1", "name": "Satu v2"}],
+      "audit": [{"id": "a1", "action": "REWRITTEN"}, {"id": "a2", "at": "2026-09-26T00:00:00Z", "action": "second"}],
+      "attendance": {"2026-08": {"fileName": "aug2.xlsx"}},
+      "settings": {}
+    }}},
+    {"name": "getAll after second save", "method": "GET", "query": {"action": "getAll"}},
+    {"name": "saveAll stale again -> conflict names the last saver", "body": {"action": "saveAll", "baseRev": 130, "data": {"employees": []}}},
+    {"name": "saveAll empty attendance map deletes nothing", "body": {"action": "saveAll", "baseRev": 131, "data": {"employees": [], "attendance": {}}}},
+    {"name": "stats at the end", "method": "GET", "query": {"action": "stats"}}
+  ]
+}
