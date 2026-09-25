@@ -18,7 +18,7 @@ source disagree, the source wins; then correct the spec.
 | konten | [konten.md](konten.md) | **done** | full contract, see docs/api/konten.md | 22/22 | 30 |
 | akademi | [akademi.md](akademi.md) | **done** | full contract, see docs/api/akademi.md | 25/25 | 31 |
 | bd | [bd.md](bd.md) | **done** | full contract, see docs/api/bd.md | 32/32 | 6 + 5 |
-| event | [event.md](event.md) | pending | pending | — | — |
+| event | [event.md](event.md) | **done** | full contract, see docs/api/event.md | 65/65 | 13 + 13 |
 | hr | [hr.md](hr.md) | **done** | full contract, see docs/api/hr.md | 21/21 | 7 + 8 |
 | hlife | [hlife.md](hlife.md) | **done** | full contract, see docs/api/hlife.md | 22/22 | 6 + 7 |
 | kompas | [kompas.md](kompas.md) | pending | pending | — | — |

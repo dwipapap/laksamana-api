@@ -39,7 +39,8 @@ $laksamanaDbs = [];
 $laksamanaServerMode = [];
 foreach ($laksamanaRegistry['modules'] as $m) {
     $laksamanaDbs[$m['env']] = $m['database'];
-    $laksamanaServerMode[$m['env']] = ! empty($m['server_sql_mode']);
+    // A shared connection (event+ticketing) keeps the server mode if ANY module on it asks.
+    $laksamanaServerMode[$m['env']] = ($laksamanaServerMode[$m['env']] ?? false) || ! empty($m['server_sql_mode']);
 }
 foreach ($laksamanaRegistry['extra_connections'] as $envKey => $dbName) {
     $laksamanaDbs[$envKey] = $dbName;

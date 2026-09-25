@@ -1,0 +1,94 @@
+{
+  "dir": "event-mysql",
+  "legacyPath": "event-api-mysql",
+  "dbEnv": "EMS",
+  "db": "lakk5493_db_ems",
+  "ignore": ["data.ts", "data.backend", "data.db"],
+  "cases": [
+    { "name": "ping", "method": "GET", "query": { "action": "ping" } },
+    { "name": "stats", "method": "GET", "query": { "action": "stats" } },
+    { "name": "getAll (default GET)", "method": "GET", "query": {} },
+    { "name": "getAll", "method": "GET", "query": { "action": "getAll" } },
+    { "name": "unknown GET action", "method": "GET", "query": { "action": "nope" } },
+    { "name": "empty GET action", "method": "GET", "query": { "action": "" } },
+    { "name": "unknown POST action", "body": { "action": "nope" } },
+    { "name": "POST without action", "body": { "data": {} } },
+    { "name": "eventsHari every event date", "method": "GET", "query": { "action": "eventsHari", "tgl": "$each" },
+      "each": "SELECT DISTINCT DATE(start_datetime) FROM events WHERE start_datetime IS NOT NULL ORDER BY 1" },
+    { "name": "eventsHari date without events", "method": "GET", "query": { "action": "eventsHari", "tgl": "1999-01-01" } },
+    { "name": "eventsHari invalid date", "method": "GET", "query": { "action": "eventsHari", "tgl": "27-09-2026" } },
+    { "name": "eventsHari missing date", "method": "GET", "query": { "action": "eventsHari" } },
+    { "name": "eventsHari padded date passes the trim check", "method": "GET", "query": { "action": "eventsHari", "tgl": " 2026-09-27 " } },
+    { "name": "eventsHari via POST body is not read", "body": { "action": "eventsHari", "tgl": "2026-09-27" } },
+
+    { "name": "saveAll without data", "body": { "action": "saveAll" } },
+    { "name": "saveAll data not an object", "body": { "action": "saveAll", "data": "x" } },
+    { "name": "saveAll empty object", "body": { "action": "saveAll", "data": {} } },
+    { "name": "saveAll new rows in every collection + checkins + details + settings", "body": { "action": "saveAll", "data": {
+      "talents": [{ "id": "tl_par1", "name": "Parity Band", "category": "Band", "phone": "0812-parity", "status": "Active", "contract_status": "Kontrak", "default_fee": "1500000", "createdAt": 1790100000000, "updatedAt": 1790100000000, "baseUpdatedAt": 1790000000000, "nested": { "a": {}, "b": [] } }],
+      "events": [
+        { "id": "ev_par1", "title": "Parity Night", "category": "Paid", "status": "Upcoming", "venue": "Laksamana Muda / Pekanbaru", "start_datetime": "2031-03-04T13:30:00.000Z", "end_datetime": "2031-03-04T16:00:00+07:00", "capacity": 250, "pic": "Parity PIC", "is_ticketed": true, "idea_id": null, "createdBy": "Parity Kru", "createdById": "u-parity", "createdAt": 1790100000000, "updatedAt": 1790100000000 },
+        { "id": "ev_par2", "title": "Parity Draft", "status": "Planning", "start_datetime": "2031-03-04 20:00", "end_datetime": "garbage", "capacity": "12abc", "is_ticketed": 0, "updatedAt": 1790100000001 },
+        { "id": "ev_par3", "title": "Parity Legacy Status", "status": "Finished", "start_datetime": "2031-03-04T17:30:00Z", "updatedAt": "2026-09-01T00:00:00Z", "createdAt": "1790100000002" },
+        { "title": "no id -> skipped" }, "not a row"
+      ],
+      "schedules": [{ "id": "sc_par1", "talent_id": "tl_par1", "event_id": "ev_par1", "date": "2031-03-04", "start_time": "20:00:00.000", "end_time": "", "performance_type": "Live", "fee": 1500000.7, "status": "Confirmed", "source": "manual", "createdAt": 1790100000000, "updatedAt": 1790100000000 }],
+      "recurringRules": [{ "id": "rr_par1", "talent_id": "tl_par1", "valid_from": "2031-01-01", "valid_to": "not a date", "updatedAt": 1790100000000 }],
+      "talentPayments": [{ "id": "tp_par1", "talent_id": "tl_par1", "period_month": "2031-03", "show_count": 4, "total_amount": 6000000, "status": "Paid", "updatedAt": 1790100000000 }],
+      "ticketClasses": [{ "id": "tc_par1", "event_id": "ev_par1", "name": "VIP", "price": 250000, "quota": 50, "sold": 1, "is_seated": "yes", "updatedAt": 1790100000000 }],
+      "seats": [{ "id": "st_par1", "event_id": "ev_par1", "ticket_class_id": "tc_par1", "zone": "A", "table_no": 7, "status": "sold", "updatedAt": 1790100000000 }],
+      "orders": [{ "id": "or_par1", "event_id": "ev_par1", "buyer_name": "Parity Buyer", "phone": "0812", "email": "p@x.id", "total": 250000, "payment_status": "Paid", "payment_ref": "REF1", "created": "2031-02-01T10:00:00Z", "createdAt": 1, "updatedAt": 1790100000000 }],
+      "tickets": [{ "id": "tk_par1", "order_item_id": "or_par1", "ticket_class_id": "tc_par1", "seat_id": "st_par1", "ticket_number": "PAR-001", "qr_token": "qr_parity_1", "status": "valid", "updatedAt": 1790100000000 }],
+      "ideas": [{ "id": "id_par1", "name": "Parity Idea", "category": "Music", "frequency": "Monthly", "difficulty": "Easy", "evaluations": [], "updatedAt": 1790100000000 }],
+      "refunds": [{ "id": "rf_par1", "order_id": "or_par1", "status": "Pending", "updatedAt": 1790100000000 }],
+      "calendarExtra": [{ "id": "ce_par1", "type": "holiday", "title": "Parity Day", "date": "2031-03-05", "updatedAt": 1790100000000 }],
+      "checkins": [{ "id": "ci_par1", "ticket_id": "tk_par1", "checked_in_at": "2031-03-04T13:45:00.000Z", "staff": "Director", "gate": "Main", "result": "Valid" }, { "noid": 1 }],
+      "eventDetails": { "ev_par1": { "rundown": [{ "t": "20:00", "x": "Open" }], "budget": {}, "updatedAt": 1790100000000 }, "ev_par2": "not an object" },
+      "entertainmentRules": [{ "day": "Sat", "max": 2 }],
+      "role": "Director",
+      "layoutTemplates": [{ "id": "lt_par", "name": "Parity Layout", "items": [] }]
+    } } },
+    { "name": "getAll after the new rows", "method": "GET", "query": { "action": "getAll" } },
+    { "name": "eventsHari on the parity date (drops Planning, keeps legacy Finished)", "method": "GET", "query": { "action": "eventsHari", "tgl": "2031-03-04" } },
+    { "name": "eventsHari next day (UTC evening lands on WIB tomorrow)", "method": "GET", "query": { "action": "eventsHari", "tgl": "2031-03-05" } },
+    { "name": "saveAll older stamp does not overwrite", "body": { "action": "saveAll", "data": {
+      "talents": [{ "id": "tl_par1", "name": "SHOULD NOT WRITE", "updatedAt": 1790000000000 }]
+    } } },
+    { "name": "saveAll equal stamp overwrites", "body": { "action": "saveAll", "data": {
+      "ideas": [{ "id": "id_par1", "name": "Parity Idea v2", "updatedAt": 1790100000000 }]
+    } } },
+    { "name": "saveAll bounded delete keeps rows newer than the payload's newest stamp", "body": { "action": "saveAll", "data": {
+      "refunds": [{ "id": "rf_par2", "order_id": "or_par1", "status": "New", "updatedAt": 1790099999999 }]
+    } } },
+    { "name": "saveAll unstamped payload deletes without a bound", "body": { "action": "saveAll", "data": {
+      "calendarExtra": [{ "id": "ce_par2", "type": "note", "title": "Only me", "date": "2031-03-06" }]
+    } } },
+    { "name": "saveAll empty lists delete nothing", "body": { "action": "saveAll", "data": {
+      "talents": [], "events": [], "checkins": [], "eventDetails": []
+    } } },
+    { "name": "saveAll checkin resend is ignored (append-only)", "body": { "action": "saveAll", "data": {
+      "checkins": [{ "id": "ci_par1", "ticket_id": "CHANGED", "result": "Invalid" }]
+    } } },
+    { "name": "saveAll eventDetails map deletes missing entries", "body": { "action": "saveAll", "data": {
+      "eventDetails": { "ev_par1": { "rundown": [], "updatedAt": 1790100000500 }, "123": { "numeric": true } }
+    } } },
+    { "name": "saveAll null settings are skipped", "body": { "action": "saveAll", "data": {
+      "role": null, "layoutTemplates": { "a": 1 }
+    } } },
+    { "name": "saveAll reused QR token lands on the other ticket, then the bounded delete removes it", "body": { "action": "saveAll", "data": {
+      "tickets": [{ "id": "tk_par2", "qr_token": "qr_parity_1", "status": "valid", "updatedAt": 1790100000900 }]
+    } } },
+    { "name": "getAll after writes", "method": "GET", "query": { "action": "getAll" } },
+    { "name": "stats after writes", "method": "GET", "query": { "action": "stats" } },
+
+    { "name": "upload empty", "body": { "action": "upload" } },
+    { "name": "upload wrong type", "body": { "action": "upload", "dataBase64": "aGVsbG8=", "fileName": "x.exe", "mimeType": "application/x-msdownload" } },
+    { "name": "upload bad base64", "body": { "action": "upload", "dataBase64": "@@@", "mimeType": "image/png" } },
+    { "name": "upload png", "body": { "action": "upload", "dataBase64": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "mimeType": "image/png", "fileName": "ktp.png" }, "ignore": ["data.key", "data.at"] },
+    { "name": "upload pdf by name, no fileName echo", "body": { "action": "upload", "dataBase64": "aGVsbG8=", "mimeType": "", "fileName": "Kontrak.PDF" }, "ignore": ["data.key", "data.at"] },
+    { "name": "upload jpeg extension without name", "body": { "action": "upload", "dataBase64": "aGVsbG8=", "mimeType": "image/jpeg" }, "ignore": ["data.key", "data.name", "data.at"] },
+    { "name": "file missing", "method": "GET", "query": { "action": "file", "key": "ev_nope.png" } },
+    { "name": "file traversal", "method": "GET", "query": { "action": "file", "key": "../config.php" } },
+    { "name": "file empty key", "method": "GET", "query": { "action": "file" } }
+  ]
+}

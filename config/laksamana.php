@@ -26,10 +26,11 @@ $modules = [
     'akademi' => ['env' => 'AKADEMI',   'database' => 'lakk5493_db_akademi',   'legacy' => 'akademi-api-mysql',   'data_dir' => '/home/lakk5493/akademi-db'],
     'bd' => ['env' => 'BD',        'database' => 'lakk5493_db_bd',        'legacy' => 'bd-api-mysql', 'server_sql_mode' => true],
     'dw' => ['env' => 'DW',        'database' => 'lakk5493_db_dw',        'legacy' => 'dw-api-mysql'],
-    'event' => ['env' => 'EMS',       'database' => 'lakk5493_db_ems',       'legacy' => 'event-api-mysql',     'data_dir' => '/home/lakk5493/event-db'],
+    // event+ticketing share ONE connection (legacy_ems): the flag on either applies to both.
+    'event' => ['env' => 'EMS',       'database' => 'lakk5493_db_ems',       'legacy' => 'event-api-mysql',     'data_dir' => '/home/lakk5493/event-db', 'server_sql_mode' => true],
     'ticketing' => ['env' => 'EMS',       'database' => 'lakk5493_db_ems',       'legacy' => 'ticketing-api'],
     'finance' => ['env' => 'FINANCE',   'database' => 'lakk5493_db_finance',   'legacy' => 'finance-api-mysql'],
-    // server_sql_mode (hlife, bd, hr): do not force Laravel's strict sql_mode — the legacy PDO used
+    // server_sql_mode (hlife, bd, hr, event): do not force Laravel's strict sql_mode — the legacy PDO used
     // the server default, and production (non-strict) stores e.g. hlife dreams year "" as
     // tahun=0. Strict mode would reject writes legacy accepted (see #97 for the other modules).
     'hlife' => ['env' => 'HLIFE',     'database' => 'lakk5493_db_hlife',     'legacy' => 'howandi-life-api-mysql', 'server_sql_mode' => true],
