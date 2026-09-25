@@ -46,3 +46,10 @@
 - `/api/v1/hr/okrs`
 - `/api/v1/hr/reviews`
 - … one resource per collection.
+
+## Port notes (#23)
+
+- **Attendance storage.** `attendance_months`/`attendance_days` are missing live. The restored production data keeps the attendance map in the `extra:attendance` setting (the older backend's unknown-key rule), and legacy `getAll` lets that setting override the table-built map. The port checks `information_schema` read-only. Without the tables, it reads and writes `extra:attendance`: `saveAll` would otherwise delete that setting and erase the history. With the tables (parity creates them on its clones through `setupSql`), it behaves exactly like the repo lib. The repo lib itself answers 500 on `getAll` when the tables are missing, and the port intentionally does not.
+- **PII.** Failures are logged as `[hr-api] <exception class> SQLSTATE <code>`, never with the message (a QueryException message embeds the bound employee values) and never with the payload. Tested.
+- **sql_mode:** the connection keeps the server default (`server_sql_mode`, #97).
+- **v1** is documented in `docs/api/hr.md`. One version (`meta.rev`) covers the whole document, the same guard the legacy tabs use.
