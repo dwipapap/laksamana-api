@@ -6,6 +6,7 @@ use App\Modules\Account\Services\AccountService;
 use App\Support\Legacy\Envelope;
 use App\Support\Legacy\LegacyController;
 use App\Support\Legacy\LegacyRequest;
+use App\Support\Modules;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -23,7 +24,10 @@ class AccountLegacyController extends LegacyController
         $a = $this->account;
 
         // A freshly installed database has nobody who could create the first account.
-        $a->seedIfEmpty();
+        // A cutover freeze must keep even this bootstrap write disabled.
+        if (! Modules::isInMaintenance('account')) {
+            $a->seedIfEmpty();
+        }
 
         $flat = match ($req->action) {
             'login' => $a->login((string) ($b['name'] ?? ''), (string) ($b['pin'] ?? '')),

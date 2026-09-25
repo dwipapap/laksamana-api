@@ -35,11 +35,13 @@ class ModuleServiceProvider extends ServiceProvider
             return;
         }
         foreach (glob(app_path('Modules/*/routes'), GLOB_ONLYDIR) ?: [] as $dir) {
+            $module = strtolower((string) basename(dirname($dir)));
+            $maintenance = 'maintenance:'.$module;
             if (is_file($dir.'/v1.php')) {
-                Route::middleware('api')->prefix('api/v1')->group($dir.'/v1.php');
+                Route::middleware(['api', $maintenance])->prefix('api/v1')->group($dir.'/v1.php');
             }
             if (is_file($dir.'/legacy.php')) {
-                Route::middleware('legacy')->group($dir.'/legacy.php');
+                Route::middleware(['legacy', $maintenance])->group($dir.'/legacy.php');
             }
         }
     }

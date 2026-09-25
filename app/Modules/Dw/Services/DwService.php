@@ -300,6 +300,10 @@ class DwService
      */
     public function tutupKedaluwarsa(): void
     {
+        if (Modules::isInMaintenance('dw')) {
+            return;
+        }
+
         $hariIni = gmdate('Y-m-d', time() + 7 * 3600);
         $now = self::ms();
         try {

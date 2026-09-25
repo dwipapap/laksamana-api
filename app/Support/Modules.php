@@ -27,7 +27,12 @@ final class Modules
 
     public static function connectionName(string $module): string
     {
-        return self::config($module)['connection'];
+        $connection = (string) (self::config($module)['connection'] ?? '');
+        if ($connection === '' || ! array_key_exists($connection, config('database.connections', []))) {
+            throw new InvalidArgumentException("Unknown database connection [$connection] for module [$module].");
+        }
+
+        return $connection;
     }
 
     public static function db(string $module): ConnectionInterface
@@ -44,6 +49,11 @@ final class Modules
     public static function dataDir(string $module): ?string
     {
         return self::config($module)['data_dir'] ?? null;
+    }
+
+    public static function isInMaintenance(string $module): bool
+    {
+        return (bool) (self::config($module)['maintenance'] ?? false);
     }
 
     public static function envLabel(): string

@@ -3,6 +3,7 @@
 use App\Auth\Middleware\RequireModule;
 use App\Support\Api\ApiResponse;
 use App\Support\Legacy\LegacyCors;
+use App\Support\Maintenance\RejectModuleWrites;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -22,6 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'module' => RequireModule::class,
+            'maintenance' => RejectModuleWrites::class,
         ]);
         // Old `<modul>-api-mysql/api.php` URLs: open CORS, no session, no CSRF.
         $middleware->group('legacy', [
