@@ -143,7 +143,7 @@ class ReservasiController
     /** Replace one review / feedback / waitlist item without touching its neighbours. */
     public function putItem(Request $r, string $section, string $id): JsonResponse
     {
-        if ($bad = self::badItemSection($section)) {
+        if ($bad = self::badItemSection($section) ?? self::badItemId($id)) {
             return $bad;
         }
         if (($v = self::version($r)) === null) {
@@ -151,7 +151,7 @@ class ReservasiController
         }
         $value = $r->json('value');
         if (! is_array($value) || array_is_list($value) || ! isset($value['id']) || (string) $value['id'] !== $id) {
-            return ApiResponse::error('validation_failed', 'Send {"value": {…,"id":"'.$id.'"}} with the id matching the URL.', 422);
+            return ApiResponse::error('validation_failed', 'Send {"value": {…}} with its id matching the URL.', 422);
         }
 
         return $this->write(fn () => $this->records->putItem($section, $id, $value, $v));
@@ -159,7 +159,7 @@ class ReservasiController
 
     public function deleteItem(Request $r, string $section, string $id): JsonResponse
     {
-        if ($bad = self::badItemSection($section)) {
+        if ($bad = self::badItemSection($section) ?? self::badItemId($id)) {
             return $bad;
         }
         if (($v = self::version($r)) === null) {
@@ -230,6 +230,9 @@ class ReservasiController
         if (array_key_exists('value', $out) && isset($out['version'])) {
             return ApiResponse::ok($out['value'], ['version' => $out['version']], $status, ['ETag' => '"'.$out['version'].'"']);
         }
+        if (isset($out['deleted'], $out['version'])) {
+            return ApiResponse::ok(['deleted' => true], ['version' => $out['version']], $status, ['ETag' => '"'.$out['version'].'"']);
+        }
 
         return isset($out['row']) ? self::withVersion($out, $status) : ApiResponse::ok($out, [], $status);
     }
@@ -270,6 +273,14 @@ class ReservasiController
         return in_array($section, ReservasiRecords::ITEM_SECTIONS, true)
             ? null
             : ApiResponse::error('not_found', 'Not found.', 404);
+    }
+
+    /** The id also becomes a photo filename, so keep it short and printable. */
+    private static function badItemId(string $id): ?JsonResponse
+    {
+        return strlen($id) <= 64 && ! preg_match('/[\x00-\x1F\x7F]/', $id)
+            ? null
+            : ApiResponse::error('validation_failed', 'The item id must be at most 64 printable characters.', 422);
     }
 
     private static function withVersion(array $row, int $status = 200): JsonResponse

@@ -3,38 +3,129 @@
 This is the contract for **laksamana-office-vue**, the old laksamana-office if it migrates, and any other app.
 
 - **Base URL:** `/api/v1/reservasi`
-- **Auth:** `Authorization: Bearer <token>`, obtained from `POST /api/v1/auth/login {login, pin}`. The account needs module `reservasi`.
+- **Auth:** `Authorization: Bearer <token>`, obtained from `POST /api/v1/auth/login {login, pin}`. The account needs module `reservasi`; Service Excellent users also hold `service_excellent`, and use the same endpoints.
 - **Envelope:**
   - success: `{data, meta?}`
   - failure: `{error: {code, message, details?}}`
 - **Fields:** reservations use the app's own fields (`name`, `phone`, `date`, `time`, `pax`, `status`, `picName`, `source`, `dpAmount`, `dps[]`, `dpProofData`, `docReqData`, …), exactly as stored in each row's `data` JSON.
+- **Roster:** the Office Roster is account data, not Reservasi data. Use `GET /api/v1/account/roster` (every User, with Divisi) and `GET /api/v1/account/modules/reservasi/members` (Users with the Reservasi Modul). Service Excellent crew is its own `master.seCrew`, roster-synced from those reads.
 
-Status: the core contract (#32). The per-screen completion is #33.
+Status: complete. The compat core and dual lock are #32; the per-screen completion is #33.
 
-## Photos
+## Screen → endpoint map
 
-Photos never stay inline. A `data:` URI in a photo field (`dpProofData`, `docReqData`, `dps[].proofData`, and in the master blob `reviews[].proofData` / `proof2Data` and `feedbacks[].proofData`) is written to `<RESERVASI_DATA_DIR>/files/<key>.txt` and replaced with `@f:<key>`. Read it back with `GET /files/{key}`. These are the same keys and the same folder the old backends use.
+### Reservasi Panel (`deploy/reservasi`, module reservasi)
+
+| Panel | Reads | Writes |
+|---|---|---|
+| Dashboard & Recap | `GET /reservations?from&to`; `GET /master/categories`, `/master/layouts`, `/master/layoutOverrides`, `/master/layoutOverrides2`, `/master/layoutTanggal`, `/master/waitlist` | reservation status/arrival/follow-up writes; `PUT/DELETE /master/waitlist/{id}` |
+| Input Reservasi | `GET /reservations`, `/master/categories`, `/master/dpMethods`, `/master/infoSources`, `/master/waTargets` | `POST /reservations`, `PUT/PATCH/DELETE /reservations/{id}`, photo `PUT /files/{key}` |
+| Dana Masuk (DP) | reservations and their `dps[]`, `/master/dpMethods`, `/files/{key}` | `PUT/PATCH /reservations/{id}` with the DP fields (`dps[]`, `dpStatus`, `dpAmount`, `dpProofData`); `DELETE /reservations/{id}` removes the reservation and its DP files |
+| Riwayat | `GET /reservations` (the page filters past dates, `No-show` and `Cancelled`) | the same reservation writes as Dashboard |
+| Analitik | `GET /reservations` | none; the page derives attendance, pax, source, PIC and monthly figures |
+| Master Data | `/master/tables`, `/dpMethods`, `/infoSources`, `/categories`, `/users`, `/perms`, `/waTargets`, `/dineEstMin`, `/clashLeadMin`, `/layouts`, `/layoutOverrides`, `/layoutOverrides2`, `/layoutTanggal` | `PUT /master/{section}`; `POST /audit` for the action |
+| Audit Log | `GET /audit`, then `GET /reservations/{id}` for a linked row | none |
+
+`review` is still present in the old `ROLE_NAV`, but the page was removed: **Service Excellent owns reviews and feedback**.
+
+### Service Excellent (`deploy/service_excellent`, module service_excellent)
+
+| Panel | Reads | Writes |
+|---|---|---|
+| Dashboard (Capaian) | reservations; `/master/reviews`, `/master/feedbacks`, `/master/reviewCfg`, `/master/seCrew`, `/master/sePerms` | `PUT /master/reviewCfg`; `POST /audit` |
+| Google Review | `/master/reviews`, `/master/reviewCfg`, eligible reservations, `/files/{key}` | `PUT/DELETE /master/reviews/{id}`, photo files, `POST /audit` |
+| Catat Feedback | `/master/feedbacks`, `/files/{key}` | `PUT/DELETE /master/feedbacks/{id}`, photo files, `POST /audit` |
+| Kelola Role | `/master/seCrew`, `/master/sePerms` plus the Office Roster | `PUT /master/seCrew`, `PUT /master/sePerms`; `POST /audit` |
+| Setelan | `/master/reviewCfg` | `PUT /master/reviewCfg`; `POST /audit` |
+
+The waiting list is shared state in `/master/waitlist`; it has no Service Excellent Panel of its own.
+
+### Other Modul
+
+- Dana Masuk (DP) › **Event (Marketing)** is read-only here and stays with Marketing.
+- Cashier and Finance embed this Panel for Dana Masuk. QRIS BRI matching is Kompas's `/bri` contract; the ignored-DP marks are `/bri/ignored` and `/bri/ignored/{dpId}`.
+- Kwitansi requests for a reservation are Finance's `POST /api/v1/finance/invoices/requests` (status `/status`, file `/file/{resId}`); Reservasi does not duplicate them.
+
+## Granular parts of the master blob
+
+The whole master is shared with Service Excellent, but a screen owns **one section**. Each section carries its own `version`, a 16-character content hash, so two people editing `reviews` and `feedbacks` never conflict.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/master/{section}` | The section's value, `meta.version` + `ETag`, and `meta.ver` (the global `_ver`) |
+| PUT | `/master/{section}` | Body `{value: …}`; `null` removes the section. `If-Match` = that section's version |
+| PUT | `/master/{section}/{id}` | Body `{value: {…,"id":"<id>"}}`; the id must match the URL. `If-Match` = the section version. Allowed for `reviews`, `feedbacks`, `waitlist` |
+| DELETE | `/master/{section}/{id}` | `If-Match` = the section version. Proof files of the removed item are deleted |
+
+A section write externalises only its own inline photos, so it cannot change another section's content or version. Review proofs use `rv:<id>` and `rv2:<id>`; feedback proofs use `fb:<id>`. Item replace/delete keeps every other item and every unrelated section, and every write advances the global `_ver`.
+
+Known sections: `tables`, `dpMethods`, `infoSources`, `categories`, `users`, `perms`, `waTargets`, `dineEstMin`, `clashLeadMin`, `layouts`, `layoutOverrides`, `layoutOverrides2`, `layoutTanggal`, `waitlist`, `reviews`, `reviewCfg`, `feedbacks`, `sePerms`, `seCrew`. Unknown top-level keys stored by the old app are preserved by section writes.
+
+`GET/PUT /master` remains for bootstrap and whole-blob migrations. New screens should use sections.
+
+## Audit
+
+`GET /audit` returns the newest 500 rows, newest first.
+
+Every reservation write may carry `_audit: {action, detail?}`:
+
+```json
+{ "name": "Tamu", "_audit": { "action": "Buat Reservasi", "detail": "lewat WhatsApp" } }
+```
+
+After a successful create/update/delete the server appends one row, in the same transaction:
+
+```json
+{"id":"a…","ts":1790000000000,"user":"Andry","role":"viewer","action":"Buat Reservasi","detail":"lewat WhatsApp","res":"r…"}
+```
+
+- `user` is the name from the Bearer token; a body `user`/`role` is never trusted.
+- `role` is `master.users[id].role` (empty when that User is not in the legacy crew list).
+- The global detail is stored as sent.
+- The reservation's own `log[]` gets `{ts, by, role, action, detail}` at the front, with `detail` cut to 180 characters and at most 20 entries, matching the old `logAudit()` / `tempelLogRes()`.
+- Audit is append-only by id and the table is trimmed to the newest 500 by `ts`, exactly as `saveAll` does.
+- A refused or conflicted write appends nothing.
+
+`POST /audit {action, detail?, res?}` records an action that belongs to no reservation row (settings, roles, review targets). `action` is required; `res` is optional. It also advances the global `_ver`.
+
+## Photos and files
+
+Photos never stay inline. A `data:` URI in a photo field is written to `<RESERVASI_DATA_DIR>/files/<key>.txt` and replaced with `@f:<key>`.
+
+| Owner | Field | Key |
+|---|---|---|
+| reservation | `dpProofData` | `r:<id>:dp` |
+| reservation | `docReqData` | `r:<id>:doc` |
+| reservation DP | `dps[].proofData` | `p:<resId>:<dpId>` |
+| review | `proofData` / `proof2Data` | `rv:<id>` / `rv2:<id>` |
+| feedback | `proofData` | `fb:<id>` |
+
+`GET /files/{key}` returns `{key, data}`. `PUT /files/{key}` body `{data}` replaces it; empty `data` deletes it. Every v1 file write advances `_ver`. The folder and the `.lock` file are the same ones the old Backend uses.
 
 ## Concurrency
 
-- **A reservation:** `version` = its `updatedAt` (ms). PUT, PATCH and DELETE need it (`If-Match` / `?version=`). Missing → `428`; stale → `409` with the current row.
-- **The master blob:** `version` = a content hash.
-- **Global `_ver`:** every v1 write bumps it, the same counter legacy `saveAll` checks as `baseVer`. An old laksamana-office tab that loaded before the write therefore gets its reload conflict. It cannot reconcile around the write or delete it.
-- All writes take the same locks as legacy: the `flock` on `<DATA_DIR>/.lock`, plus a NamedLock.
+- **A reservation:** `version` = its `updatedAt` (ms). PUT, PATCH and DELETE need it (`If-Match` / `?version=`). Missing → `428`; stale → `409` with `details.current`.
+- **A master section or item:** the section's content-hash version, sent the same way.
+- **The whole master:** its own content-hash version; prefer section writes.
+- **Global `_ver`:** every v1 write advances it, the same counter legacy `saveAll` checks as `baseVer`. An old laksamana-office tab that loaded before the write therefore gets its reload/merge conflict and cannot delete the new row.
+- All writes take the same locks as legacy: the `flock` on `<DATA_DIR>/.lock`, plus `GET_LOCK('lakk5493_db_reservasi:reservasi_save')`.
 
 ## Endpoints
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/reservations?from&to` | Reservations whose date is in range (either bound optional), in `created_at` order. `meta.ver` = the global `_ver` |
+| GET | `/reservations?from&to` | Reservations whose date is in range (either bound optional), in `created_at` order. `meta.total`, `meta.ver` |
 | GET | `/reservations/{id}` | One reservation + `meta.version` / `ETag` |
-| POST | `/reservations` | Body = the reservation; `id` is optional. `createdAt`/`updatedAt` are stamped and photos moved to files. `201`, or `409 already_exists` |
+| POST | `/reservations` | Body = the reservation; `id` optional, `_audit` optional. `updatedAt` is stamped and kept increasing; `createdAt` defaults to the server clock. `201`, or `409 already_exists` |
 | PUT | `/reservations/{id}` | Replace (`createdAt` kept) |
 | PATCH | `/reservations/{id}` | Shallow merge of the top-level fields |
 | DELETE | `/reservations/{id}` | Also removes that reservation's photo files |
-| GET / PUT | `/master` | The master blob shared with Service Excellent (tables, reviews, feedbacks, …). PUT body `{value: {...}}` with `If-Match` = its version |
+| GET / PUT | `/master` | Whole master blob. PUT body `{value: {...}}` with `If-Match` = its version |
+| GET / PUT | `/master/{section}` | One independently versioned section |
+| PUT / DELETE | `/master/{section}/{id}` | One `reviews`, `feedbacks` or `waitlist` item |
 | GET | `/audit` | The newest 500 audit entries |
-| GET / PUT | `/files/{key}` | `{key, data}` / body `{data}`; an empty `data` deletes the file |
+| POST | `/audit` | Append one action that belongs to no reservation row |
+| GET / PUT | `/files/{key}` | `{key, data}` / body `{data}`; empty `data` deletes the file |
 
 ## Errors
 
@@ -42,7 +133,7 @@ Photos never stay inline. A `data:` URI in a photo field (`dpProofData`, `docReq
 |---|---|
 | 401 | `unauthenticated` |
 | 403 | `module_not_granted` |
-| 404 | `not_found` |
-| 409 | `already_exists`, `version_conflict` |
+| 404 | `not_found` (unknown reservation, item, or an item section outside the three above) |
+| 409 | `already_exists`, `version_conflict` (`details.current`) |
 | 422 | `validation_failed`, `invalid_request` |
 | 428 | `version_required` |

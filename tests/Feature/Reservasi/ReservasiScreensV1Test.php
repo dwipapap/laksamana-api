@@ -72,7 +72,7 @@ it('v1: replaces one review with both proofs on disk, then deletes it and its fi
     ])->assertStatus(422);
 
     $this->withToken($token)->deleteJson('/api/v1/reservasi/master/reviews/rvtest-review?version='.$item->json('meta.version'))
-        ->assertOk()->assertJsonPath('data.deleted', true);
+        ->assertOk()->assertJsonPath('data.deleted', true)->assertJsonStructure(['meta' => ['version']]);
     expect(Modules::db('reservasi')->selectOne("SELECT v FROM settings WHERE k='master'")->v)
         ->not->toContain('rvtest-review')
         ->and(is_file(storage_path('framework/testing/reservasi-db/files/rv_rvtest-review.txt')))->toBeFalse()

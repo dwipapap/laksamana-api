@@ -23,7 +23,7 @@ source disagree, the source wins; then correct the spec.
 | hlife | [hlife.md](hlife.md) | **done** | full contract, see docs/api/hlife.md | 22/22 | 6 + 7 |
 | kompas | [kompas.md](kompas.md) | **done** | full contract, see docs/api/kompas.md | 102/102 | 10 + 8 + 7 |
 | finance | [finance.md](finance.md) | **done** | full contract, see docs/api/finance.md | 92/92 | 7 + 8 + 5 + 6 |
-| reservasi | [reservasi.md](reservasi.md) | pending | pending | — | — |
+| reservasi | [reservasi.md](reservasi.md) | **done** | full contract, see docs/api/reservasi.md | 30/30 | 6 + 6 |
 | stock | [stock.md](stock.md) | pending | pending | — | — |
 | ticketing | [ticketing.md](ticketing.md) | pending | pending | — | — |
 
