@@ -1,6 +1,7 @@
 <?php
 
 use App\Modules\Stock\Http\V1\HppController as H;
+use App\Modules\Stock\Http\V1\StockAdminController as A;
 use App\Modules\Stock\Http\V1\StockController as C;
 use App\Modules\Stock\Http\V1\StockEntriesController as E;
 use Illuminate\Support\Facades\Route;
@@ -112,3 +113,37 @@ Route::middleware(['auth:sanctum', 'module:hpp'])->prefix('stock/hpp')->group(fu
 });
 // The one-time move from Excel can wipe HPP (`replace`): HPP admins only.
 Route::middleware(['auth:sanctum', 'module:hpp,admin'])->post('stock/hpp/import', [H::class, 'import']);
+
+// Pohon Resep is a read-only Panel: its Users may read the recipe graph, never write it.
+Route::middleware(['auth:sanctum', 'module:tree'])->prefix('stock/hpp')->group(function () {
+    Route::get('ingredients', [H::class, 'ingredientIndex']);
+    Route::get('ingredients/{nama}', [H::class, 'ingredientShow'])->where('nama', '.+');
+    Route::get('recipes', [H::class, 'recipeIndex']);
+    Route::get('recipes/{id}', [H::class, 'recipeShow']);
+});
+
+// #37: Purchasing crew, Ordering crew, Akses Halaman settings and the training archive.
+Route::middleware(['auth:sanctum', 'module:purchasing,admin'])->prefix('stock')->group(function () {
+    Route::get('users', [A::class, 'userIndex'])->defaults('kind', 'purchasing');
+    Route::post('users', [A::class, 'userStore'])->defaults('kind', 'purchasing');
+    Route::get('users/{id}', [A::class, 'userShow'])->defaults('kind', 'purchasing');
+    Route::patch('users/{id}', [A::class, 'userUpdate'])->defaults('kind', 'purchasing');
+    Route::delete('users/{id}', [A::class, 'userDestroy'])->defaults('kind', 'purchasing');
+    Route::get('settings/purchasing', [A::class, 'settingsShow'])->defaults('module', 'purchasing');
+    Route::put('settings/purchasing', [A::class, 'settingsPut'])->defaults('module', 'purchasing');
+});
+Route::middleware(['auth:sanctum', 'module:ordering,admin'])->prefix('stock')->group(function () {
+    Route::get('ordering-users', [A::class, 'userIndex'])->defaults('kind', 'ordering');
+    Route::post('ordering-users', [A::class, 'userStore'])->defaults('kind', 'ordering');
+    Route::post('ordering-users-import', [A::class, 'userImport']);
+    Route::get('ordering-users/{id}', [A::class, 'userShow'])->defaults('kind', 'ordering');
+    Route::patch('ordering-users/{id}', [A::class, 'userUpdate'])->defaults('kind', 'ordering');
+    Route::delete('ordering-users/{id}', [A::class, 'userDestroy'])->defaults('kind', 'ordering');
+    Route::get('settings/ordering', [A::class, 'settingsShow'])->defaults('module', 'ordering');
+    Route::put('settings/ordering', [A::class, 'settingsPut'])->defaults('module', 'ordering');
+
+    Route::get('training', [A::class, 'trainingSummary']);
+    Route::post('training', [A::class, 'trainingStore']);
+    Route::get('training/{target}', [A::class, 'trainingList']);
+    Route::get('training/{target}/{name}', [A::class, 'trainingDownload'])->where('name', '.+');
+});
