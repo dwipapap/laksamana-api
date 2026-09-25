@@ -9,7 +9,7 @@ This is the contract for **laksamana-office-vue**, the old laksamana-office if i
   - failure: `{error: {code, message, details?}}`
 - **Fields:** the legacy field names (`tgl`, `keterangan`, `kategori_id`, `baris[{pos_id, debet, kredit}]`, `nama`, `urut`, `aktif`). Amounts are whole rupiah (integers).
 
-Status: **Kas Kecil + Akses Halaman** (#25) are in place. Brankas and the invoice/kwitansi flow will be added by their own issues.
+Status: **Kas Kecil + Akses Halaman** (#25) and **Brankas** (#26) are in place. The invoice/kwitansi flow will be added by its own issue.
 
 ## Kas Kecil — `/api/v1/finance/petty-cash`
 
@@ -57,7 +57,33 @@ The `kk_*` tables have no version column. A version is the first 16 hex characte
 - Editing Akses Halaman additionally needs the finance **module admin** (superadmin or a finance admin). The per-page levels themselves (`tingkat`) are data the UI applies, exactly as in the old app.
 - The legacy compat route stays open, as it was (security follow-up #6).
 
-## Errors
+## Brankas (vault) — `/api/v1/finance/vault`
+
+Gated by the **`brankas`** Modul (Panel Brankas). The legacy state is ONE JSON blob; v1 splits it into resources but keeps **one version for the whole blob**: its `updated_at` (ms). Every read returns it as `meta.version`, and every write needs it (`If-Match` or `?version=`) and returns the new one. Missing → `428`; stale → `409 version_conflict` with `{data, version}` of the current state. Writes record the **session user** as `updated_by`. Account balances are not stored: the screen derives them from kompas' sales recap, as in the old app.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/` | Same as legacy `brankasGet`: `{data: {rekening, piutang, bayar, investor, mutasi, setting}, akses, peran, updated_at}` |
+| GET | `/{list}` | `list` is one of `rekening` (opening balances), `piutang` (receivables), `bayar` (payment planning), `investor`, `mutasi` (wallet transfers) |
+| GET | `/{list}/{id}` | One record |
+| POST | `/{list}` | Body = the record. `id` is optional (generated). `201`, or `409 already_exists` |
+| PUT / PATCH | `/{list}/{id}` | Replace / shallow merge |
+| DELETE | `/{list}/{id}` | `{deleted: true}` |
+| GET / PUT | `/setting` | The settings map (e.g. payment method → bank). PUT body `{value: {...}}` |
+| GET | `/access` | `{matrix, roles}` of the Brankas pages. `meta.version` = hash of the matrix |
+| PUT | `/access/matrix` | **Module admin only.** `{matrix}`, the complete matrix, `tingkat` clamped to 0–2. Version = hash of the matrix you read. |
+| PUT | `/access/roles/{userId}` | **Module admin only.** `{role}` (`""`/`null` = default). Version = hash of the current role (of `null` when none). |
+
+Kas Kecil's **payment plan** lives in the same blob (`bayar`), and the Kas Kecil panel (module `finance`) writes it narrowly:
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/v1/finance/petty-cash/payment-plan` | The `bayar` list + the blob version |
+| PUT | `/api/v1/finance/petty-cash/payment-plan` | `{bayar: [...]}` replaces only the plan (legacy `bayarSave`); the rest of the vault is untouched |
+
+Other modules (kompas' investor page) read the vault in-process through `AppModulesinanceservicesbrankas::read()`.
+
+## errors
 
 | Status | code |
 |---|---|
