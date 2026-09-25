@@ -3,7 +3,7 @@
 This is the contract for **laksamana-office-vue**, the old laksamana-office if it migrates, and any other app.
 
 - **Base URL:** `/api/v1/reservasi`
-- **Auth:** `Authorization: Bearer <token>`, obtained from `POST /api/v1/auth/login {login, pin}`. The account needs module `reservasi`; Service Excellent users also hold `service_excellent`, and use the same endpoints.
+- **Auth:** `Authorization: Bearer <token>`, obtained from `POST /api/v1/auth/login {login, pin}`. The account needs the `reservasi` **or** `service_excellent` Modul: they are two Panels of the same Backend and the same master blob. Akses Halaman inside each Panel stays in `master.perms` / `master.sePerms`, as it is in the old client-side matrix.
 - **Envelope:**
   - success: `{data, meta?}`
   - failure: `{error: {code, message, details?}}`

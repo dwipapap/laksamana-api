@@ -19,6 +19,11 @@ function rsScreensVer(): int
     return (int) Modules::db('reservasi')->selectOne("SELECT v FROM settings WHERE k='_ver'")->v;
 }
 
+it('v1: opens to a Service Excellent-only Modul as well', function () {
+    $this->withToken(loginAs(officeUser('u-ernimianiangelapurba')))
+        ->getJson('/api/v1/reservasi/master/reviews')->assertOk();
+});
+
 it('v1: master sections keep their own content versions while every write bumps _ver', function () {
     $token = loginAs(officeUser('u-andry'));
     $tables = $this->withToken($token)->getJson('/api/v1/reservasi/master/tables')->assertOk();

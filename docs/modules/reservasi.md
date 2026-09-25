@@ -62,6 +62,7 @@ Response envelope: `{ok, data}`, always HTTP 200. The default action is `getAll`
 - `GET/POST /audit`: server-owned rows attributed to the token's User and `master.users[id].role`; `_audit` on a reservation write also fills that row's 20-entry `log[]`.
 - `/api/v1/reservasi/files/{key}`.
 - Every v1 write advances the global `_ver`, so an old tab reloads/merges instead of reconciling around it.
+- The v1 gate accepts the `reservasi` **or** `service_excellent` Modul (two Panels, one Backend and one master blob); Akses Halaman stays in `master.perms` / `master.sePerms`.
 - The Office Roster stays in account v1: `/api/v1/account/roster` and `/api/v1/account/modules/reservasi/members`.
 - Full screen map and contract: `docs/api/reservasi.md`.
 
