@@ -9,7 +9,7 @@ This is the contract for **laksamana-office-vue**, the old laksamana-office if i
   - failure: `{error: {code, message, details?}}`
 - **Money:** amounts in the blob may be JSON numbers or formatted strings (`"3.855.000"`). The server reads them the way the app's `num()` does: it keeps only digits and `-`.
 
-Status: the **revenue core** (#28) is in place: the omset blob, targets, Rekap Penjualan, daily figures, and per-PIC and per-division revenue. Investor, analytics, void log and BRI matching are added by their own issues.
+Status: the **revenue core** (#28) is in place (the omset blob, targets, Rekap Penjualan, daily figures, and per-PIC and per-division revenue), together with the **void log and QRIS BRI matching** (#29). Investor and analytics are added by their own issue.
 
 ## Screen → endpoint map (this cluster)
 
@@ -52,6 +52,32 @@ Status: the **revenue core** (#28) is in place: the omset blob, targets, Rekap P
 | `netSales` | tagihan − compliment | CFO / investor reports |
 
 All three come from the same daily map. Days that have only a compliment still appear.
+
+## Catatan Void — `/voids` (module cashier or finance)
+
+These are accountability records: **nothing is deleted**. A wrong entry is cancelled with a required reason and stays visible. The recorded name (`oleh`) is always the session user.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/voids?from&to` | `{baris[], total, maks: 1500, setting}`, newest first. `total` is counted before the 1500 limit. `rinci: false` marks rows from before the subtotal/service/tax breakdown existed. |
+| POST | `/voids` | One row: `{tgl, bill, item, penginput, salah, alasan, subtotal, service?, tax?}`. Or a whole bill in one transaction: `{tgl, bill, penginput, salah, alasan, service?, tax?, items: [{item, subtotal}]}`. The server **computes** `nominal = subtotal + service + tax`. Bill-level service and tax are split over the items by subtotal, **cumulatively**: the parts add up exactly and none is negative (if every subtotal is 0, the first item takes it all). Missing fields → `422` with `details.kurang` (field labels). Items without a name are dropped. → `201 {id, baru}` or `{n, ids}` |
+| PUT | `/voids/{id}` | Edit one row (not once it is cancelled). **If-Match = the row's `diubah`** |
+| POST | `/voids/{id}/cancel` | `{alasan}` (required). If-Match = `diubah` |
+| GET / PUT | `/voids/settings` | `{tax, service}` percentages, 0–100 (defaults 10 / 5). PUT needs the **module admin** of cashier or finance, and If-Match = the setting's `diubah` (0 before the first save). |
+
+## QRIS BRI matching — `/bri` (module cashier or finance)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/bri?from&to` | `{baris[], total, maks: 2000, abai[]}`, oldest first, together with the DPs marked invalid |
+| POST | `/bri/upload` | `{baris: [{tgl, jam, nominal, ket?, settle?, booking?}]}`, at most 3000 rows, in one transaction. The server builds the key `sidik = tgl\|jam\|nominal\|#k`, where `k` numbers identical transfers so they all survive. A re-upload updates only `ket`, `settle` and `booking`, **never the match**. Rows missing from the file are kept. Rows without a date or nominal are skipped and counted (`lewat`). → `{n, baru, lama, lewat}` |
+| POST | `/bri` | A manual incoming fund that is not a reservation DP: `{tgl, jam?, nominal, ket}`, `ket` required. It is stored with `cara = bukan` and `sumber = manual`. `201` |
+| POST | `/bri/match` | `{id, cara: cocok\|bukan\|lepas, resId, dpId, resNama?, resTgl?, catatan?}` or `{items: [...]}`. `cocok` needs `resId` and `dpId`, and **one DP can be held by only one live row**. `bukan` needs `catatan`. `lepas` clears the decision. A bulk call is **not** one transaction: each row stands alone and failures come back in `gagal[{id, sebab}]`. The response is `422` only when every row failed. No version is needed: the one-DP rule is enforced by the server. |
+| POST | `/bri/{id}/cancel` | `{alasan}` (required). If-Match = the row's `diubah` |
+| POST | `/bri/ignored` | `{dpId, resId?, nama?, tgl?, nominal?, alasan}`: marks a reservation DP as not a valid BRI fund; a reason is required. The DP itself (module reservasi) is not touched. |
+| DELETE | `/bri/ignored/{dpId}` | Lifts the mark |
+
+Validation failures keep the legacy Indonesian messages → `422 invalid_request` (with `details.kurang` or `details.gagal`).
 
 ## Errors
 

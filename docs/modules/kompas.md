@@ -114,3 +114,9 @@ Response envelope is `{ok,data}`, except that `getAll` adds a top-level `ts`.
 - The legacy `investorAgenda` HTTP fan-out to marketing/event/bd is not part of this issue; its port reads those modules' services.
 - The connection keeps the server sql_mode (`server_sql_mode`, #97).
 - v1: `docs/api/kompas.md`.
+
+## Port notes (#29: void & BRI)
+
+- `voidList/voidSetting/voidSimpan/voidBatal` and `briList/briUnggah/briTambah/briCocok/briBatal/briAbai` are ported in `App\Modules\Kompas\Services\VoidBri`, byte-identical to legacy (parity, with rows seeded through `setupSql`).
+- The runtime DDL and column checks (`void_pastikan`, `bri_pastikan`, `bri_abai_pastikan`) are not ported: the tables exist live.
+- v1: `/api/v1/kompas/voids` and `/api/v1/kompas/bri` (`docs/api/kompas.md`). Row versions are the `diubah` column.
