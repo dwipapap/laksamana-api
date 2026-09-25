@@ -67,3 +67,11 @@
 - Error messages keep the `petunjuk_galat()` cPanel hints. As in every port, raw database error messages are hidden behind `kesalahan database` outside debug mode.
 - The connection keeps the server sql_mode (`server_sql_mode`, #97): `keterangan` is not length-checked, and a non-strict production truncates it.
 - v1: `docs/api/finance.md`.
+
+## Port notes (#26: Brankas)
+
+- `brankasGet` / `brankasSave` (whole blob, only `rekening, piutang, bayar, investor, mutasi, setting` survive; the lists are re-indexed) / `bayarSave` (reads the blob, replaces only `bayar`) / `brankasAkses` / `brankasPeran` are served by the compat route, byte-identical (parity).
+- `bayarSave` now reads and writes under one row lock. Legacy had none; the observable behaviour is unchanged.
+- JSON is handled as assoc arrays like legacy, so an empty `setting` `{}` is stored as `[]` once round-tripped (legacy quirk, kept).
+- Kompas reads the vault in-process through `Brankas::read()` (kompas is not ported yet).
+- v1: `/api/v1/finance/vault` (module `brankas`) plus `/api/v1/finance/petty-cash/payment-plan` (module `finance`). See `docs/api/finance.md`.

@@ -2,6 +2,7 @@
 
 namespace App\Modules\Finance\Http\Legacy;
 
+use App\Modules\Finance\Services\Brankas;
 use App\Modules\Finance\Services\KasKecil;
 use App\Support\Legacy\Envelope;
 use App\Support\Legacy\LegacyController;
@@ -16,8 +17,8 @@ use Throwable;
  * for POST too). Every action is open, as legacy (security follow-up #6).
  * Errors keep ok:false + HTTP 200 with the cPanel hints of petunjuk_galat().
  *
- * Ported so far: Kas Kecil + Akses Halaman (#25). Brankas and the
- * invoice/kwitansi actions answer "Aksi tidak dikenal" until their issues land.
+ * Ported so far: Kas Kecil + Akses Halaman (#25), Brankas (#26). The
+ * invoice/kwitansi actions answer "Aksi tidak dikenal" until their issue lands.
  */
 class FinanceLegacyController extends LegacyController
 {
@@ -25,7 +26,10 @@ class FinanceLegacyController extends LegacyController
 
     protected bool $actionFromQueryFirst = true;
 
-    public function __construct(private readonly KasKecil $kas) {}
+    public function __construct(
+        private readonly KasKecil $kas,
+        private readonly Brankas $brankas,
+    ) {}
 
     protected function dispatch(LegacyRequest $req): Response
     {
@@ -53,6 +57,13 @@ class FinanceLegacyController extends LegacyController
 
             'ping' => Envelope::okData($this->kas->ping()),
             'stats' => Envelope::okData($this->kas->stats()),
+
+            // Brankas (#26): the vault blob, its page matrix and roles; bayarSave is Kas Kecil's narrow writer
+            'brankasGet' => Envelope::okData($this->brankas->read()),
+            'brankasSave' => Envelope::okData($this->brankas->save($b['data'] ?? null, $b['oleh'] ?? null)),
+            'bayarSave' => Envelope::okData($this->brankas->saveBayar($b['bayar'] ?? null, $b['oleh'] ?? null)),
+            'brankasAkses' => Envelope::okData($this->brankas->saveAkses($b['peta'] ?? null)),
+            'brankasPeran' => Envelope::okData($this->brankas->saveRole($b)),
             default => Envelope::error('Aksi tidak dikenal: '.$req->action),
         };
     }

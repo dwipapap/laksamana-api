@@ -1,6 +1,7 @@
 <?php
 
 use App\Modules\Finance\Http\V1\PettyCashController as C;
+use App\Modules\Finance\Http\V1\VaultController as V;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth:sanctum', 'module:finance'])->prefix('finance/petty-cash')->group(function () {
@@ -24,4 +25,31 @@ Route::middleware(['auth:sanctum', 'module:finance'])->prefix('finance/petty-cas
         Route::put('access/matrix', [C::class, 'putMatrix']);
         Route::put('access/roles/{userId}', [C::class, 'putRole']);
     });
+});
+
+// Kas Kecil's payment plan lives in the vault blob (`bayar`), written narrowly (legacy bayarSave)
+Route::middleware(['auth:sanctum', 'module:finance'])->prefix('finance/petty-cash')->group(function () {
+    Route::get('payment-plan', [V::class, 'paymentPlan']);
+    Route::put('payment-plan', [V::class, 'putPaymentPlan']);
+});
+
+// Panel Brankas: gated by its own Modul
+Route::middleware(['auth:sanctum', 'module:brankas'])->prefix('finance/vault')->group(function () {
+    Route::get('/', [V::class, 'state']);
+    Route::get('setting', [V::class, 'setting']);
+    Route::put('setting', [V::class, 'putSetting']);
+
+    Route::get('access', [V::class, 'access']);
+    Route::middleware('module:brankas,admin')->group(function () {
+        Route::put('access/matrix', [V::class, 'putMatrix']);
+        Route::put('access/roles/{userId}', [V::class, 'putRole']);
+    });
+
+    $lists = ['rekening', 'piutang', 'bayar', 'investor', 'mutasi'];
+    Route::get('{list}', [V::class, 'list'])->whereIn('list', $lists);
+    Route::post('{list}', [V::class, 'store'])->whereIn('list', $lists);
+    Route::get('{list}/{id}', [V::class, 'show'])->whereIn('list', $lists);
+    Route::put('{list}/{id}', [V::class, 'update'])->whereIn('list', $lists);
+    Route::patch('{list}/{id}', [V::class, 'patch'])->whereIn('list', $lists);
+    Route::delete('{list}/{id}', [V::class, 'destroy'])->whereIn('list', $lists);
 });
