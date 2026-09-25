@@ -5,6 +5,7 @@ namespace App\Modules\Stock\Services;
 use App\Support\Modules;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Carbon;
+use RuntimeException;
 use stdClass;
 
 /**
@@ -60,6 +61,33 @@ final class StockSupport
     public static function str(mixed $v): string
     {
         return is_array($v) ? 'Array' : (string) $v;
+    }
+
+    /** pur_filter_tanggal(): optional ?dari=&ke= (already trimmed), filtered in SQL. */
+    public static function dateFilter(string &$sql, array &$par, string $dari, string $ke, string $kolom = 'tanggal'): void
+    {
+        if ($dari !== '') {
+            $sql .= " AND `$kolom` >= ?";
+            $par[] = $dari;
+        }
+        if ($ke !== '') {
+            $sql .= " AND `$kolom` <= ?";
+            $par[] = $ke;
+        }
+    }
+
+    /**
+     * pur_ada_baris(): does the row exist (an UPDATE's rowCount is 0 for "unchanged"
+     * too). Legacy's closed table list is kept AS IS: `ck_stock` and `serah_terima`
+     * are missing from it, so asking about them throws (legacy answered 500).
+     */
+    public static function exists(string $table, string $id): bool
+    {
+        if (! in_array($table, ['usage_events', 'waste', 'opname', 'orders', 'purchase_requests'], true)) {
+            throw new RuntimeException('Tabel tidak dikenal: '.$table);
+        }
+
+        return (bool) self::db()->selectOne("SELECT 1 AS x FROM `$table` WHERE `id`=? LIMIT 1", [$id]);
     }
 
     /** pur_uid(): '<PREFIX>-ymd-His-XXXXXX'. */

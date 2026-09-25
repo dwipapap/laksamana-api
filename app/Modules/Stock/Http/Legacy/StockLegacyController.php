@@ -3,9 +3,13 @@
 namespace App\Modules\Stock\Http\Legacy;
 
 use App\Modules\Stock\Services\StockCatalog;
+use App\Modules\Stock\Services\StockCk;
+use App\Modules\Stock\Services\StockEntries;
+use App\Modules\Stock\Services\StockLog;
 use App\Modules\Stock\Services\StockOrders;
 use App\Modules\Stock\Services\StockSnapshot;
 use App\Modules\Stock\Services\StockSupport;
+use App\Modules\Stock\Services\StockTeamScope;
 use App\Support\Modules;
 use Closure;
 use Illuminate\Http\Request;
@@ -36,6 +40,10 @@ class StockLegacyController
         private readonly StockCatalog $catalog,
         private readonly StockOrders $orders,
         private readonly StockSnapshot $snapshot,
+        private readonly StockCk $ck,
+        private readonly StockEntries $entries,
+        private readonly StockLog $log,
+        private readonly StockTeamScope $scope,
     ) {}
 
     public function items(Request $r): Response
@@ -103,6 +111,93 @@ class StockLegacyController
             fn () => $this->snapshot->read(),
             fn (string $a, stdClass $b) => $this->snapshot->replace($b->stock ?? null, $b->as_of ?? ''),
             actionless: true);
+    }
+
+    /** ck.php: `saldo` ignores the date range (a balance is "now"); only `mutasi` is filtered. */
+    public function ck(Request $r): Response
+    {
+        return $this->serve($r, 'ck',
+            fn (array $q) => ['saldo' => $this->ck->balance(), 'mutasi' => $this->ck->movements(...self::range($q))],
+            fn (string $a, stdClass $b) => match ($a) {
+                'simpan' => $this->ck->save($b),
+                'hapus' => $this->ck->delete($b->id ?? ''),
+                'kirim' => $this->ck->send($b),
+                default => null,
+            });
+    }
+
+    public function usage(Request $r): Response
+    {
+        return $this->serve($r, 'usage',
+            fn (array $q) => $this->entries->usageList($this->scope->forRequest(null), ...self::range($q)),
+            fn (string $a, stdClass $b) => match ($a) {
+                'simpan' => $this->entries->usageSave($b),
+                'status' => $this->entries->usageStatus($b->id ?? '', $b->status ?? ''),
+                'hapus' => $this->entries->usageDelete($b->id ?? ''),
+                default => null,
+            });
+    }
+
+    public function waste(Request $r): Response
+    {
+        return $this->serve($r, 'waste',
+            fn (array $q) => ($q['action'] ?? '') === 'foto'
+                ? $this->entries->wastePhoto(trim(StockSupport::str($q['id'] ?? '')))
+                : $this->entries->wasteList($this->scope->forRequest(null), ...self::range($q)),
+            fn (string $a, stdClass $b) => match ($a) {
+                'simpan' => $this->entries->wasteSave($b),
+                'hapus' => $this->entries->wasteDelete($b->id ?? ''),
+                default => null,
+            });
+    }
+
+    public function serah(Request $r): Response
+    {
+        return $this->serve($r, 'serah',
+            fn (array $q) => ($q['action'] ?? '') === 'foto'
+                ? $this->entries->handoverPhoto(trim(StockSupport::str($q['id'] ?? '')))
+                : $this->entries->handoverList($this->scope->forRequest(null), ...self::range($q)),
+            fn (string $a, stdClass $b) => match ($a) {
+                'simpan' => $this->entries->handoverSave($b),
+                'hapus' => $this->entries->handoverDelete($b->id ?? ''),
+                default => null,
+            });
+    }
+
+    public function opname(Request $r): Response
+    {
+        return $this->serve($r, 'opname',
+            fn (array $q) => $this->entries->opnameList(...self::range($q)),
+            fn (string $a, stdClass $b) => match ($a) {
+                'simpan' => $this->entries->opnameSave($b),
+                'hapus' => $this->entries->opnameDelete($b->id ?? ''),
+                default => null,
+            });
+    }
+
+    public function log(Request $r): Response
+    {
+        return $this->serve($r, 'log',
+            fn (array $q) => $this->log->read(...self::range($q),
+                modul: trim(StockSupport::str($q['modul'] ?? '')),
+                cari: trim(StockSupport::str($q['q'] ?? '')),
+                limit: self::int($q['limit'] ?? 300)),
+            fn (string $a, stdClass $b) => match ($a) {
+                'catat' => $this->log->write($b->entri ?? []),
+                default => null,
+            });
+    }
+
+    /** pur_filter_tanggal()'s ?dari=&ke=, trimmed. */
+    private static function range(array $q): array
+    {
+        return [trim(StockSupport::str($q['dari'] ?? '')), trim(StockSupport::str($q['ke'] ?? ''))];
+    }
+
+    /** PHP's (int) cast of a query value (an array counts as 0 / 1). */
+    private static function int(mixed $v): int
+    {
+        return is_array($v) ? (int) (bool) $v : (int) $v;
     }
 
     // ─────────────────────────────── plumbing ──

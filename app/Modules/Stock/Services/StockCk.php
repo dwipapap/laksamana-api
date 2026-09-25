@@ -2,10 +2,12 @@
 
 namespace App\Modules\Stock\Services;
 
+use stdClass;
+
 /**
- * Central Kitchen pieces of lib_stock_ck.php needed by orders: the CK product
- * master (products with sumber 'ck'/'both') and the order-arrival sync.
- * (The CK ledger endpoint ck.php itself is ported with #35.)
+ * Central Kitchen (lib_stock_ck.php): the CK product master (products with
+ * sumber 'ck'/'both'), the ledger behind ck.php (balance, movements, manual
+ * save/delete, outlet deliveries) and the order-arrival sync used by orders.
  *
  * Two rules that keep the balance right: the balance is never stored (always
  * SUM(masuk) - SUM(keluar) of ck_stock), and every qty is stored in the base
@@ -116,5 +118,231 @@ class StockCk
         }
 
         return ['disinkron' => $n];
+    }
+
+    // ─────────────────────────────── ledger (ck.php) ──
+
+    /**
+     * pur_ck_saldo(): one row per CK product (0 when it has no movement yet), plus
+     * movements of items no longer CK products, flagged `hilang`. Every row counts,
+     * whatever its `status` (the pending step was dropped 31 July 2026).
+     */
+    public function balance(): array
+    {
+        $produk = $this->products();
+        $agg = [];
+        foreach (StockSupport::db()->select("SELECT `item`,
+                 SUM(CASE WHEN `arah`='masuk'  THEN `qty` ELSE 0 END) AS masuk,
+                 SUM(CASE WHEN `arah`='keluar' THEN `qty` ELSE 0 END) AS keluar,
+                 MAX(`tanggal`) AS terakhir
+            FROM `ck_stock` GROUP BY `item`") as $r) {
+            $agg[$r->item] = $r;
+        }
+
+        $out = [];
+        foreach ($produk as $nama => $p) {
+            $a = $agg[$nama] ?? null;
+            $masuk = $a ? (float) $a->masuk : 0;
+            $keluar = $a ? (float) $a->keluar : 0;
+            $out[$nama] = [
+                'item' => $nama,
+                'sumber' => $p->sumber,
+                'packIsi' => $p->packIsi,
+                'packSatuan' => $p->packSatuan,
+                'kategori' => $p->kategori,
+                'masuk' => $masuk,
+                'keluar' => $keluar,
+                'saldo' => $masuk - $keluar,
+                'terakhir' => $a ? (string) $a->terakhir : '',
+            ];
+        }
+        foreach ($agg as $nama => $a) {
+            if (isset($out[$nama])) {
+                continue;
+            }
+            $masuk = (float) $a->masuk;
+            $keluar = (float) $a->keluar;
+            if ($masuk == 0 && $keluar == 0) {
+                continue;
+            }
+            $out[$nama] = [
+                'item' => $nama, 'packIsi' => 0, 'packSatuan' => '', 'kategori' => '',
+                'masuk' => $masuk, 'keluar' => $keluar, 'saldo' => $masuk - $keluar,
+                'terakhir' => (string) $a->terakhir, 'hilang' => true,
+            ];
+        }
+        ksort($out);
+
+        return array_values($out);
+    }
+
+    /** pur_ck_mutasi_ambil(): newest first, optional ?dari=&ke= on tanggal. */
+    public function movements(string $dari = '', string $ke = '', ?string $id = null): array
+    {
+        $sql = 'SELECT `id`,`tanggal`,`item`,`arah`,`qty`,`qty_input`,`unit_input`,
+                       `sebab`,`status`,`ref`,`tim`,`pic`,`waktu`,`data`
+                  FROM `ck_stock` WHERE 1=1';
+        $par = [];
+        if ($id !== null) {
+            $sql .= ' AND `id` = ?';
+            $par[] = $id;
+        }
+        StockSupport::dateFilter($sql, $par, $dari, $ke);
+        $out = [];
+        foreach (StockSupport::db()->select($sql.' ORDER BY `tanggal` DESC, `waktu` DESC', $par) as $r) {
+            $d = StockSupport::obj($r->data);
+            $out[] = [
+                'id' => $r->id,
+                'tanggal' => $r->tanggal,
+                'item' => $r->item,
+                'arah' => $r->arah,
+                'qty' => (float) $r->qty,
+                'qtyInput' => (float) $r->qty_input,
+                'unitInput' => $r->unit_input,
+                'sebab' => $r->sebab,
+                'status' => $r->status,
+                'ref' => $r->ref === null ? '' : $r->ref,
+                'tim' => $r->tim,
+                'pic' => $r->pic,
+                'waktu' => $r->waktu,
+                'catatan' => isset($d->catatan) ? StockSupport::str($d->catatan) : '',
+                // pack size AT THE TIME of the movement, not today's master
+                'packIsi' => isset($d->packIsi) ? (float) $d->packIsi : 0,
+                'packSatuan' => isset($d->packSatuan) ? StockSupport::str($d->packSatuan) : '',
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * pur_ck_simpan(): a manual movement (produksi, penyesuaian, rusak). `ref` is
+     * never set here (it belongs to the order sync). Pack size comes from the
+     * master, never from the browser.
+     *
+     * Legacy quirk kept: with a non-empty `id` legacy calls pur_ada_baris() on
+     * `ck_stock`, which is not on its table allow-list, so it throws (a 500)
+     * before writing anything. $verified = true (v1, row already locked and
+     * checked) takes the update path instead.
+     */
+    public function save(stdClass $b, bool $verified = false): array
+    {
+        $id = trim(StockSupport::str($b->id ?? ''));
+        $item = trim(StockSupport::str($b->item ?? ''));
+        $arah = strtolower(trim(StockSupport::str($b->arah ?? '')));
+        $sebab = strtolower(trim(StockSupport::str($b->sebab ?? '')));
+
+        if ($item === '') {
+            return ['status' => 'error', 'message' => 'barang kosong'];
+        }
+        if ($arah !== 'masuk' && $arah !== 'keluar') {
+            return ['status' => 'error', 'message' => 'arah harus masuk/keluar'];
+        }
+        $qtyInput = (float) ($b->qtyInput ?? 0);
+        if ($qtyInput <= 0) {
+            return ['status' => 'error', 'message' => 'jumlah harus lebih dari 0'];
+        }
+        $p = $this->products()[$item] ?? null;
+        if (! $p) {
+            return ['status' => 'error', 'message' => 'barang bukan barang Central Kitchen: '.$item];
+        }
+        $unitInput = trim(StockSupport::str($b->unitInput ?? ''));
+        if ($unitInput === '') {
+            $unitInput = $p->packSatuan !== '' ? $p->packSatuan : 'Pcs';
+        }
+        $qty = self::keDasar($qtyInput, $unitInput, $p->packIsi, $p->packSatuan);
+        if (! in_array($sebab, ['produksi', 'penyesuaian', 'rusak', 'pengajuan'], true)) {
+            $sebab = $arah === 'masuk' ? 'produksi' : 'penyesuaian';
+        }
+        $rec = (object) ['catatan' => trim(StockSupport::str($b->catatan ?? '')), 'packIsi' => $p->packIsi, 'packSatuan' => $p->packSatuan];
+        $tanggal = trim(StockSupport::str($b->tanggal ?? '')) ?: StockSupport::now('Y-m-d');
+        $waktu = StockSupport::now();
+        $tim = trim(StockSupport::str($b->tim ?? ''));
+        $pic = trim(StockSupport::str($b->pic ?? ''));
+        $dataJson = StockSupport::enc($rec);
+        $db = StockSupport::db();
+
+        if ($id !== '' && ($verified || StockSupport::exists('ck_stock', $id))) {
+            if ((string) $db->selectOne('SELECT `ref` FROM `ck_stock` WHERE `id`=?', [$id])?->ref !== '') {
+                return ['status' => 'error', 'message' => 'mutasi dari pengajuan hanya berubah lewat check-in'];
+            }
+            $db->update('UPDATE `ck_stock` SET `tanggal`=?,`item`=?,`arah`=?,`qty`=?,`qty_input`=?,
+                             `unit_input`=?,`sebab`=?,`tim`=?,`pic`=?,`data`=? WHERE `id`=?',
+                [$tanggal, $item, $arah, $qty, $qtyInput, $unitInput, $sebab, $tim, $pic, $dataJson, $id]);
+
+            return ['status' => 'success', 'id' => $id];
+        }
+
+        $id = StockSupport::uid('CK');
+        $db->insert('INSERT INTO `ck_stock`
+                       (`id`,`tanggal`,`item`,`arah`,`qty`,`qty_input`,`unit_input`,
+                        `sebab`,`ref`,`tim`,`pic`,`waktu`,`data`)
+                     VALUES (?,?,?,?,?,?,?,?,NULL,?,?,?,?)',
+            [$id, $tanggal, $item, $arah, $qty, $qtyInput, $unitInput, $sebab, $tim, $pic, $waktu, $dataJson]);
+
+        return ['status' => 'success', 'id' => $id];
+    }
+
+    /** pur_ck_hapus(): order-sync rows (with a ref) only go away when the check-in is undone. */
+    public function delete(mixed $id): array
+    {
+        $id = trim(StockSupport::str($id));
+        if ($id === '') {
+            return ['status' => 'error', 'message' => 'id kosong'];
+        }
+        $row = StockSupport::db()->selectOne('SELECT `ref` FROM `ck_stock` WHERE `id`=?', [$id]);
+        if (! $row) {
+            return ['status' => 'error', 'message' => 'mutasi tidak ditemukan'];
+        }
+        if ((string) $row->ref !== '') {
+            return ['status' => 'error', 'message' => 'mutasi dari pengajuan hanya hilang bila check-in dibatalkan'];
+        }
+
+        return ['status' => 'success', 'deleted' => StockSupport::db()->delete('DELETE FROM `ck_stock` WHERE `id`=?', [$id])];
+    }
+
+    /**
+     * pur_ck_kiriman_simpan(): an outlet sends goods back to CK; the balance rises at
+     * once (one step since 31 July 2026). Only for goods kept at the outlet (diOutlet).
+     */
+    public function send(stdClass $b): array
+    {
+        $item = trim(StockSupport::str($b->item ?? ''));
+        if ($item === '') {
+            return ['status' => 'error', 'message' => 'barang kosong'];
+        }
+        $qtyInput = (float) ($b->qtyInput ?? 0);
+        if ($qtyInput <= 0) {
+            return ['status' => 'error', 'message' => 'jumlah harus lebih dari 0'];
+        }
+        $p = $this->products()[$item] ?? null;
+        if (! $p) {
+            return ['status' => 'error', 'message' => 'barang bukan barang Central Kitchen: '.$item];
+        }
+        if (! $p->diOutlet) {
+            return ['status' => 'error', 'message' => 'barang ini tidak disimpan di outlet, jadi tidak bisa dikirim ke CK'];
+        }
+        $unitInput = trim(StockSupport::str($b->unitInput ?? ''));
+        if ($unitInput === '') {
+            $unitInput = $p->packSatuan !== '' ? $p->packSatuan : 'Pcs';
+        }
+        $qty = self::keDasar($qtyInput, $unitInput, $p->packIsi, $p->packSatuan);
+        $rec = (object) ['catatan' => trim(StockSupport::str($b->catatan ?? '')), 'packIsi' => $p->packIsi, 'packSatuan' => $p->packSatuan];
+
+        $id = StockSupport::uid('CKK');
+        StockSupport::db()->insert("INSERT INTO `ck_stock`
+                       (`id`,`tanggal`,`item`,`arah`,`qty`,`qty_input`,`unit_input`,
+                        `sebab`,`status`,`ref`,`tim`,`pic`,`waktu`,`data`)
+                     VALUES (?,?,?,'masuk',?,?,?,'kiriman','',NULL,?,?,?,?)", [
+            $id,
+            trim(StockSupport::str($b->tanggal ?? '')) ?: StockSupport::now('Y-m-d'),
+            $item, $qty, $qtyInput, $unitInput,
+            trim(StockSupport::str($b->tim ?? '')),
+            trim(StockSupport::str($b->pic ?? '')),
+            StockSupport::now(),
+            StockSupport::enc($rec),
+        ]);
+
+        return ['status' => 'success', 'id' => $id];
     }
 }
