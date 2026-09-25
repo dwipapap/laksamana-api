@@ -1,5 +1,6 @@
 <?php
 
+use App\Modules\Finance\Http\V1\InvoiceController as I;
 use App\Modules\Finance\Http\V1\PettyCashController as C;
 use App\Modules\Finance\Http\V1\VaultController as V;
 use Illuminate\Support\Facades\Route;
@@ -52,4 +53,25 @@ Route::middleware(['auth:sanctum', 'module:brankas'])->prefix('finance/vault')->
     Route::put('{list}/{id}', [V::class, 'update'])->whereIn('list', $lists);
     Route::patch('{list}/{id}', [V::class, 'patch'])->whereIn('list', $lists);
     Route::delete('{list}/{id}', [V::class, 'destroy'])->whereIn('list', $lists);
+});
+
+// Invoices & kwitansi. Requests / status / file serve Reservasi and Marketing too
+// (the controller checks for any of finance, reservasi, marketing).
+Route::middleware('auth:sanctum')->prefix('finance/invoices')->group(function () {
+    Route::post('requests', [I::class, 'request']);
+    Route::get('status', [I::class, 'status']);
+    Route::get('file/{resId}', [I::class, 'file']);
+
+    Route::middleware('module:finance')->group(function () {
+        Route::get('/', [I::class, 'index']);
+        Route::get('queue', [I::class, 'queue']);
+        Route::get('settings', [I::class, 'settings']);
+        Route::put('settings', [I::class, 'putSettings']);
+        Route::get('signatories', [I::class, 'signatories']);
+        Route::post('signatories', [I::class, 'createSignatory']);
+        Route::patch('signatories/{id}', [I::class, 'updateSignatory']);
+        Route::delete('signatories/{id}', [I::class, 'deleteSignatory']);
+        Route::get('{id}', [I::class, 'show']);
+        Route::post('{id}/decision', [I::class, 'decide']);
+    });
 });

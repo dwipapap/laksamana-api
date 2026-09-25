@@ -3,6 +3,7 @@
 namespace App\Modules\Finance\Http\Legacy;
 
 use App\Modules\Finance\Services\Brankas;
+use App\Modules\Finance\Services\Invoices;
 use App\Modules\Finance\Services\KasKecil;
 use App\Support\Legacy\Envelope;
 use App\Support\Legacy\LegacyController;
@@ -17,8 +18,7 @@ use Throwable;
  * for POST too). Every action is open, as legacy (security follow-up #6).
  * Errors keep ok:false + HTTP 200 with the cPanel hints of petunjuk_galat().
  *
- * Ported so far: Kas Kecil + Akses Halaman (#25), Brankas (#26). The
- * invoice/kwitansi actions answer "Aksi tidak dikenal" until their issue lands.
+ * Ported: Kas Kecil + Akses Halaman (#25), Brankas (#26), invoices & kwitansi (#27).
  */
 class FinanceLegacyController extends LegacyController
 {
@@ -29,6 +29,7 @@ class FinanceLegacyController extends LegacyController
     public function __construct(
         private readonly KasKecil $kas,
         private readonly Brankas $brankas,
+        private readonly Invoices $inv,
     ) {}
 
     protected function dispatch(LegacyRequest $req): Response
@@ -64,6 +65,18 @@ class FinanceLegacyController extends LegacyController
             'bayarSave' => Envelope::okData($this->brankas->saveBayar($b['bayar'] ?? null, $b['oleh'] ?? null)),
             'brankasAkses' => Envelope::okData($this->brankas->saveAkses($b['peta'] ?? null)),
             'brankasPeran' => Envelope::okData($this->brankas->saveRole($b)),
+
+            // Invoices & kwitansi (#27). invMinta/invStatus/invBerkas are called by Reservasi and Marketing.
+            'invMinta' => Envelope::okData($this->inv->request($b)),
+            'invStatus' => Envelope::okData($this->inv->statuses(isset($b['res']) && is_array($b['res'])
+                ? $b['res'] : (($q = $req->http->query('res')) !== null && $q !== '' ? explode(',', KasKecil::s($q)) : []))),
+            'invBerkas' => Envelope::okData($this->inv->file($b['resId'] ?? $req->http->query('resId', ''))),
+            'invDaftar' => Envelope::okData(['list' => $this->inv->list(), 'setting' => $this->inv->settings(), 'penanda' => $this->inv->signatories(true)]),
+            'invAntre' => Envelope::okData($this->inv->queueCount()),
+            'invPenandaSimpan' => Envelope::okData($this->inv->saveSignatory(isset($b['data']) && is_array($b['data']) ? $b['data'] : $b)),
+            'invPenandaHapus' => Envelope::okData($this->inv->deleteSignatory($b['penandaId'] ?? '')),
+            'invPutus' => Envelope::okData($this->inv->decide($b)),
+            'invSetting' => Envelope::okData($this->inv->saveSettings(isset($b['data']) && is_array($b['data']) ? $b['data'] : $b)),
             default => Envelope::error('Aksi tidak dikenal: '.$req->action),
         };
     }

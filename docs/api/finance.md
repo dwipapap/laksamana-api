@@ -9,22 +9,43 @@ This is the contract for **laksamana-office-vue**, the old laksamana-office if i
   - failure: `{error: {code, message, details?}}`
 - **Fields:** the legacy field names (`tgl`, `keterangan`, `kategori_id`, `baris[{pos_id, debet, kredit}]`, `nama`, `urut`, `aktif`). Amounts are whole rupiah (integers).
 
-Status: **Kas Kecil + Akses Halaman** (#25) and **Brankas** (#26) are in place. The invoice/kwitansi flow will be added by its own issue.
+Status: complete. The contract covers **Kas Kecil + Akses Halaman** (#25), **Brankas** (#26) and **invoices & kwitansi** (#27).
+
+## Screen → endpoint map (every page of both Panels)
+
+Some finance pages only **display data owned by other modules**: kompas' sales recap, reservasi's DPs, bd's POs and the stock vendor list. The old pages read those from the other modules' backends, and the v1 equivalents belong to those modules' contracts. The table names them so a client knows where each page's data comes from.
+
+**Kas Kecil Panel** (`deploy/finance/kas`):
+
+| Page | Endpoints |
+|---|---|
+| Input Transaksi (`kk_input`) | `POST /petty-cash/transactions`, `PUT /petty-cash/transactions/{id}` |
+| Buku Kas (`kk_buku`) | `GET /petty-cash/transactions?from&to`, `PATCH …/{id}` (Input/Bon ticks), `DELETE …/{id}` |
+| Pos & Kategori (`kk_pos`) | `/petty-cash/sources`, `/petty-cash/categories` |
+| Planning Pembayaran (`bayar`) | `GET/PUT /petty-cash/payment-plan`; the wallet balances come from `GET /vault` (module brankas) or are derived client-side |
+| Invoice & Kwitansi (`invoice`) | `/invoices` (queue, decisions), `/invoices/settings`, `/invoices/signatories` |
+| Akses Halaman (`akses`) | `GET /petty-cash/access`, `PUT /petty-cash/access/matrix`, `PUT /petty-cash/access/roles/{userId}` |
+| Rekap Penjualan (`rekap`), Bulanan (`bulanan`), Analytics (`analytics`), Void Bill (`voidb`), Kasir (`kasir`), BRI (`bri`) | kompas' sales recap (kompas contract, #28) |
+| DP Reservasi (`dp`) | reservasi's DPs (reservasi contract), plus `GET /invoices/status` for the kwitansi state |
+| Performa Marketing / Event (`marketing`, `event`) | kompas' recap + `/api/v1/marketing/*`, `/api/v1/event/events-on/{date}` |
+
+**Brankas Panel** (`deploy/finance/brankas`, module `brankas`):
+
+| Page | Endpoints |
+|---|---|
+| Ringkasan (`ringkasan`) | `GET /vault` (+ kompas recap for the account balances) |
+| Saldo (`saldo`) | `/vault/rekening`, `GET /vault` |
+| Mutasi & Transfer (`mutasi`) | `/vault/mutasi` |
+| Piutang / pending (`pending`) | `/vault/piutang`, `/vault/bayar` |
+| Modal / investor (`modal`) | `/vault/investor` |
+| Pengaturan (`pengaturan`) | `GET/PUT /vault/setting` |
+| Akses Halaman (`akses`) | `GET /vault/access`, `PUT /vault/access/matrix`, `PUT /vault/access/roles/{userId}` |
+
+The vendor list both Panels show comes from stock (`stock-api-mysql/vendors.php`, stock contract).
 
 ## Kas Kecil — `/api/v1/finance/petty-cash`
 
 **Balances are never stored.** Clients compute them from the full history (sorted by `tgl`, then `id`), exactly as the old page does.
-
-### Screen → endpoint map
-
-The Kas Kecil Panel (`deploy/finance/kas`), pages of this cluster:
-
-| Page | Endpoints |
-|---|---|
-| Input Transaksi (`kk_input`) | `POST /transactions`, `PUT /transactions/{id}` |
-| Buku Kas (`kk_buku`) | `GET /transactions?from&to`, `PATCH /transactions/{id}` (Input/Bon ticks), `DELETE /transactions/{id}` |
-| Pos & Kategori (`kk_pos`) | `/sources`, `/categories` |
-| Akses Halaman (`akses`) | `GET /access`, `PUT /access/matrix`, `PUT /access/roles/{userId}` |
 
 ### Endpoints
 
@@ -83,7 +104,36 @@ Kas Kecil's **payment plan** lives in the same blob (`bayar`), and the Kas Kecil
 
 Other modules (kompas' investor page) read the vault in-process through `AppModulesinanceservicesbrankas::read()`.
 
-## errors
+## Invoices & kwitansi — `/api/v1/finance/invoices`
+
+One request per reservation or marketing deal (`resId`, unique). A decision moves the same row from `MENUNGGU` to `DIBUAT` (issued) or `DITOLAK` (rejected). There are three kinds: `KWITANSI` (Reservasi DP receipt), `INV_DP` and `INV_LUNAS` (Marketing invoices). An unknown kind becomes `KWITANSI`.
+
+- **Numbering:** `PREFIX/YYYY/MM/NNNN` (WIB month) is the month's highest + 1, taken once. A number is never reused: `batal` keeps it. The invoice kinds use `prefixInvoice`, the kwitansi `prefix`; the same prefix means one shared sequence.
+- **Signatories:** names and titles are copied into the row when it is issued. Images are read live when the document is printed. A signatory already used on an issued document cannot be deleted (deactivate it instead).
+
+**Callers** (Reservasi, Marketing, Finance): need **any of** modules `finance`, `reservasi`, `marketing`.
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/requests` | `{resId, jenis?, ringkas?}`. Idempotent per `resId`: an issued one is returned untouched; a waiting or rejected one is refreshed into a live request. `mintaOleh` is the **session user**. |
+| GET | `/status?res=a,b,…` | `{resId: request}` for at most 400 ids, without images |
+| GET | `/file/{resId}` | The printable document of an **issued** request: `{jenis, no, putusOleh, putusAt, cap, penanda[{nama, jabatan, ttd}]}`. `404 not_issued` otherwise. |
+
+**Finance** (module `finance`):
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/` | The queue (`?status=MENUNGGU\|DIBUAT\|DITOLAK`, `?jenis=`), newest request first. `meta.queue` (counts per kind), `meta.versions` |
+| GET | `/queue` | `{total, perJenis}`, the menu badge |
+| GET | `/{id}` | One request + version |
+| POST | `/{id}/decision` | `{aksi: buat\|tolak\|batal, catatan?, penanda?: [signatoryId…]}`. `penanda` absent = the kind's default signatories; `[]` = deliberately unsigned. `tolak` requires a `catatan`. `putusOleh` is the **session user**. Needs the request's version. |
+| GET / PUT | `/settings` | `prefix`, `prefixInvoice`, `cap` (stamp image), `penandaDefault`, `penandaDefaultInvoice` (comma-separated signatory ids). Only the keys sent are written. PUT needs the version. |
+| GET / POST | `/signatories` | `{nama, jabatan?, ttd? (data URI), urut?, aktif?}`. POST → `201` |
+| PATCH / DELETE | `/signatories/{id}` | PATCH writes `ttd` only when sent. DELETE is refused (`422`) once the signatory is used. Both need the version. |
+
+Validation errors keep the legacy messages (`resId kosong`, `alasan penolakan wajib diisi`, `nama penanda tangan wajib diisi`, …) → `422 invalid_request`. Versions are content hashes (`If-Match` / `?version=`; `428` / `409`).
+
+## Errors
 
 | Status | code |
 |---|---|

@@ -75,3 +75,11 @@
 - JSON is handled as assoc arrays like legacy, so an empty `setting` `{}` is stored as `[]` once round-tripped (legacy quirk, kept).
 - Kompas reads the vault in-process through `Brankas::read()` (kompas is not ported yet).
 - v1: `/api/v1/finance/vault` (module `brankas`) plus `/api/v1/finance/petty-cash/payment-plan` (module `finance`). See `docs/api/finance.md`.
+
+## Port notes (#27: invoices & kwitansi, milestone)
+
+- Every `inv*` action is served by the compat route, byte-identical (parity, including numbering in both pools, idempotent requests, issued rows left untouched, `batal` keeping the number, the signatory rules). `inv_pastikan_tabel()` (DDL, column checks, the one-off single-signatory migration) is not ported: all of it has been applied live.
+- Issuing (`invPutus buat`) now takes a `GET_LOCK('<db>:inv_nomor')`, so two decisions at the same instant cannot take the same number. Legacy had no lock; the observable behaviour is unchanged.
+- Reservasi and Marketing call these actions from the browser, not from their backends. The in-process entry point for future server-side callers is `App\Modules\Finance\Services\Invoices` (`request`, `statuses`, `file`).
+- v1: `/api/v1/finance/invoices`, where requests, status and file are open to holders of finance, reservasi or marketing. The screen map of all Kas and Brankas pages is in `docs/api/finance.md`.
+- Frontend walkthrough: `tools/e2e/finance.mjs` (`devproxy --laravel account,finance`).
