@@ -134,6 +134,7 @@ the anonymised set from #9 can be restored in CI.
 | bd | done | full contract (docs/api/bd.md) | 32/32 · frontend e2e 34/34 |
 | event | done | full contract (docs/api/event.md) | 65/65 · frontend e2e 24/24 |
 | hr | done | full contract (docs/api/hr.md) | 21/21 · frontend e2e 47/47 |
+| finance | done | full contract (docs/api/finance.md) | 92/92 · frontend e2e 35/35 |
 | (others) | pending — see docs/modules/README.md | | |
 
 ## Agent skills
