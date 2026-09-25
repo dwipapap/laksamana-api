@@ -2,6 +2,7 @@
 
 namespace App\Modules\Jadwal\Services;
 
+use App\Support\Divisi;
 use App\Support\JsonDoc;
 use App\Support\Legacy\Sesi;
 use App\Support\Modules;
@@ -23,19 +24,6 @@ use stdClass;
  */
 class JadwalService
 {
-    /** Synonyms — twin of DIV_SINONIM in deploy/jadwal/index.html (whole-word match). */
-    public const DIV_SINONIM = [
-        'bar' => ['bar', 'bartender'],
-        'kitchen' => ['kitchen', 'dapur'],
-        'floor' => ['floor', 'service', 'waiter', 'waitress', 'host', 'hostess'],
-        'cashier' => ['cashier', 'kasir'],
-    ];
-
-    /** Office wins over any division word ("Kasir Office" is office staff). */
-    public const KANTOR_KATA = ['office', 'kantor'];
-
-    public const DIV_NONSHIFT = 'nonshift';
-
     public const STATUS_BERJALAN = ['MENUNGGU', 'MENUNGGU_HRD'];
 
     /** Setting keys that are MAPS: an empty one must be written as {} not []. */
@@ -43,7 +31,10 @@ class JadwalService
 
     private ?array $settingArr = null;
 
-    public function __construct(private readonly Sesi $sesi) {}
+    public function __construct(
+        private readonly Sesi $sesi,
+        private readonly Divisi $divisi,
+    ) {}
 
     private function db(): ConnectionInterface
     {
@@ -102,38 +93,13 @@ class JadwalService
         return $this->settingArr ??= JsonDoc::toArray($this->setting());
     }
 
-    private function heads(): array
-    {
-        $h = $this->settingArr()['heads'] ?? [];
-
-        return is_array($h) ? $h : [];
-    }
-
+    /** A crew member's Divisi, resolved by the shared Divisi service. */
     public function divisiUser(string $uid): string
     {
         $ov = $this->settingArr()['divOverride'] ?? [];
-        if (is_array($ov) && isset($ov[$uid]) && $ov[$uid] !== '') {
-            return (string) $ov[$uid];
-        }
         $roster = $this->sesi->roster();
-        if (! isset($roster[$uid])) {
-            return self::DIV_NONSHIFT;
-        }
-        $kata = preg_split('/[^a-z]+/', strtolower((string) ($roster[$uid]['keterangan'] ?? '')), -1, PREG_SPLIT_NO_EMPTY) ?: [];
-        foreach (self::KANTOR_KATA as $x) {
-            if (in_array($x, $kata, true)) {
-                return self::DIV_NONSHIFT;
-            }
-        }
-        foreach (self::DIV_SINONIM as $kode => $sin) {
-            foreach ($sin as $x) {
-                if (in_array($x, $kata, true)) {
-                    return $kode;
-                }
-            }
-        }
 
-        return self::DIV_NONSHIFT;
+        return Divisi::resolve($uid, is_array($ov) ? $ov : [], isset($roster[$uid]) ? (array) $roster[$uid] : null);
     }
 
     /** Office roster with each User's Divisi attached (read model for new apps). */
@@ -151,51 +117,22 @@ class JadwalService
 
     public function isHead(?array $u, string $div): bool
     {
-        if (! $u) {
-            return false;
-        }
-        $daftar = $this->heads()[$div] ?? [];
-        foreach (is_array($daftar) ? $daftar : [] as $id) {
-            if ((string) $id === (string) $u['id']) {
-                return true;
-            }
-        }
-
-        return false;
+        return $this->divisi->isHeadOf($u, $div);
     }
 
     public function divHasHead(string $div): bool
     {
-        $d = $this->heads()[$div] ?? null;
-
-        return is_array($d) && count($d) > 0;
+        return $this->divisi->divHasHead($div);
     }
 
     public function anyHead(): bool
     {
-        foreach ($this->heads() as $d) {
-            if (is_array($d) && count($d)) {
-                return true;
-            }
-        }
-
-        return false;
+        return $this->divisi->anyHead();
     }
 
     private function headAnywhere(?array $u): bool
     {
-        if (! $u) {
-            return false;
-        }
-        foreach ($this->heads() as $daftar) {
-            foreach (is_array($daftar) ? $daftar : [] as $id) {
-                if ((string) $id === (string) $u['id']) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
+        return $this->divisi->isHeadAnywhere($u);
     }
 
     public static function isAdmin(?array $u): bool
@@ -220,7 +157,7 @@ class JadwalService
             Sesi::rejectForbidden('Hanya head divisi yang bisa menyusun jadwal.');
         }
         $div = $this->divisiUser($uid);
-        if ($div === self::DIV_NONSHIFT) {
+        if ($div === Divisi::NONSHIFT) {
             Sesi::rejectForbidden('Kru ini belum ditempatkan di divisi mana pun, jadi hanya admin modul yang bisa mengatur jadwalnya. Tempatkan dulu lewat Pengaturan → Penempatan Divisi.');
         }
         if (! $this->isHead($u, $div)) {
