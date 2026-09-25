@@ -54,16 +54,21 @@ Response envelope: `{ok, data}`, always HTTP 200. The default action is `getAll`
 - `saveAll` and `putFile` are wrapped in a file lock (`flock` on `<DATA_DIR>/.lock`).
 - The port uses `NamedLock` and ALSO takes the flock while the old backend is still live.
 
-## v1 proposal
+## v1 (complete, #32 + #33)
 
-- `/api/v1/reservasi/reservations`: date-range list and CRUD, with a per-row version (`updated_at`).
-- `/api/v1/reservasi/reservations/{id}/dp`: DP payments and their proof files.
-- `/api/v1/reservasi/master`: versioned with `_ver`.
-- `/api/v1/reservasi/files/{key}`
+- `/api/v1/reservasi/reservations`: date-range list and CRUD, with a per-row version (`updated_at`). DP payments live in the reservation's `dps[]` and are written with the row version.
+- `/api/v1/reservasi/master`: whole blob for bootstrap, plus independently content-versioned `GET/PUT /master/{section}`.
+- `PUT/DELETE /master/{section}/{id}` for `reviews`, `feedbacks` and `waitlist`; review/feedback proof files are externalised and removed with their item.
+- `GET/POST /audit`: server-owned rows attributed to the token's User and `master.users[id].role`; `_audit` on a reservation write also fills that row's 20-entry `log[]`.
+- `/api/v1/reservasi/files/{key}`.
+- Every v1 write advances the global `_ver`, so an old tab reloads/merges instead of reconciling around it.
+- The v1 gate accepts the `reservasi` **or** `service_excellent` Modul (two Panels, one Backend and one master blob); Akses Halaman stays in `master.perms` / `master.sePerms`.
+- The Office Roster stays in account v1: `/api/v1/account/roster` and `/api/v1/account/modules/reservasi/members`.
+- Full screen map and contract: `docs/api/reservasi.md`.
 
 ## Port notes (#32: compat core)
 
 - Ported: `getAll` (+ `_ver`), `getFile`, `putFile`, `stats`, `ping` and `saveAll` (`APP_LAWAS`, the global `_ver` under `FOR UPDATE`, photo externalisation to `@f:` files, file GC driven by the payload, the `updated_at`-guarded upsert, delete-missing that never empties the table from an empty payload, audit `INSERT IGNORE` trimmed to 500, master) in `App\Modules\Reservasi\Services\ReservasiState`. Byte-identical per parity, with the three tables diffed as well.
 - Writes take the legacy `flock` on `<DATA_DIR>/.lock` (so old and new backends serialise during cutover) inside a NamedLock.
 - The connection keeps the server sql_mode (`server_sql_mode`, #97).
-- v1 core: `docs/api/reservasi.md`. #33 completes it per screen and carries the milestone.
+- v1 core: `docs/api/reservasi.md`. #33 completed it per screen: versioned master sections, item-level reviews/feedbacks/waitlist, server-owned audit with the token's User and `master.users[id].role`, and the old Reservasi + Service Excellent frontends end to end on Laravel (`tools/e2e/reservasi.mjs`). Milestone `m15-reservasi`.

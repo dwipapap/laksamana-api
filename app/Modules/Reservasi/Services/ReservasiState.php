@@ -136,6 +136,17 @@ class ReservasiState
         return $this->locked(fn () => $this->writeFile($payload));
     }
 
+    /** v1 file writes advance the same global version every other v1 write does. */
+    public function putFileV1(mixed $payload): array
+    {
+        return $this->writeLocked(function () use ($payload) {
+            $out = $this->writeFile($payload);
+            $this->bumpVer();
+
+            return $out;
+        });
+    }
+
     // ───────────────────────────── photo fields ──
 
     private static function isInline(mixed $v): bool
@@ -248,6 +259,32 @@ class ReservasiState
 
     // ───────────────────────────── state ──
 
+    /** The master blob alone. v1 reads one section without loading the ~2.4 MB reservation list. */
+    public function readMaster(bool $lock = false): ?array
+    {
+        $m = $this->db()->selectOne("SELECT v FROM settings WHERE k='master' LIMIT 1".($lock ? ' FOR UPDATE' : ''));
+        if (! $m || ! isset($m->v)) {
+            return null;
+        }
+        $d = json_decode((string) $m->v, true);
+
+        return is_array($d) ? $d : null;
+    }
+
+    /** The newest 500 audit rows, without reading the reservation list. */
+    public function readAudit(): array
+    {
+        $audit = [];
+        foreach ($this->db()->select('SELECT data FROM audit ORDER BY ts DESC LIMIT 500') as $r) {
+            $d = json_decode((string) $r->data, true);
+            if (is_array($d)) {
+                $audit[] = $d;
+            }
+        }
+
+        return $audit;
+    }
+
     /** baca_state — reservations (created_at, id), master, the newest 500 audit rows. */
     public function read(): array
     {
@@ -258,21 +295,8 @@ class ReservasiState
                 $res[] = $d;
             }
         }
-        $master = null;
-        $m = $this->db()->selectOne("SELECT v FROM settings WHERE k='master' LIMIT 1");
-        if ($m && isset($m->v)) {
-            $d = json_decode((string) $m->v, true);
-            $master = is_array($d) ? $d : null;
-        }
-        $audit = [];
-        foreach ($this->db()->select('SELECT data FROM audit ORDER BY ts DESC LIMIT 500') as $r) {
-            $d = json_decode((string) $r->data, true);
-            if (is_array($d)) {
-                $audit[] = $d;
-            }
-        }
 
-        return ['reservations' => $res, 'master' => $master, 'audit' => $audit];
+        return ['reservations' => $res, 'master' => $this->readMaster(), 'audit' => $this->readAudit()];
     }
 
     public function ver(): int
@@ -280,6 +304,68 @@ class ReservasiState
         $r = $this->db()->selectOne("SELECT v FROM settings WHERE k='_ver' LIMIT 1");
 
         return $r && isset($r->v) && ctype_digit((string) $r->v) ? (int) $r->v : 0;
+    }
+
+    /** The role the app shows in its audit rows: master.users[id].role. */
+    public function role(string $userId): string
+    {
+        $users = $this->readMaster()['users'] ?? null;
+        if (is_array($users)) {
+            foreach ($users as $key => $u) {
+                $id = is_array($u) ? (string) ($u['id'] ?? (is_string($key) ? $key : '')) : (string) $key;
+                if ($id === $userId && is_array($u)) {
+                    return (string) ($u['role'] ?? '');
+                }
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * One server-owned audit row, shaped like the old frontend's logAudit():
+     * {id, ts, user, role, action, detail, res?}. The name comes from the
+     * token; the role comes from master.users. Nothing here trusts the body.
+     */
+    public function auditEntry(string $action, mixed $detail, array $actor, ?string $res = null): array
+    {
+        $row = [
+            'id' => 'a'.(int) floor(microtime(true) * 1000).bin2hex(random_bytes(4)),
+            'ts' => (int) floor(microtime(true) * 1000),
+            'user' => (string) ($actor['name'] ?? $actor['id'] ?? '-'),
+            'role' => $this->role((string) ($actor['id'] ?? '')),
+            'action' => $action,
+            'detail' => is_scalar($detail) ? (string) $detail : '',
+        ];
+        if ($res !== null && $res !== '') {
+            $row['res'] = $res;
+        }
+
+        return $row;
+    }
+
+    /** tempelLogRes(): the per-reservation trail keeps the newest 20 and cuts detail at 180. */
+    public static function logEntry(array $audit): array
+    {
+        return [
+            'ts' => (int) ($audit['ts'] ?? 0),
+            'by' => (string) ($audit['user'] ?? '-'),
+            'role' => (string) ($audit['role'] ?? ''),
+            'action' => (string) ($audit['action'] ?? ''),
+            'detail' => mb_substr((string) ($audit['detail'] ?? ''), 0, 180),
+        ];
+    }
+
+    /** Append-only, like legacy saveAll: INSERT IGNORE by id, then keep the newest 500 by ts. */
+    public function appendAudit(array $row): void
+    {
+        if (empty($row['id'])) {
+            return;
+        }
+        $this->db()->insert('INSERT IGNORE INTO audit (id, ts, data) VALUES (?,?,?)', [
+            self::s($row['id']), intval($row['ts'] ?? 0), self::enc($row),
+        ]);
+        $this->db()->delete('DELETE FROM audit WHERE id NOT IN (SELECT id FROM (SELECT id FROM audit ORDER BY ts DESC LIMIT 500) t)');
     }
 
     /**
@@ -391,9 +477,62 @@ class ReservasiState
         });
     }
 
-    public function saveMaster(array $master): void
+    /** Save the master blob and return it with its inline photos already moved to files. */
+    public function saveMaster(array $master): array
     {
-        $this->db()->insert("INSERT INTO settings (k,v) VALUES ('master',?) ON DUPLICATE KEY UPDATE v = VALUES(v)", [self::enc($this->externalizeOne('master', $master))]);
+        return $this->saveMasterRaw($this->externalizeOne('master', $master));
+    }
+
+    /** Save the blob exactly as given; callers externalize only the part they own. */
+    public function saveMasterRaw(array $master): array
+    {
+        $this->db()->insert("INSERT INTO settings (k,v) VALUES ('master',?) ON DUPLICATE KEY UPDATE v = VALUES(v)", [self::enc($master)]);
+
+        return $master;
+    }
+
+    /** Externalize only one section, so a write never changes another section's content version. */
+    public function externalizeSection(array $master, string $section): array
+    {
+        if (! array_key_exists($section, $master)) {
+            return $master;
+        }
+        $state = ['master' => [$section => $master[$section]]];
+        $this->externalize($state);
+        $master[$section] = $state['master'][$section];
+
+        return $master;
+    }
+
+    public function externalizeItem(string $section, array $item): array
+    {
+        $state = ['master' => [$section => [$item]]];
+        $this->externalize($state);
+
+        return $state['master'][$section][0];
+    }
+
+    /** Remove the deterministic proof files of one master item when its new value no longer points at them. */
+    public function deleteItemFiles(string $section, array $old, ?array $new = null): void
+    {
+        if (empty($old['id'])) {
+            return;
+        }
+        $fields = match ($section) {
+            'reviews' => ['proofData' => 'rv', 'proof2Data' => 'rv2'],
+            'feedbacks' => ['proofData' => 'fb'],
+            default => [],
+        };
+        $id = self::s($old['id']);
+        foreach ($fields as $field => $prefix) {
+            $key = $prefix.':'.$id;
+            if (($new[$field] ?? null) === self::FILE_TAG.$key) {
+                continue;
+            }
+            if (is_file(self::filePath($key))) {
+                @unlink(self::filePath($key));
+            }
+        }
     }
 
     /** _ver + 1 (the row must be locked FOR UPDATE by the caller's transaction or be created here). */

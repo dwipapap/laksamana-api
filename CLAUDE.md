@@ -136,6 +136,7 @@ the anonymised set from #9 can be restored in CI.
 | hr | done | full contract (docs/api/hr.md) | 21/21 · frontend e2e 47/47 |
 | finance | done | full contract (docs/api/finance.md) | 92/92 · frontend e2e 35/35 |
 | kompas | done | full contract (docs/api/kompas.md) | 102/102 · frontend e2e 53/53 |
+| reservasi | done | full contract (docs/api/reservasi.md) | 30/30 · frontend e2e 31/31 |
 | (others) | pending — see docs/modules/README.md | | |
 
 ## Agent skills
