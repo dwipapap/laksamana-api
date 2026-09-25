@@ -62,3 +62,19 @@ All actions are open unless the optional `API_TOKEN` is set. A GET without `acti
 - Legacy printed a PHP warning into the JSON when an array reached a string column (dev servers with display_errors); Laravel answers clean JSON and stores `"Array"`, as production did.
 - The data-dir fallbacks (`event-db` next to public_html, `db/` in the backend) are not reproduced: `EVENT_DATA_DIR` applies.
 - DB errors answer `kesalahan database` outside debug mode (project convention).
+
+## #22 check (v1 per screen)
+
+Checked against #22's list on 2026-09-25. The v1 that landed with #21 (PR #105) covers every item:
+
+| #22 item | v1 |
+|---|---|
+| events, talents, schedules, recurring rules, talent payments | `/events`, `/talents`, `/schedules`, `/recurring-rules`, `/talent-payments` |
+| ticket classes and seats | `/ticket-classes`, `/seats` |
+| orders / tickets / refunds (read side) | `GET /orders`, `/tickets`, `/refunds` (writes as well, version-guarded) |
+| ideas | `/ideas` |
+| check-ins | `GET/POST /checkins` (append-only) |
+| files | `POST /files`, `GET /files/{key}` |
+| event details, settings, finance's per-day list | `/event-details`, `/settings`, `/events-on/{date}` |
+
+Re-run from main: `php artisan test tests/Feature/Event` 26 passed, `node tools/parity/parity.mjs event` 65/65 identical, `node tools/e2e/event.mjs` 24/24. The milestone is M11 (`m11-event`).
