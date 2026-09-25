@@ -1,0 +1,61 @@
+{
+  "dir": "akademi-mysql",
+  "legacyPath": "akademi-api-mysql",
+  "dbEnv": "AKADEMI",
+  "db": "lakk5493_db_akademi",
+  "ignore": ["data.ts", "data.backend", "data.db", "data.folderBerkas", "data.amanDiLuarWeb"],
+  "cases": [
+    { "name": "ping", "method": "GET", "query": { "action": "ping" } },
+    { "name": "stats", "method": "GET", "query": { "action": "stats" } },
+    { "name": "getAll (default GET)", "method": "GET", "query": {} },
+    { "name": "trainingStats", "method": "GET", "query": { "action": "trainingStats" } },
+    { "name": "unknown action", "body": { "action": "nope" } },
+    { "name": "saveAll invalid payload", "body": { "action": "saveAll" } },
+    { "name": "saveAll new division + material + program + progress + progProg + activity + extra key", "body": { "action": "saveAll", "data": {
+      "divisions": [
+        { "id": "d_par1", "name": "Parity Div", "ic": "compass", "updatedAt": 1790100000000 },
+        { "id": "d_par2", "name": "Parity New", "updatedAt": 1790200000000 }
+      ],
+      "materials": [{ "id": "m_par1", "type": "quiz", "title": "Parity Kuis", "division": ["all"], "cat": "sop", "mandatory": true, "published": true, "passing": 80, "questions": [{ "q": "2+2?", "opts": ["3", "4"], "a": 1 }], "updatedAt": 1790100000000, "createdAt": 1790100000000 }],
+      "programs": [{ "id": "p_par1", "title": "Parity Program", "bulan": "2026-10", "deadline": "2026-10-31", "note": "x", "materialIds": ["m_par1"], "updatedAt": 1790100000000, "createdAt": 1790100000000 }],
+      "progress": { "u_par1": { "m_par1": { "attempts": 1, "score": 100, "passed": true, "lastAt": 1790100000000, "updatedAt": 1790100000000 } } },
+      "progProg": { "u_par1": { "p_par1": { "m_par1": { "done": true, "at": 1790100000000, "score": 100 } } } },
+      "activity": [{ "ts": 1790100000000, "userId": "u_par1", "action": "uji", "detail": "parity" }, { "noid": true }],
+      "parityExtra": { "a": 1, "list": [1, 2] }
+    } } },
+    { "name": "saveAll edit with correct base", "body": { "action": "saveAll", "data": {
+      "divisions": [{ "id": "d_par1", "name": "Parity Div 2", "updatedAt": 1790100000500, "baseUpdatedAt": 1790100000000 }]
+    } } },
+    { "name": "saveAll stale base -> bentrok", "body": { "action": "saveAll", "data": {
+      "divisions": [{ "id": "d_par1", "name": "Someone else", "updatedAt": 1790100000900, "baseUpdatedAt": 1790100000000 }]
+    } } },
+    { "name": "saveAll stale base but identical content -> still bentrok (no sidik escape)", "body": { "action": "saveAll", "data": {
+      "divisions": [{ "name": "Parity Div 2", "id": "d_par1", "updatedAt": 1790100000777, "baseUpdatedAt": 1790100000000 }]
+    } } },
+    { "name": "saveAll cap bump: column goes server+1, data.updatedAt stays sent", "body": { "action": "saveAll", "data": {
+      "divisions": [{ "id": "d_par1", "name": "Parity Div 3", "updatedAt": 1790100000400, "baseUpdatedAt": 1790100000500 }]
+    } } },
+    { "name": "saveAll unchanged reflection with older stamp is not written", "body": { "action": "saveAll", "data": {
+      "divisions": [{ "id": "d_par1", "name": "SHOULD NOT WRITE", "updatedAt": 1790100000400 }]
+    } } },
+    { "name": "getAll after writes", "method": "GET", "query": { "action": "getAll" } },
+    { "name": "trainingStats after writes", "method": "GET", "query": { "action": "trainingStats" } },
+    { "name": "saveAll activity resend identical -> no double rows", "body": { "action": "saveAll", "data": {
+      "activity": [{ "ts": 1790100000000, "userId": "u_par1", "action": "uji", "detail": "parity" }]
+    } } },
+    { "name": "saveAll unbounded delete removes even the newer row (legacy, no _sejak)", "body": { "action": "saveAll", "data": {
+      "divisions": [{ "id": "d_par1", "name": "Parity Div 3", "updatedAt": 1790100000400 }]
+    } } },
+    { "name": "getAll after unbounded delete", "method": "GET", "query": { "action": "getAll" } },
+    { "name": "saveAll empty lists delete nothing", "body": { "action": "saveAll", "data": {
+      "divisions": [], "progress": {}, "progProg": {}
+    } } },
+    { "name": "uploadReceipt empty", "body": { "action": "uploadReceipt" } },
+    { "name": "uploadReceipt bad base64", "body": { "action": "uploadReceipt", "dataBase64": "@@@", "mimeType": "image/png" } },
+    { "name": "uploadReceipt png", "body": { "action": "uploadReceipt", "dataBase64": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "mimeType": "image/png", "fileName": "dot.png" }, "ignore": ["data.key"] },
+    { "name": "uploadReceipt pdf by name", "body": { "action": "uploadReceipt", "dataBase64": "aGVsbG8=", "fileName": "x.PDF" }, "ignore": ["data.key"] },
+    { "name": "receipt missing file", "method": "GET", "query": { "action": "receipt", "key": "rc_nope.png" } },
+    { "name": "receipt traversal", "method": "GET", "query": { "action": "receipt", "key": "../x" } },
+    { "name": "stats after writes", "method": "GET", "query": { "action": "stats" } }
+  ]
+}

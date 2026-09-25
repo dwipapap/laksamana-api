@@ -129,6 +129,7 @@ the anonymised set from #9 can be restored in CI.
 | dw | done | full contract (docs/api/dw.md) | 110/110 · frontend e2e 25/25 |
 | konten | done | full contract (docs/api/konten.md) | 22/22 · frontend e2e 23/23 |
 | absensi | done | full contract (docs/api/absensi.md) | 38/38 · frontend e2e 30/30 |
+| akademi | done | full contract (docs/api/akademi.md) | 25/25 · frontend e2e 31/31 |
 | (others) | pending — see docs/modules/README.md | | |
 
 ## Agent skills
