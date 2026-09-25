@@ -13,7 +13,7 @@ source disagree, the source wins; then correct the spec.
 | account | [account.md](account.md) | **done** | auth + admin | 139/139 | 11 |
 | jadwal | [jadwal.md](jadwal.md) | **done** | cells, shifts, requests, settings, heads | 35/35 | 13 |
 | dw | [dw.md](dw.md) | **done** | full contract, see docs/api/dw.md | 110/110 | 48 + 27 |
-| absensi | [absensi.md](absensi.md) | pending | pending | — | — |
+| absensi | [absensi.md](absensi.md) | **done** | full contract, see docs/api/absensi.md | 38/38 | 24 + 14 + 14 |
 | marketing | [marketing.md](marketing.md) | **done** | full contract, see docs/api/marketing.md | 46/46 | 18 + RowSync unit |
 | konten | [konten.md](konten.md) | **done** | full contract, see docs/api/konten.md | 22/22 | 30 |
 | akademi | [akademi.md](akademi.md) | **done** | full contract, see docs/api/akademi.md | 25/25 | 31 |
