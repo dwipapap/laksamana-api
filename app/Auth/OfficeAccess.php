@@ -2,7 +2,7 @@
 
 namespace App\Auth;
 
-use App\Modules\Jadwal\Services\HeadDirectory;
+use App\Support\Divisi;
 use Throwable;
 
 /**
@@ -45,8 +45,8 @@ class OfficeAccess
     private ?array $activeModules = null;
 
     public function __construct(
-        private readonly HeadDirectory $heads,
         private readonly AccountRepository $users,
+        private readonly Divisi $divisi,
     ) {}
 
     private static function s(mixed $v): string
@@ -94,58 +94,33 @@ class OfficeAccess
     }
 
     // ---------------------------------------------------------------- rules
-
-    public static function timBawaanJadwal(): array
-    {
-        return ['kitchen', 'dapur', 'bar', 'bartender', 'floor', 'service', 'waiter', 'waitress',
-            'host', 'hostess', 'cashier', 'kasir', 'hrd', 'hr', 'ceo'];
-    }
-
-    public static function timBolehDw(): array
-    {
-        return ['hrd', 'hr', 'ceo'];
-    }
-
-    public static function timAdminRoster(): array
-    {
-        return ['hrd', 'hr'];
-    }
-
-    public static function modulAdminBawaan(): array
-    {
-        return ['jadwal', 'dw'];
-    }
+    //
+    // The Tim word lists live on Divisi (single copy); the access RULES that
+    // read them stay here.
 
     /** Whole-word match on the Tim column: "Barista" is not "bar". */
     public static function timCocok(?string $keterangan, array $daftar): bool
     {
-        $kata = preg_split('/[^a-z]+/', strtolower((string) $keterangan), -1, PREG_SPLIT_NO_EMPTY) ?: [];
-        foreach ($daftar as $x) {
-            if (in_array($x, $kata, true)) {
-                return true;
-            }
-        }
-
-        return false;
+        return Divisi::timCocok($keterangan, $daftar);
     }
 
     /** Rule descriptions sent to the Kelola Akses screen (bawaan / terbatas / adminBawaan). */
     public static function aturanBawaan(): array
     {
         return [
-            ['module' => 'jadwal', 'tim' => self::timBawaanJadwal(), 'adminModul' => true],
-            ['module' => 'dw', 'tim' => self::timBolehDw(), 'adminModul' => true],
+            ['module' => 'jadwal', 'tim' => Divisi::TIM_BAWAAN_JADWAL, 'adminModul' => true],
+            ['module' => 'dw', 'tim' => Divisi::TIM_BOLEH_DW, 'adminModul' => true],
         ];
     }
 
     public static function aturanTerbatas(): array
     {
-        return [['module' => 'dw', 'tim' => self::timBolehDw(), 'adminModul' => true, 'head' => true]];
+        return [['module' => 'dw', 'tim' => Divisi::TIM_BOLEH_DW, 'adminModul' => true, 'head' => true]];
     }
 
     public static function aturanAdminBawaan(): array
     {
-        return [['modules' => self::modulAdminBawaan(), 'tim' => self::timAdminRoster()]];
+        return [['modules' => Divisi::MODUL_ADMIN_BAWAAN, 'tim' => Divisi::TIM_ADMIN_ROSTER]];
     }
 
     // ---------------------------------------------------------------- heads
@@ -153,22 +128,18 @@ class OfficeAccess
     /** @return array<string,array<int,string>> userId => [divisi…] */
     public function headMap(): array
     {
-        return $this->heads->map();
+        return $this->divisi->headMap();
     }
 
     public function isHead(string $userId): bool
     {
-        $p = $this->headMap();
-
-        return isset($p[$userId]) && count($p[$userId]) > 0;
+        return $this->divisi->isHead($userId);
     }
 
     /** @return array<int,string> */
     public function headDivisi(string $userId): array
     {
-        $p = $this->headMap();
-
-        return isset($p[$userId]) ? array_values($p[$userId]) : [];
+        return $this->divisi->headDivisi($userId);
     }
 
     // ------------------------------------------------------------ resolution
@@ -189,8 +160,8 @@ class OfficeAccess
         if (! in_array('*', $out, true)) {
             try {
                 $u = $this->userById($uid);
-                if ($u && self::timCocok(self::s($u['keterangan']), self::timAdminRoster())) {
-                    foreach (self::modulAdminBawaan() as $k) {
+                if ($u && self::timCocok(self::s($u['keterangan']), Divisi::TIM_ADMIN_ROSTER)) {
+                    foreach (Divisi::MODUL_ADMIN_BAWAAN as $k) {
                         if (! in_array($k, $out, true)) {
                             $out[] = $k;
                         }
@@ -228,12 +199,12 @@ class OfficeAccess
             $u = $this->userById($uid);
             $ket = $u ? self::s($u['keterangan']) : '';
             $adm = $this->adminModules($uid);
-            if (self::timCocok($ket, self::timBawaanJadwal())
+            if (self::timCocok($ket, Divisi::TIM_BAWAAN_JADWAL)
                 || in_array('*', $adm, true) || in_array('jadwal', $adm, true)) {
                 $out[] = 'jadwal';
             }
             // isHead() asked LAST: it is the only check that costs a lookup.
-            if (self::timCocok($ket, self::timBolehDw())
+            if (self::timCocok($ket, Divisi::TIM_BOLEH_DW)
                 || in_array('*', $adm, true) || in_array('dw', $adm, true)
                 || $this->isHead($uid)) {
                 $out[] = 'dw';
