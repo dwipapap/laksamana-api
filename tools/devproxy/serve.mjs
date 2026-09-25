@@ -56,15 +56,10 @@ const prefixToKey = Object.fromEntries(Object.entries(LEGACY).map(([k, v]) => [v
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'devproxy-'));
 const oldRoot = path.join(scratch, 'old');
 const self = `http://127.0.0.1:${PORT}`;
-for (const [key, [dir, prefix, db]] of Object.entries(LEGACY)) {
-  if (LARAVEL.has(key)) continue;
-  const dst = path.join(oldRoot, prefix);
-  fs.mkdirSync(dst, { recursive: true });
-  fs.cpSync(path.join(OFFICE, dir), dst, { recursive: true });
-  const dataDir = path.join(scratch, 'data', key);
+const legacyConfigFor = (db) => {
+  const dataDir = path.join(scratch, 'data', db);
   fs.mkdirSync(dataDir, { recursive: true });
-  // cross-module URLs go back through THIS proxy, so they hit whichever side owns the module
-  fs.writeFileSync(path.join(dst, 'config.php'), `<?php
+  return [dataDir, `<?php
 define('DB_HOST','127.0.0.1'); define('DB_PORT','3306'); define('DB_NAME','${db}');
 define('DB_USER','root'); define('DB_PASS',''); define('DB_CHARSET','utf8mb4');
 define('ENV_LABEL','lokal'); define('API_TOKEN','');
@@ -72,7 +67,27 @@ define('DATA_DIR', ${JSON.stringify(dataDir)}); define('TRAINING_DIR', ${JSON.st
 define('ACCOUNT_API_URL','${self}/account-api-mysql/api.php');
 define('JADWAL_API_URL','${self}/jadwal-api-mysql/api.php');
 define('DW_API_URL','${self}/dw-api-mysql/api.php');
-`);
+`];
+};
+for (const [key, [dir, prefix, db]] of Object.entries(LEGACY)) {
+  if (LARAVEL.has(key)) continue;
+  const dst = path.join(oldRoot, prefix);
+  fs.mkdirSync(dst, { recursive: true });
+  fs.cpSync(path.join(OFFICE, dir), dst, { recursive: true });
+  // cross-module URLs go back through THIS proxy, so they hit whichever side owns the module
+  const [, cfg] = legacyConfigFor(db);
+  fs.writeFileSync(path.join(dst, 'config.php'), cfg);
+  try { fs.rmSync(path.join(dst, 'config.local.php')); } catch {}
+}
+// absensi is not a deploy/ module: its PWA lives at ../laksamana-office/absensi/
+// and its backend at the two-segment /absensi/api/api.php (on its own subdomain:
+// /api/api.php). Stage the old backend only when Laravel does not own it.
+if (!LARAVEL.has('absensi')) {
+  const dst = path.join(oldRoot, 'absensi', 'api');
+  fs.mkdirSync(dst, { recursive: true });
+  fs.cpSync(path.join(OFFICE, 'absensi-mysql'), dst, { recursive: true });
+  const [, cfg] = legacyConfigFor('lakk5493_db_absensi');
+  fs.writeFileSync(path.join(dst, 'config.php'), cfg);
   try { fs.rmSync(path.join(dst, 'config.local.php')); } catch {}
 }
 
@@ -100,6 +115,13 @@ function forward(req, res, port) {
 
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, self);
+  // absensi is not a deploy/ module: the whole backend on both of its URL
+  // shapes (/absensi/api/api.php here, /api/api.php on its own subdomain).
+  // Flag-gated like the rest (--laravel ...,absensi).
+  if (u.pathname === '/absensi/api/api.php' || u.pathname === '/api/api.php') {
+    res.setHeader('X-Devproxy-Backend', LARAVEL.has('absensi') ? 'laravel' : 'legacy-php');
+    return forward(req, res, LARAVEL.has('absensi') ? LARAVEL_PORT : OLD_PORT);
+  }
   const first = u.pathname.split('/')[1] || '';
   if (prefixToKey[first]) {
     const key = prefixToKey[first];
