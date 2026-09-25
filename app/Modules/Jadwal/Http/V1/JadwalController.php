@@ -76,9 +76,30 @@ class JadwalController
         return $this->run(fn () => $this->jadwal->shiftRange((string) ($d['user'] ?? ''), $d['from'], $d['to']));
     }
 
-    public function requests(): JsonResponse
+    public function requests(Request $r): JsonResponse
     {
-        return ApiResponse::ok($this->jadwal->readAll('', '9999-12-31')['pengajuan']);
+        $d = $r->validate([
+            'mine' => ['nullable', 'boolean'],
+            'user' => ['nullable', 'string', 'max:64'],
+            'status' => ['nullable', 'string', 'max:120'],
+            'from' => ['nullable', 'date_format:Y-m-d'],
+            'to' => ['nullable', 'date_format:Y-m-d'],
+        ]);
+        $me = $this->me($r);
+        // `mine` wins over `user`: Jadwal Saya is always about the caller.
+        $f = ! empty($d['mine']) ? ['userId' => (string) $me['id']]
+            : (! empty($d['user']) ? ['userId' => $d['user']] : []);
+        if (! empty($d['status'])) {
+            $f['status'] = explode(',', (string) $d['status']);
+        }
+        if (! empty($d['from'])) {
+            $f['dari'] = $d['from'];
+        }
+        if (! empty($d['to'])) {
+            $f['sampai'] = $d['to'];
+        }
+
+        return $this->run(fn () => $this->jadwal->listRequests($f));
     }
 
     public function createRequest(Request $r): JsonResponse
@@ -135,6 +156,27 @@ class JadwalController
     public function settings(): JsonResponse
     {
         return ApiResponse::ok($this->jadwal->setting());
+    }
+
+    /** Wipe all cells and requests (settings kept). Same rules as legacy kosongkanSemua. */
+    public function clearAll(Request $r): JsonResponse
+    {
+        $d = $r->validate(['konfirmasi' => ['required', 'string']]);
+        $me = $this->me($r);
+
+        return $this->run(function () use ($d, $me) {
+            if (trim($d['konfirmasi']) !== 'HAPUS SEMUA') {
+                throw new RuntimeException('Konfirmasi tidak cocok — pengosongan dibatalkan.');
+            }
+
+            return $this->jadwal->clearAll($me['name']);
+        });
+    }
+
+    /** Office roster with each User's Divisi attached. */
+    public function roster(): JsonResponse
+    {
+        return $this->run(fn () => $this->jadwal->rosterWithDivisi());
     }
 
     public function saveSettings(Request $r): JsonResponse
