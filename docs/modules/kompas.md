@@ -127,3 +127,9 @@ Response envelope is `{ok,data}`, except that `getAll` adds a top-level `ts`.
 - Parity cannot compare those fields: under `php -S` the legacy URLs are built from SERVER_NAME without the port, so they always fail. They are ignored there and asserted in Pest instead.
 - Report PDFs go to `<KOMPAS_DATA_DIR>/lapor/lp_<hex>.pdf`, the same layout as legacy.
 - Analytics stays open on the compat route, as in legacy. v1 gates it by the `analytics` Modul.
+
+## Port notes (#31: v1 completion, milestone M14)
+
+- The v1 audit covers all five frontends (Cashier, Finance › Omset, the Kas pages kompas serves, Analytics, Investor); the map is in `docs/api/kompas.md`.
+- Legacy screens write the whole blob with `saveAll`. v1 adds granular parts (`/sections/{key}`, `/reports/{date}`, `/days/{date}`), each versioned by its own content hash under the same `kompas_save` lock, so edits to different parts never conflict.
+- Frontend walkthrough: `tools/e2e/kompas.mjs` (`devproxy --laravel account,kompas`).

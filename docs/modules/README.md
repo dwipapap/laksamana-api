@@ -21,7 +21,7 @@ source disagree, the source wins; then correct the spec.
 | event | [event.md](event.md) | **done** | full contract, see docs/api/event.md | 65/65 | 13 + 13 |
 | hr | [hr.md](hr.md) | **done** | full contract, see docs/api/hr.md | 21/21 | 7 + 8 |
 | hlife | [hlife.md](hlife.md) | **done** | full contract, see docs/api/hlife.md | 22/22 | 6 + 7 |
-| kompas | [kompas.md](kompas.md) | pending | pending | — | — |
+| kompas | [kompas.md](kompas.md) | **done** | full contract, see docs/api/kompas.md | 102/102 | 10 + 8 + 7 |
 | finance | [finance.md](finance.md) | **done** | full contract, see docs/api/finance.md | 92/92 | 7 + 8 + 5 + 6 |
 | reservasi | [reservasi.md](reservasi.md) | pending | pending | — | — |
 | stock | [stock.md](stock.md) | pending | pending | — | — |
