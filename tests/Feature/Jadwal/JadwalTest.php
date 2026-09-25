@@ -23,6 +23,24 @@ it('lets a head write cells of their own division', function () {
         ->and($row->updated_by)->toBe(officeUser('u-arif')['name']);
 });
 
+it('keeps start time, end time and note when a Kepala Divisi saves a full cell through v1', function () {
+    $token = loginAs(officeUser('u-arif'));
+    $this->withToken($token)->putJson('/api/v1/jadwal/cells', [
+        'cells' => [['u' => 'u-yuzaalfarel', 'd' => '2026-10-15', 't' => 'PAGI', 'm' => '08:00', 's' => '16:00', 'n' => 'apel pagi']],
+    ])->assertOk()->assertJsonPath('data.isi', 1);
+
+    $row = Modules::db('jadwal')->selectOne("SELECT jam_mulai, jam_selesai, catatan FROM jadwal_sel WHERE user_id='u-yuzaalfarel' AND tgl='2026-10-15'");
+    expect($row->jam_mulai)->toBe('08:00')
+        ->and($row->jam_selesai)->toBe('16:00')
+        ->and($row->catatan)->toBe('apel pagi');
+
+    $this->withToken($token)->getJson('/api/v1/jadwal/cells?from=2026-10-15&to=2026-10-15')
+        ->assertOk()
+        ->assertJsonPath('data.0.m', '08:00')
+        ->assertJsonPath('data.0.s', '16:00')
+        ->assertJsonPath('data.0.n', 'apel pagi');
+});
+
 it('refuses a head writing another division', function () {
     $this->withToken(loginAs(officeUser('u-arif')))->putJson('/api/v1/jadwal/cells', [
         'cells' => [['u' => 'u-mella', 'd' => '2026-10-05', 't' => 'PAGI']],

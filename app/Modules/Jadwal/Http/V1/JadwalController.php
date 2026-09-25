@@ -58,6 +58,9 @@ class JadwalController
             'cells' => ['array'],
             'cells.*.u' => ['required', 'string'], 'cells.*.d' => ['required', 'date_format:Y-m-d'],
             'cells.*.t' => ['required', 'string', 'max:16'],
+            'cells.*.m' => ['nullable', 'string', 'max:5'],
+            'cells.*.s' => ['nullable', 'string', 'max:5'],
+            'cells.*.n' => ['nullable', 'string', 'max:120'],
             'clear' => ['array'],
             'clear.*.u' => ['required', 'string'], 'clear.*.d' => ['required', 'date_format:Y-m-d'],
         ]);
