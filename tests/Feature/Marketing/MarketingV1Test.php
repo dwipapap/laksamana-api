@@ -45,11 +45,11 @@ it('rejects a stale version with 409 and the current record', function () {
 });
 
 it('merges a PATCH with the right version and bumps it', function () {
-    $v = (int) Modules::db('marketing')->selectOne("SELECT updated_at FROM clients WHERE id='c_77uxgd8'")->updated_at;
+    $row = Modules::db('marketing')->selectOne("SELECT updated_at, JSON_UNQUOTE(JSON_EXTRACT(data, '$.nama')) AS nama FROM clients WHERE id='c_77uxgd8'");
     $res = $this->withToken(loginAs(officeUser('u-aurel')))
-        ->withHeader('If-Match', '"'.$v.'"')->patchJson('/api/v1/marketing/clients/c_77uxgd8', ['status' => 'Deal'])
-        ->assertOk()->assertJsonPath('data.status', 'Deal')->assertJsonPath('data.nama', 'Rinda Black Paint');
-    expect($res->json('meta.version'))->toBeGreaterThan($v);
+        ->withHeader('If-Match', '"'.((int) $row->updated_at).'"')->patchJson('/api/v1/marketing/clients/c_77uxgd8', ['status' => 'Deal'])
+        ->assertOk()->assertJsonPath('data.status', 'Deal')->assertJsonPath('data.nama', $row->nama);
+    expect($res->json('meta.version'))->toBeGreaterThan((int) $row->updated_at);
 });
 
 it('stays compatible with old laksamana-office tabs: the v1 version is a valid baseUpdatedAt', function () {
