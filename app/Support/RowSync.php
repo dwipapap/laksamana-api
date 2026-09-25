@@ -22,8 +22,11 @@ use Throwable;
  *   'table'   => 'events'
  *   'id'      => 'id'                        id column (and app field)
  *   'created' => true                        has created_at (from data.createdAt, never overwritten)
+ *   'created_field' => 'created'             app field feeding created_at (default createdAt; event orders)
  *   'cols'    => ['nama' => ['nama','str'], 'tanggal' => ['tanggal','date'], …]
  *                column => [app field, type]  types: str|int|bool|date|datetime|ms
+ *                plus the event-mysql flavours: strRaw ((string) cast, arrays -> "Array"),
+ *                time (first 8 chars), datetimeWib (strtotime() of ANY string -> WIB)
  *
  * ─── Options ($opt) ───────────────────────────────────────────────────────
  *   'conflict'      bool  rows carrying `baseUpdatedAt` older than the server
@@ -35,11 +38,13 @@ use Throwable;
  *   'skipUnchanged' bool  rows not marked edited with the same stamp as stored
  *                         are not rewritten (marketing)
  *   'nameKeys'      list  fields used as the human name in $bentrok (default nama, name)
+ *   'keepBase'      bool  store the row verbatim, `baseUpdatedAt` included (event never strips it)
  *
  * ─── Delete strategies (deleteMissing) ───────────────────────────────────
  *   'sejak'  : DELETE rows NOT IN ids AND updated_at <= $param; $param<=0 or no ids => nothing (marketing)
  *   'notIn'  : DELETE rows NOT IN ids (no ids => nothing unless $allowEmpty)            (akademi, hr, hlife…)
- *   'maxUpd' : like sejak with $param = max updatedAt of the payload                    (event)
+ *   'maxUpd' : like sejak with $param = max updatedAt of the payload; when no row in the
+ *              payload carries a stamp ($param<=0) it deletes every row NOT IN ids   (event)
  *   'none'   : never delete
  */
 final class RowSync
@@ -83,6 +88,33 @@ final class RowSync
         }
     }
 
+    /**
+     * event-mysql's datetime_valid(): strtotime() of ANY string (a zone-less
+     * string is read in PHP's default zone, UTC here as on the old server),
+     * shown in WIB.
+     */
+    public static function datetimeWib(mixed $v): ?string
+    {
+        $v = trim(self::strRaw($v) ?? '');
+        if ($v === '') {
+            return null;
+        }
+        $ts = strtotime($v);
+        if ($ts === false) {
+            return null;
+        }
+        $d = new DateTime('@'.$ts);
+        $d->setTimezone(new DateTimeZone('Asia/Jakarta'));
+
+        return $d->format('Y-m-d H:i:s');
+    }
+
+    /** PHP's (string) cast without the warning: arrays become "Array", as the old backends stored them. */
+    public static function strRaw(mixed $v): ?string
+    {
+        return $v === null ? null : (is_array($v) ? 'Array' : (string) $v);
+    }
+
     public static function ms(mixed $v): int
     {
         if (is_int($v) || is_float($v)) {
@@ -110,6 +142,9 @@ final class RowSync
             'bool' => empty($v) ? 0 : 1,
             'date' => self::tanggal($v),
             'datetime' => self::datetime($v),
+            'datetimeWib' => self::datetimeWib($v),
+            'time' => $v === null ? null : substr(self::strRaw($v), 0, 8),
+            'strRaw' => self::strRaw($v),
             'ms' => self::ms($v),
             default => $v === null ? null : (is_array($v) ? json_encode($v) : (string) $v),
         };
@@ -188,6 +223,8 @@ final class RowSync
         $useSidik = ! empty($opt['sidik']);
         $capBump = ! empty($opt['capBump']);
         $skipUnchanged = ! empty($opt['skipUnchanged']);
+        $keepBase = ! empty($opt['keepBase']);
+        $createdField = $def['created_field'] ?? 'createdAt';
 
         $sendIds = [];
         foreach ($rows as $r) {
@@ -247,7 +284,9 @@ final class RowSync
             }
 
             $simpan = $r;
-            unset($simpan['baseUpdatedAt']);
+            if (! $keepBase) {
+                unset($simpan['baseUpdatedAt']);
+            }
             $uaSent = self::ms($simpan['updatedAt'] ?? 0);
             $ua = $capBump ? self::capTulis($uaSent, $passed, $verServer[$id] ?? null) : $uaSent;
             if ($ua !== $uaSent) {
@@ -266,7 +305,7 @@ final class RowSync
             }
             $args[] = $ua;
             if ($hasCreated) {
-                $args[] = self::ms($simpan['createdAt'] ?? 0);
+                $args[] = self::ms($simpan[$createdField] ?? 0);
             }
             $args[] = self::enc($simpan);
             $db->statement($sql, $args);
@@ -305,7 +344,10 @@ final class RowSync
         }
         // sejak / maxUpd: only rows the client could have known about
         if ($param <= 0) {
-            return 0;
+            // event's hapus_yang_hilang: no stamp in the payload => no bound at all
+            return $strategy === 'maxUpd'
+                ? $db->delete("DELETE FROM `$table` WHERE `$idCol` NOT IN ($ph)", array_values($ids))
+                : 0;
         }
 
         return $db->delete("DELETE FROM `$table` WHERE `$idCol` NOT IN ($ph) AND updated_at <= ?", [...array_values($ids), $param]);
