@@ -748,6 +748,452 @@
       }
     },
     {
+      "name": "simpanHadir bad value",
+      "body": {
+        "action": "simpanHadir",
+        "sesi": "$sesi:hrd",
+        "id": "AJpar_in1",
+        "hadir": "HILANG"
+      }
+    },
+    {
+      "name": "simpanHadir missing id",
+      "body": {
+        "action": "simpanHadir",
+        "sesi": "$sesi:hrd",
+        "id": "AJtidakada",
+        "hadir": "HADIR"
+      }
+    },
+    {
+      "name": "simpanHadir fixture menunggu",
+      "body": {
+        "action": "simpanAjuan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "id": "AJpar_hd1",
+          "dwId": "DWmtxzw6fd369",
+          "tgl": "2032-01-01",
+          "m": "18:00",
+          "s": "23:00",
+          "divisi": "floor"
+        }
+      }
+    },
+    {
+      "name": "simpanHadir refused on menunggu",
+      "body": {
+        "action": "simpanHadir",
+        "sesi": "$sesi:hrd",
+        "id": "AJpar_hd1",
+        "hadir": "HADIR"
+      }
+    },
+    {
+      "name": "simpanHadir approve fixture",
+      "body": {
+        "action": "putusAjuan",
+        "sesi": "$sesi:hrd",
+        "id": "AJpar_hd1",
+        "status": "DISETUJUI"
+      }
+    },
+    {
+      "name": "simpanHadir hadir with nota",
+      "body": {
+        "action": "simpanHadir",
+        "sesi": "$sesi:hrd",
+        "id": "AJpar_hd1",
+        "hadir": "TELAT",
+        "nota": "macet"
+      }
+    },
+    {
+      "name": "simpanHadir reset to unconfirmed",
+      "body": {
+        "action": "simpanHadir",
+        "sesi": "$sesi:hrd",
+        "id": "AJpar_hd1",
+        "hadir": ""
+      }
+    },
+    {
+      "name": "simpanHadir fixture bar shift",
+      "body": {
+        "action": "simpanAjuan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "id": "AJpar_hd2",
+          "dwId": "DWmty9fok2781",
+          "tgl": "2032-01-02",
+          "m": "18:00",
+          "s": "23:00",
+          "divisi": "bar"
+        }
+      }
+    },
+    {
+      "name": "simpanHadir approve bar fixture",
+      "body": {
+        "action": "putusAjuan",
+        "sesi": "$sesi:hrd",
+        "id": "AJpar_hd2",
+        "status": "DISETUJUI"
+      }
+    },
+    {
+      "name": "simpanHadir head of own division",
+      "body": {
+        "action": "simpanHadir",
+        "sesi": "$sesi:headbar",
+        "id": "AJpar_hd2",
+        "hadir": "HADIR"
+      }
+    },
+    {
+      "name": "simpanHadir head of other division refused",
+      "body": {
+        "action": "simpanHadir",
+        "sesi": "$sesi:headfloor",
+        "id": "AJpar_hd2",
+        "hadir": "HADIR"
+      }
+    },
+    {
+      "name": "simpanHadir crew without module refused",
+      "body": {
+        "action": "simpanHadir",
+        "sesi": "$sesi:crew",
+        "id": "AJpar_hd2",
+        "hadir": "HADIR"
+      }
+    },
+    {
+      "name": "gantiOrang missing params",
+      "body": {
+        "action": "gantiOrang",
+        "sesi": "$sesi:hrd",
+        "id": "",
+        "dwBaru": ""
+      }
+    },
+    {
+      "name": "gantiOrang unknown shift",
+      "body": {
+        "action": "gantiOrang",
+        "sesi": "$sesi:hrd",
+        "id": "AJtidakada",
+        "dwBaru": "DWmtxzw6fd369"
+      }
+    },
+    {
+      "name": "gantiOrang fixture menunggu",
+      "body": {
+        "action": "simpanAjuan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "id": "AJpar_go1",
+          "dwId": "DWmtxzw6fd369",
+          "tgl": "2032-02-01",
+          "m": "10:00",
+          "s": "12:00",
+          "divisi": "floor"
+        }
+      }
+    },
+    {
+      "name": "gantiOrang refused on menunggu",
+      "body": {
+        "action": "gantiOrang",
+        "sesi": "$sesi:hrd",
+        "id": "AJpar_go1",
+        "dwBaru": "DWmty9fok2781"
+      }
+    },
+    {
+      "name": "gantiOrang fixture shift",
+      "body": {
+        "action": "simpanAjuan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "id": "AJpar_go2",
+          "dwId": "DWmtxzw6fd369",
+          "tgl": "2032-02-01",
+          "m": "18:00",
+          "s": "23:00",
+          "divisi": "floor"
+        }
+      }
+    },
+    {
+      "name": "gantiOrang approve fixture",
+      "body": {
+        "action": "putusAjuan",
+        "sesi": "$sesi:hrd",
+        "id": "AJpar_go2",
+        "status": "DISETUJUI"
+      }
+    },
+    {
+      "name": "gantiOrang same person",
+      "body": {
+        "action": "gantiOrang",
+        "sesi": "$sesi:hrd",
+        "id": "AJpar_go2",
+        "dwBaru": "DWmtxzw6fd369"
+      }
+    },
+    {
+      "name": "gantiOrang unknown replacement",
+      "body": {
+        "action": "gantiOrang",
+        "sesi": "$sesi:hrd",
+        "id": "AJpar_go2",
+        "dwBaru": "DWtidakada"
+      }
+    },
+    {
+      "name": "gantiOrang nonaktif replacement",
+      "body": {
+        "action": "gantiOrang",
+        "sesi": "$sesi:hrd",
+        "id": "AJpar_go2",
+        "dwBaru": "DWmszpxytp886"
+      }
+    },
+    {
+      "name": "gantiOrang fixture busy replacement",
+      "body": {
+        "action": "simpanAjuan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "id": "AJpar_go3",
+          "dwId": "DWmty9fok2781",
+          "tgl": "2032-02-01",
+          "m": "18:00",
+          "s": "23:00",
+          "divisi": "kitchen"
+        }
+      }
+    },
+    {
+      "name": "gantiOrang approve busy fixture",
+      "body": {
+        "action": "putusAjuan",
+        "sesi": "$sesi:hrd",
+        "id": "AJpar_go3",
+        "status": "DISETUJUI"
+      }
+    },
+    {
+      "name": "gantiOrang overlapping replacement refused",
+      "body": {
+        "action": "gantiOrang",
+        "sesi": "$sesi:hrd",
+        "id": "AJpar_go2",
+        "dwBaru": "DWmty9fok2781"
+      }
+    },
+    {
+      "name": "gantiOrang success",
+      "body": {
+        "action": "gantiOrang",
+        "sesi": "$sesi:hrd",
+        "id": "AJpar_go2",
+        "dwBaru": "DWmszpwipk196",
+        "nota": "sakit"
+      },
+      "ignore": [
+        "data.baru.id",
+        "data.lama.dibuatAt",
+        "data.lama.putusAt",
+        "data.lama.hadirAt",
+        "data.baru.dibuatAt",
+        "data.baru.putusAt",
+        "data.baru.hadirAt"
+      ]
+    },
+    {
+      "name": "gantiOrang head of other division refused",
+      "body": {
+        "action": "gantiOrang",
+        "sesi": "$sesi:headfloor",
+        "id": "AJpar_hd2",
+        "dwBaru": "DWmty9fok2781"
+      }
+    },
+    {
+      "name": "tandaiBayar missing params",
+      "body": {
+        "action": "tandaiBayar",
+        "sesi": "$sesi:hrd",
+        "senin": "",
+        "kunci": ""
+      }
+    },
+    {
+      "name": "tandaiBayar bad week",
+      "body": {
+        "action": "tandaiBayar",
+        "sesi": "$sesi:hrd",
+        "senin": "2032-13-01",
+        "kunci": "BANK::1",
+        "nyala": true
+      }
+    },
+    {
+      "name": "tandaiBayar head refused",
+      "body": {
+        "action": "tandaiBayar",
+        "sesi": "$sesi:headbar",
+        "senin": "2032-02-02",
+        "kunci": "BANK::1",
+        "nyala": true
+      }
+    },
+    {
+      "name": "tandaiBayar set",
+      "body": {
+        "action": "tandaiBayar",
+        "sesi": "$sesi:hrd",
+        "senin": "2032-02-02",
+        "kunci": "BANK::1",
+        "nyala": true
+      }
+    },
+    {
+      "name": "getAll shows the payment tick",
+      "method": "GET",
+      "query": {
+        "action": "getAll",
+        "sesi": "$sesi:hrd",
+        "dari": "2032-02-02",
+        "sampai": "2032-02-02"
+      },
+      "ignore": [
+        "data.setting.bayarLunas.*.at",
+        "data.permintaan.*.id",
+        "data.pekerja.15.id"
+      ]
+    },
+    {
+      "name": "tandaiBayar unset",
+      "body": {
+        "action": "tandaiBayar",
+        "sesi": "$sesi:hrd",
+        "senin": "2032-02-02",
+        "kunci": "BANK::1"
+      }
+    },
+    {
+      "name": "simpanSetting invalid payload",
+      "body": {
+        "action": "simpanSetting",
+        "sesi": "$sesi:hrd",
+        "data": null
+      }
+    },
+    {
+      "name": "simpanSetting head refused",
+      "body": {
+        "action": "simpanSetting",
+        "sesi": "$sesi:headbar",
+        "data": {
+          "tarif": []
+        }
+      }
+    },
+    {
+      "name": "simpanSetting admin sets hr and akses",
+      "body": {
+        "action": "simpanSetting",
+        "sesi": "$sesi:hrd",
+        "data": {
+          "tarif": {
+            "Bar Helper": 50000
+          },
+          "hr": [
+            "u-arif"
+          ],
+          "akses": {
+            "menu": "x"
+          }
+        }
+      }
+    },
+    {
+      "name": "simpanSetting non-admin cannot change hr or akses",
+      "body": {
+        "action": "simpanSetting",
+        "sesi": "$sesi:headbar",
+        "data": {
+          "tarif": {
+            "Bar Helper": 60000
+          },
+          "hr": [
+            "u-nobody"
+          ],
+          "akses": {
+            "menu": "y"
+          }
+        }
+      }
+    },
+    {
+      "name": "getAll keeps hr and akses, writes the rest",
+      "method": "GET",
+      "query": {
+        "action": "getAll",
+        "sesi": "$sesi:hrd",
+        "dari": "2032-03-01",
+        "sampai": "2032-03-31"
+      },
+      "ignore": [
+        "data.permintaan.*.id",
+        "data.pekerja.15.id"
+      ]
+    },
+    {
+      "name": "kosongkanSemua non-admin refused",
+      "body": {
+        "action": "kosongkanSemua",
+        "sesi": "$sesi:headbar",
+        "konfirmasi": "HAPUS SEMUA"
+      }
+    },
+    {
+      "name": "kosongkanSemua wrong keyword",
+      "body": {
+        "action": "kosongkanSemua",
+        "sesi": "$sesi:hrd",
+        "konfirmasi": "hapus"
+      }
+    },
+    {
+      "name": "kosongkanSemua clears requests and assignments",
+      "body": {
+        "action": "kosongkanSemua",
+        "sesi": "$sesi:hrd",
+        "konfirmasi": "HAPUS SEMUA"
+      },
+      "ignore": [
+        "data.ts"
+      ]
+    },
+    {
+      "name": "getAll after wipe is empty",
+      "method": "GET",
+      "query": {
+        "action": "getAll",
+        "sesi": "$sesi:hrd",
+        "dari": "2032-01-01",
+        "sampai": "2032-12-31"
+      },
+      "ignore": [
+        "data.pekerja.15.id"
+      ]
+    },
+    {
       "name": "orphan fixture ajuan",
       "body": {
         "action": "simpanAjuan",
