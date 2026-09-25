@@ -105,3 +105,12 @@ Response envelope is `{ok,data}`, except that `getAll` adds a top-level `ts`.
 - `/api/v1/kompas/bri`
 - `/api/v1/kompas/analytics`
 - `/api/v1/investor/{summary, agenda, reports}`
+
+## Port notes (#28: revenue core)
+
+- Ported: `getAll` (top-level `ts`), `saveAll` (stale guard plus the `konflik` reply), `simpanTarget`, `simpanRekap`, `omsetPic`, `performaDivisi`, `ping` and `stats` (`App\Modules\Kompas\Services\KompasState`). Investor, analytics, void and BRI answer `Aksi tidak dikenal` until their issues land, so do not route kompas to Laravel in production before then.
+- JSON handling matches legacy exactly: `getAll` decodes the blob as objects, while the POST body is decoded as arrays, so a `{}` saved through `saveAll` is stored as `[]` (legacy quirk, kept; parity checks the stored bytes).
+- `KompasState::dailyMap()` (`kp_peta_harian`) is the single source for daily revenue. Other modules (finance's Rekap, investor) must use it rather than re-summing the blob.
+- The legacy `investorAgenda` HTTP fan-out to marketing/event/bd is not part of this issue; its port reads those modules' services.
+- The connection keeps the server sql_mode (`server_sql_mode`, #97).
+- v1: `docs/api/kompas.md`.

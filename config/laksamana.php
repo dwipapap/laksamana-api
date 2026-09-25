@@ -30,13 +30,13 @@ $modules = [
     'event' => ['env' => 'EMS',       'database' => 'lakk5493_db_ems',       'legacy' => 'event-api-mysql',     'data_dir' => '/home/lakk5493/event-db', 'server_sql_mode' => true],
     'ticketing' => ['env' => 'EMS',       'database' => 'lakk5493_db_ems',       'legacy' => 'ticketing-api'],
     'finance' => ['env' => 'FINANCE',   'database' => 'lakk5493_db_finance',   'legacy' => 'finance-api-mysql', 'server_sql_mode' => true],
-    // server_sql_mode (hlife, bd, hr, event, finance): do not force Laravel's strict sql_mode — the legacy PDO used
+    // server_sql_mode (hlife, bd, hr, event, finance, kompas): do not force Laravel's strict sql_mode — the legacy PDO used
     // the server default, and production (non-strict) stores e.g. hlife dreams year "" as
     // tahun=0. Strict mode would reject writes legacy accepted (see #97 for the other modules).
     'hlife' => ['env' => 'HLIFE',     'database' => 'lakk5493_db_hlife',     'legacy' => 'howandi-life-api-mysql', 'server_sql_mode' => true],
     'hr' => ['env' => 'HR',        'database' => 'lakk5493_db_hr',        'legacy' => 'hr-api-mysql', 'server_sql_mode' => true],
     'jadwal' => ['env' => 'JADWAL',    'database' => 'lakk5493_db_jadwal',    'legacy' => 'jadwal-api-mysql'],
-    'kompas' => ['env' => 'KOMPAS',    'database' => 'lakk5493_db_kompas',    'legacy' => 'kompas-api-mysql',    'data_dir' => '/home/lakk5493/kompas-db'],
+    'kompas' => ['env' => 'KOMPAS',    'database' => 'lakk5493_db_kompas',    'legacy' => 'kompas-api-mysql',    'data_dir' => '/home/lakk5493/kompas-db', 'server_sql_mode' => true],
     'konten' => ['env' => 'KONTEN',    'database' => 'lakk5493_db_konten',    'legacy' => 'konten-api-mysql',    'data_dir' => '/home/lakk5493/konten-db'],
     'marketing' => ['env' => 'MARKETING', 'database' => 'lakk5493_db_marketing', 'legacy' => 'marketing-api-mysql', 'data_dir' => '/home/lakk5493/marketing-db'],
     'reservasi' => ['env' => 'RESERVASI', 'database' => 'lakk5493_db_reservasi', 'legacy' => 'reservasi-api-mysql', 'data_dir' => '/home/lakk5493/reservasi-db'],
