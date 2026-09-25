@@ -13,12 +13,20 @@ use RuntimeException;
  * /api/v1/dw — Daily Worker for new apps. Same rules as the legacy compat
  * route (DwService); the caller is the Sanctum user behind `module:dw`.
  *
- * Cluster (1): overview & schedule reads, the talent pool (workers), head
- * requests (requests) incl. assigning, and shift assignments (assignments)
- * incl. decisions. Attendance, replacement, payment marks and settings arrive
- * with #14. Rule violations surface as 403 `forbidden` with the legacy
- * message; an overlap that the legacy API answers with {saved:false} is a
- * 409 `overlap` here with the conflict in error.details.
+ * Covers every screen of the DW Panel (NAV_DEF in deploy/dw/index.html):
+ * overview & schedule reads (Dashboard, Kalender), the talent pool
+ * (Database DW), head requests incl. assigning (Permintaan, Antrean),
+ * assignments incl. decisions (Antrean, Kalender), attendance + replacement
+ * (Konfirmasi Kehadiran), payment ticks (Pembayaran), settings (Pengaturan)
+ * and the admin wipe. Rekap Pegawai and the money math are computed
+ * client-side from these same reads (the module stores no tariffs in PHP);
+ * Kalender Tamu reads the marketing/event/reservasi modules, not this one;
+ * Hak Akses reads hr/akses from settings plus the account roster.
+ *
+ * Rule violations surface as 403 `forbidden` with the legacy message; an
+ * overlap that the legacy API answers with {saved:false} is a 409 `overlap`
+ * here with the conflict in error.details; replacement clashes the legacy
+ * API throws as errors stay 422 `rejected` with the legacy message.
  */
 class DwController
 {
@@ -406,6 +414,136 @@ class DwController
             $this->dw->assertHrd($me, 'Menghapus ajuan');
 
             return $this->dw->deleteAjuan($id);
+        });
+    }
+
+    // ------------------------------------------------------------ attendance
+
+    /**
+     * Konfirmasi Kehadiran: marks who really came ('' resets to unconfirmed;
+     * ALFA is unpaid, ''/HADIR/TELAT are paid — the pay screens read the same
+     * flag). HRD, or the head of the ROW's division (whoever was on site).
+     */
+    public function attendance(Request $r, string $id): JsonResponse
+    {
+        $d = $r->validate([
+            'hadir' => ['nullable', 'string', 'max:10'],
+            'nota' => ['nullable', 'string', 'max:255'],
+        ]);
+        $a = $this->dw->ajuanById($id);
+        if (! $a) {
+            return ApiResponse::error('not_found', 'Assignment not found.', 404);
+        }
+        $me = $this->me($r);
+
+        return $this->run(function () use ($me, $a, $id, $d) {
+            $this->dw->assertMinta($me, (string) $a['divisi']);
+
+            return $this->dw->saveHadir($id, $d['hadir'] ?? '', $d['nota'] ?? '', $me['name']);
+        });
+    }
+
+    /**
+     * Replacement on location: the old row turns ALFA ("Digantikan <name>")
+     * and the replacement is born as its own DISETUJUI + HADIR row carrying
+     * the same permintaan_id. Same gate as attendance. A clash with the
+     * replacement's own hours is 422 `rejected` with the legacy message.
+     */
+    public function replace(Request $r, string $id): JsonResponse
+    {
+        $d = $r->validate([
+            'dwBaru' => ['required', 'string', 'max:32'],
+            'nota' => ['nullable', 'string', 'max:255'],
+        ]);
+        $a = $this->dw->ajuanById($id);
+        if (! $a) {
+            return ApiResponse::error('not_found', 'Assignment not found.', 404);
+        }
+        $me = $this->me($r);
+
+        return $this->run(function () use ($me, $a, $id, $d) {
+            $this->dw->assertMinta($me, (string) $a['divisi']);
+
+            return $this->dw->gantiOrang($id, $d['dwBaru'], $d['nota'] ?? '', $me['name']);
+        });
+    }
+
+    // ------------------------------------------------------------ settings
+
+    /**
+     * Pengaturan + Hak Akses (read): the whole setting blob — tariffs,
+     * default hours, position maps, quotas, hr list, access matrix and the
+     * payment ticks. Same visibility as /overview (any module holder reads;
+     * the screens decide what to show from peran).
+     */
+    public function settings(): JsonResponse
+    {
+        return ApiResponse::ok($this->dw->setting());
+    }
+
+    /**
+     * Pengaturan (write): the request body IS the setting blob. HRD sets
+     * tariffs, quotas, default hours and position maps. The hr list and the
+     * akses matrix are kept from the stored value unless the caller is a
+     * module admin — silently keeping them, exactly like the legacy route.
+     */
+    public function saveSettings(Request $r): JsonResponse
+    {
+        $data = $r->json()->all();
+        $me = $this->me($r);
+
+        return $this->run(function () use ($data, $me) {
+            $this->dw->assertHrd($me, 'Mengubah pengaturan modul');
+
+            return $this->dw->saveSetting($data, $me['name'], DwService::isAdmin($me));
+        });
+    }
+
+    // ------------------------------------------------------------ payments
+
+    /**
+     * Pembayaran: ticks one transfer row done (or unticks it). HRD only;
+     * heads see the ticks but their button renders dead. Read the ticks from
+     * GET /settings (`bayarLunas{"senin|kunci":{at,oleh}}`); the money math
+     * itself stays client-side (no tariffs in PHP).
+     */
+    public function markPaid(Request $r): JsonResponse
+    {
+        $d = $r->validate([
+            'senin' => ['required', 'date_format:Y-m-d'],
+            'kunci' => ['required', 'string', 'max:120'],
+            'nyala' => ['nullable', 'boolean'],
+        ]);
+        $me = $this->me($r);
+
+        return $this->run(function () use ($me, $d) {
+            $this->dw->assertHrd($me, 'Menandai pembayaran');
+
+            return $this->dw->tandaiBayar($d['senin'], $d['kunci'], ! empty($d['nyala']), $me['name']);
+        });
+    }
+
+    // ------------------------------------------------------------ admin
+
+    /**
+     * Pengaturan (danger zone): empties every head request and assignment
+     * (the talent pool only with pekerja:true). Module admin only, plus the
+     * typed 'HAPUS SEMUA' confirmation — same double guard as legacy.
+     */
+    public function clearAll(Request $r): JsonResponse
+    {
+        $d = $r->validate([
+            'konfirmasi' => ['nullable', 'string', 'max:32'],
+            'pekerja' => ['nullable', 'boolean'],
+        ]);
+        $me = $this->me($r);
+
+        return $this->run(function () use ($me, $d) {
+            if (trim((string) ($d['konfirmasi'] ?? '')) !== 'HAPUS SEMUA') {
+                throw new RuntimeException('Konfirmasi tidak cocok — pengosongan dibatalkan.');
+            }
+
+            return $this->dw->kosongkanSemua(! empty($d['pekerja']), $me['name']);
         });
     }
 

@@ -22,10 +22,11 @@ List tags with `git tag -n1`.
 | M2 | 2026-09-24 | **jadwal**: 12 legacy actions, v1 cells/shifts/requests/settings/heads | `8f81b7f` · `m2-jadwal` | parity 35/35 · 13 tests | legacy rows have no ORDER BY → compared unordered |
 | M3 | 2026-09-24 | **marketing** (13 legacy actions) + shared `App\Support\RowSync`; full v1 contract (`docs/api/marketing.md`: 12 record resources, documents, read models, files, timeline) | `fca89b7` · `m3-marketing` | parity 46/46 · 18 feature + 5 unit tests | v1 versions are valid `baseUpdatedAt` for old tabs (same guards + lock) |
 | M4 | 2026-09-24 | **Old marketing frontend end to end on Laravel**: `tools/devproxy/serve.mjs` (production cutover shape: only `/marketing-api-mysql` + `/account-api-mysql` → Laravel, the rest stay legacy PHP) + headless walkthrough `tools/e2e/marketing.mjs` driving the real `deploy/marketing` page | `m4-marketing-frontend` | e2e 25/25 · 47 tests | SSO boot, CRM, client edit, new event, 2-chunk upload + stream, VIP row, reload, two-tab conflict modal, delete via `_sejak`; no page errors |
+| M5 | 2026-09-25 | **dw**: all 21 legacy actions (reads incl. WIB expiry sweep, Pekerja Harian, permintaan, ajuan, simpanHadir, gantiOrang, tandaiBayar with `SELECT … FOR UPDATE`, simpanSetting with hr/akses preservation, kosongkanSemua), full v1 contract (`docs/api/dw.md`: workers, requests, assignments, attendance, replacement, settings, payment ticks, admin wipe) + headless walkthrough `tools/e2e/dw.mjs` driving the real `deploy/dw` page | `m5-dw` | parity 110/110 · 75 tests · e2e 25/25 | no tariffs in PHP (money is frontend-computed); Pekerja Harian never Users; payment ticks serialise on the setting row lock |
 
 ## In progress / next
 
 | ID | Scope | Status |
 |---|---|---|
-| — | dw | legacy source read, no code yet |
+| — | dw | **done** (M5 above) |
 | — | v1 completeness back-fill for account & jadwal (audit against their screens) | planned |

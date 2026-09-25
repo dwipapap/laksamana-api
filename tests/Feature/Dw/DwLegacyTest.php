@@ -355,3 +355,205 @@ it('deletes permintaan of the own division, keeping the promised shifts unlinked
     $aj = Modules::db('dw')->selectOne('SELECT status, permintaan_id FROM dw_ajuan WHERE id=?', [$ajId]);
     expect($aj->status)->toBe('DISETUJUI')->and($aj->permintaan_id)->toBe('');
 });
+
+/*
+ * Cluster (2): simpanHadir, gantiOrang, tandaiBayar, simpanSetting,
+ * kosongkanSemua. Same harness rules as above (one identity per test,
+ * cross-identity setup through DwService).
+ */
+
+function dwSetuju(string $dwId, string $tgl, string $divisi = 'bar'): string
+{
+    $r = dwSvc()->saveAjuan(['dwId' => $dwId, 'tgl' => $tgl, 'm' => '18:00', 's' => '23:00', 'divisi' => $divisi], dwName('u-rizkiarfan'));
+    dwSvc()->decideAjuan($r['row']['id'], 'DISETUJUI', '', dwName('u-rizkiarfan'));
+
+    return $r['row']['id'];
+}
+
+it('validates hadir input in legacy order', function () {
+    $sesi = dwSesi('u-rizkiarfan');
+    $aj = dwSetuju('DWmtxzw6fd369', '2031-03-01');
+    expect(dwPost(['action' => 'simpanHadir', 'sesi' => $sesi, 'id' => $aj, 'hadir' => 'HILANG'])['error'])->toBe('Kehadiran tidak dikenal: HILANG');
+    expect(dwPost(['action' => 'simpanHadir', 'sesi' => $sesi, 'id' => 'AJtidakada', 'hadir' => 'HADIR'])['error'])->toBe('Ajuan tidak ditemukan: AJtidakada');
+
+    $tunggu = dwSvc()->saveAjuan(['dwId' => 'DWmtxzw6fd369', 'tgl' => '2031-03-02', 'm' => '18:00', 's' => '23:00'], dwName('u-rizkiarfan'))['row']['id'];
+    expect(dwPost(['action' => 'simpanHadir', 'sesi' => $sesi, 'id' => $tunggu, 'hadir' => 'HADIR'])['error'])
+        ->toBe('Kehadiran hanya bisa dicatat untuk shift yang sudah disetujui.');
+});
+
+it('marks attendance as HRD and resets it back to unconfirmed', function () {
+    $sesi = dwSesi('u-rizkiarfan');
+    $aj = dwSetuju('DWmtxzw6fd369', '2031-03-03');
+
+    expect(dwPost(['action' => 'simpanHadir', 'sesi' => $sesi, 'id' => $aj, 'hadir' => 'TELAT', 'nota' => 'macet'])['data'])
+        ->toMatchArray(['saved' => true, 'id' => $aj]);
+    $row = Modules::db('dw')->selectOne('SELECT hadir, hadir_nota, hadir_oleh, hadir_at FROM dw_ajuan WHERE id=?', [$aj]);
+    expect($row->hadir)->toBe('TELAT')->and($row->hadir_nota)->toBe('macet')
+        ->and($row->hadir_oleh)->toBe(dwName('u-rizkiarfan'))->and($row->hadir_at)->toBeGreaterThan(0);
+
+    // '' is not "present" — it returns the row to "not confirmed yet"
+    expect(dwPost(['action' => 'simpanHadir', 'sesi' => $sesi, 'id' => $aj, 'hadir' => ''])['data'])->toMatchArray(['saved' => true]);
+    expect(Modules::db('dw')->selectOne('SELECT hadir FROM dw_ajuan WHERE id=?', [$aj])->hadir)->toBe('');
+});
+
+it('lets the head of the row division confirm attendance', function () {
+    $aj = dwSetuju('DWmtxzw6fd369', '2031-03-04', 'bar');
+    expect(dwPost(['action' => 'simpanHadir', 'sesi' => dwSesi('u-arif'), 'id' => $aj, 'hadir' => 'HADIR'])['data'])
+        ->toMatchArray(['saved' => true, 'id' => $aj]);
+});
+
+it('refuses attendance confirmation for another division', function () {
+    $aj = dwSetuju('DWmtxzw6fd369', '2031-03-04', 'bar');
+    $r = dwPost(['action' => 'simpanHadir', 'sesi' => dwSesi('u-mella'), 'id' => $aj, 'hadir' => 'HADIR']);
+    expect($r['ok'])->toBeFalse()->and($r['error'])->toStartWith('tidak_berhak:');
+});
+
+it('validates gantiOrang input in legacy order', function () {
+    $sesi = dwSesi('u-rizkiarfan');
+    expect(dwPost(['action' => 'gantiOrang', 'sesi' => $sesi, 'id' => '', 'dwBaru' => ''])['error'])->toBe('Butuh shift dan penggantinya');
+    expect(dwPost(['action' => 'gantiOrang', 'sesi' => $sesi, 'id' => 'AJtidakada', 'dwBaru' => 'DWmtxzw6fd369'])['error'])->toBe('Shift tidak ditemukan: AJtidakada');
+
+    $tunggu = dwSvc()->saveAjuan(['dwId' => 'DWmtxzw6fd369', 'tgl' => '2031-03-05', 'm' => '18:00', 's' => '23:00'], dwName('u-rizkiarfan'))['row']['id'];
+    expect(dwPost(['action' => 'gantiOrang', 'sesi' => $sesi, 'id' => $tunggu, 'dwBaru' => 'DWmty9fok2781'])['error'])
+        ->toBe('Hanya shift yang sudah disetujui yang bisa diganti orangnya.');
+
+    $aj = dwSetuju('DWmtxzw6fd369', '2031-03-06');
+    expect(dwPost(['action' => 'gantiOrang', 'sesi' => $sesi, 'id' => $aj, 'dwBaru' => 'DWmtxzw6fd369'])['error'])->toBe('Penggantinya orang yang sama.');
+    expect(dwPost(['action' => 'gantiOrang', 'sesi' => $sesi, 'id' => $aj, 'dwBaru' => 'DWtidakada'])['error'])->toBe('Pengganti tidak ditemukan: DWtidakada');
+
+    $nonaktif = Modules::db('dw')->selectOne("SELECT `id`,`nama` FROM `dw_pekerja` WHERE `status`='NONAKTIF' LIMIT 1");
+    expect(dwPost(['action' => 'gantiOrang', 'sesi' => $sesi, 'id' => $aj, 'dwBaru' => $nonaktif->id])['error'])
+        ->toBe($nonaktif->nama.' berstatus tidak aktif dan tidak bisa dijadwalkan.');
+});
+
+it('refuses a replacement whose own hours overlap', function () {
+    $sesi = dwSesi('u-rizkiarfan');
+    $aj = dwSetuju('DWmtxzw6fd369', '2031-03-07');
+    // the replacement is already booked that night elsewhere
+    dwSetuju('DWmty9fok2781', '2031-03-07', 'kitchen');
+
+    $r = dwPost(['action' => 'gantiOrang', 'sesi' => $sesi, 'id' => $aj, 'dwBaru' => 'DWmty9fok2781']);
+    expect($r['ok'])->toBeFalse()->and($r['error'])
+        ->toBe(dwSvc()->namaPekerja('DWmty9fok2781').' sudah punya shift yang jamnya bertindih di tanggal itu (2031-03-07 18:00-23:00).');
+});
+
+it('replaces the worker in one transaction, keeping history and the request link', function () {
+    $sesi = dwSesi('u-rizkiarfan');
+    $pm = dwSvc()->savePermintaan(['divisi' => 'bar', 'tgl' => '2031-03-08', 'm' => '18:00', 's' => '23:00', 'jumlah' => 1], dwName('u-arif'));
+    $as = dwSvc()->assignDw($pm['row']['id'], ['DWmtxzw6fd369'], dwName('u-rizkiarfan'));
+    $aj = $as['ditugaskan'][0]['id'];
+
+    $r = dwPost(['action' => 'gantiOrang', 'sesi' => $sesi, 'id' => $aj, 'dwBaru' => 'DWmty9fok2781', 'nota' => 'sakit']);
+    expect($r['data']['saved'])->toBeTrue();
+    expect($r['data']['lama'])->toMatchArray(['id' => $aj, 'dwId' => 'DWmtxzw6fd369', 'hadir' => 'ALFA', 'status' => 'DISETUJUI']);
+    expect($r['data']['lama']['hadirNota'])->toContain('Digantikan '.dwSvc()->namaPekerja('DWmty9fok2781'));
+    expect($r['data']['baru'])->toMatchArray(['dwId' => 'DWmty9fok2781', 'tgl' => '2031-03-08', 'hadir' => 'HADIR', 'status' => 'DISETUJUI', 'permintaanId' => $pm['row']['id']]);
+    expect($r['data']['baru']['hadirOleh'])->toBe(dwName('u-rizkiarfan'));
+
+    // the request still counts its staff — the link was copied, not dropped
+    expect(dwSvc()->permintaanTerpenuhi($pm['row']['id']))->toBe(2);
+});
+
+it('lets the head of the row division replace, never another division', function () {
+    $aj = dwSetuju('DWmtxzw6fd369', '2031-03-09', 'bar');
+    $r = dwPost(['action' => 'gantiOrang', 'sesi' => dwSesi('u-arif'), 'id' => $aj, 'dwBaru' => 'DWmty9fok2781']);
+    expect($r['data']['saved'])->toBeTrue();
+
+    $aj2 = dwSetuju('DWmtxzw6fd369', '2031-03-10', 'kitchen');
+    $r2 = dwPost(['action' => 'gantiOrang', 'sesi' => dwSesi('u-arif'), 'id' => $aj2, 'dwBaru' => 'DWmty9fok2781']);
+    expect($r2['ok'])->toBeFalse()->and($r2['error'])->toStartWith('tidak_berhak:');
+});
+
+it('validates tandaiBayar input in legacy order', function () {
+    $sesi = dwSesi('u-rizkiarfan');
+    expect(dwPost(['action' => 'tandaiBayar', 'sesi' => $sesi, 'senin' => '', 'kunci' => ''])['error'])->toBe('Penanda pembayaran butuh minggu & tujuan');
+    expect(dwPost(['action' => 'tandaiBayar', 'sesi' => $sesi, 'senin' => '2031-13-01', 'kunci' => 'BANK::1', 'nyala' => true])['error'])->toBe('Penanda pembayaran butuh minggu & tujuan');
+});
+
+it('refuses payment ticks to non-HRD', function () {
+    expect(dwPost(['action' => 'tandaiBayar', 'sesi' => dwSesi('u-arif'), 'senin' => '2031-03-09', 'kunci' => 'BANK::1', 'nyala' => true])['error'])->toStartWith('tidak_berhak:');
+});
+
+it('ticks payment marks and writes only that key', function () {
+    $sesi = dwSesi('u-rizkiarfan');
+    $sebelum = (array) dwSvc()->setting();
+    expect(dwPost(['action' => 'tandaiBayar', 'sesi' => $sesi, 'senin' => '2031-03-09', 'kunci' => 'BANK::1', 'nyala' => true])['data'])
+        ->toMatchArray(['saved' => true, 'kunci' => '2031-03-09|BANK::1', 'nyala' => 1]);
+    $st = dwSvc()->setting();
+    $tandai = (array) $st->bayarLunas;
+    expect((array) $tandai['2031-03-09|BANK::1'])->toMatchArray(['oleh' => dwName('u-rizkiarfan')]);
+    // every other setting key survived the read-modify-write untouched
+    foreach ($sebelum as $k => $v) {
+        if ($k === 'bayarLunas') {
+            continue;
+        }
+        expect(json_encode($st->$k))->toBe(json_encode($v));
+    }
+
+    expect(dwPost(['action' => 'tandaiBayar', 'sesi' => $sesi, 'senin' => '2031-03-09', 'kunci' => 'BANK::1'])['data'])
+        ->toMatchArray(['saved' => true, 'nyala' => 0]);
+    $tandaiAkhir = (array) (dwSvc()->setting()->bayarLunas ?? []);
+    expect(isset($tandaiAkhir['2031-03-09|BANK::1']))->toBeFalse();
+});
+
+it('rejects an invalid setting payload', function () {
+    expect(dwPost(['action' => 'simpanSetting', 'sesi' => dwSesi('u-rizkiarfan'), 'data' => null])['error'])->toBe('Payload setting kosong/invalid');
+});
+
+it('refuses setting writes to non-HRD', function () {
+    expect(dwPost(['action' => 'simpanSetting', 'sesi' => dwSesi('u-arif'), 'data' => ['tarif' => []]])['error'])->toStartWith('tidak_berhak:');
+});
+
+it('keeps hr and akses from the stored value for non-admin HRD', function () {
+    // u-arif (head of bar, not a module admin) becomes HRD through the list
+    dwSvc()->saveSetting(['tarif' => ['Bar Helper' => 1], 'hr' => ['u-arif'], 'akses' => ['menu' => 'x']], dwName('u-admin'), true);
+
+    $r = dwPost(['action' => 'simpanSetting', 'sesi' => dwSesi('u-arif'), 'data' => [
+        'tarif' => ['Bar Helper' => 2], 'hr' => ['u-nobody'], 'akses' => ['menu' => 'y'],
+    ]]);
+    expect($r['data'])->toMatchArray(['saved' => true]);
+
+    $st = dwSvc()->setting();
+    expect((array) $st->hr)->toBe(['u-arif'])
+        ->and((array) $st->akses)->toBe(['menu' => 'x'])
+        ->and((array) $st->tarif)->toBe(['Bar Helper' => 2]);
+});
+
+it('lets a module admin change hr and akses', function () {
+    $r = dwPost(['action' => 'simpanSetting', 'sesi' => dwSesi('u-rizkiarfan'), 'data' => [
+        'tarif' => ['Bar Helper' => 3], 'hr' => ['u-rizkiarfan'], 'akses' => ['menu' => 'z'],
+    ]]);
+    expect($r['data'])->toMatchArray(['saved' => true]);
+    $st = dwSvc()->setting();
+    expect((array) $st->hr)->toBe(['u-rizkiarfan'])->and((array) $st->akses)->toBe(['menu' => 'z']);
+});
+
+it('refuses the wipe to non-admins', function () {
+    expect(dwPost(['action' => 'kosongkanSemua', 'sesi' => dwSesi('u-arif'), 'konfirmasi' => 'HAPUS SEMUA'])['error'])
+        ->toBe('tidak_berhak: Mengosongkan seluruh data modul hanya bisa dilakukan admin modul Daily Worker.');
+});
+
+it('refuses the wipe without the keyword', function () {
+    expect(dwPost(['action' => 'kosongkanSemua', 'sesi' => dwSesi('u-rizkiarfan'), 'konfirmasi' => 'hapus'])['error'])
+        ->toBe('Konfirmasi tidak cocok — pengosongan dibatalkan.');
+});
+
+it('empties requests and assignments, keeping the talent pool unless asked', function () {
+    $sesi = dwSesi('u-rizkiarfan');
+    $wid = dwSvc()->savePekerja(['nama' => 'Bersih', 'hp' => '080000000051'], dwName('u-rizkiarfan'))['id'];
+    $pm = dwSvc()->savePermintaan(['divisi' => 'bar', 'tgl' => '2031-04-01', 'm' => '18:00', 's' => '23:00', 'jumlah' => 1], dwName('u-arif'))['row']['id'];
+    $aj = dwSetuju($wid, '2031-04-01');
+
+    $r = dwPost(['action' => 'kosongkanSemua', 'sesi' => $sesi, 'konfirmasi' => 'HAPUS SEMUA']);
+    expect($r['data'])->toMatchArray(['cleared' => true, 'ikutPekerja' => false, 'pekerja' => 0, 'oleh' => dwName('u-rizkiarfan')]);
+    expect($r['data']['ajuan'])->toBeGreaterThanOrEqual(1)->and($r['data']['permintaan'])->toBeGreaterThanOrEqual(1);
+    expect(Modules::db('dw')->selectOne('SELECT COUNT(*) n FROM dw_ajuan WHERE id=?', [$aj])->n)->toBe(0);
+    expect(Modules::db('dw')->selectOne('SELECT COUNT(*) n FROM dw_permintaan WHERE id=?', [$pm])->n)->toBe(0);
+    // talent pool survives a plain wipe
+    expect(Modules::db('dw')->selectOne('SELECT COUNT(*) n FROM dw_pekerja WHERE id=?', [$wid])->n)->toBe(1);
+
+    $wid2 = dwSvc()->savePekerja(['nama' => 'Bersih Dua', 'hp' => '080000000052'], dwName('u-rizkiarfan'))['id'];
+    $r2 = dwPost(['action' => 'kosongkanSemua', 'sesi' => $sesi, 'konfirmasi' => 'HAPUS SEMUA', 'pekerja' => 1]);
+    expect($r2['data'])->toMatchArray(['cleared' => true, 'ikutPekerja' => true]);
+    expect(Modules::db('dw')->selectOne('SELECT COUNT(*) n FROM dw_pekerja WHERE id=?', [$wid2])->n)->toBe(0);
+});

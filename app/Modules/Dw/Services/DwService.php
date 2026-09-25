@@ -9,13 +9,13 @@ use RuntimeException;
 use stdClass;
 
 /**
- * Daily Worker — port of dw-mysql/lib_dw_mysql.php, cluster (1).
+ * Daily Worker — port of dw-mysql/lib_dw_mysql.php, clusters (1) and (2).
  *
  * Covered here: reads (getAll incl. its expiry sweep, jadwalDW), Pekerja
  * Harian (simpanPekerja/hapusPekerja), permintaan (simpan/putus/tugaskan/
- * hapus), ajuan (simpan/putus/putusBanyak/hapus) and the role gates.
- * Cluster (2) — simpanHadir, gantiOrang, tandaiBayar, simpanSetting,
- * kosongkanSemua — lives in #14.
+ * hapus), ajuan (simpan/putus/putusBanyak/hapus), the role gates, attendance
+ * (simpanHadir), replacement (gantiOrang), payment ticks (tandaiBayar),
+ * settings (simpanSetting) and the full wipe (kosongkanSemua).
  *
  * Writes are GRANULAR (one row per call), never a whole-state blob: HR and
  * division heads write at overlapping times and a blob would let the last
@@ -1260,6 +1260,232 @@ class DwService
         $sql .= ' ORDER BY `tgl`';
 
         return array_map(fn ($r) => $this->bentukPermintaan((array) $r), $this->db()->select($sql, $par));
+    }
+
+    // ---------------------------------------------------------------- hadir
+    //
+    // Attendance, replacement, payment marks, settings and the full wipe —
+    // cluster (2), issue #14. Money follows attendance (16 Sep 2026): ALFA is
+    // unpaid, '' / HADIR / TELAT are paid — computed by the frontend via
+    // hadirDibayar(), never here.
+
+    /**
+     * Confirms who really came. Only on DISETUJUI rows: attendance on a
+     * still-MENUNGGU row means nothing — the person is not scheduled — and
+     * since pay follows attendance it would mislead. '' resets to
+     * "not confirmed".
+     */
+    public function saveHadir(mixed $id, mixed $hadir, mixed $nota, string $by): array
+    {
+        $hadir = strtoupper(self::s($hadir));
+        if (! in_array($hadir, ['', 'HADIR', 'TELAT', 'ALFA'], true)) {
+            throw new RuntimeException('Kehadiran tidak dikenal: '.$hadir);
+        }
+        $ada = $this->ajuanById($id);
+        if (! $ada) {
+            throw new RuntimeException('Ajuan tidak ditemukan: '.self::s($id));
+        }
+        if ($ada['status'] !== 'DISETUJUI') {
+            throw new RuntimeException('Kehadiran hanya bisa dicatat untuk shift yang sudah disetujui.');
+        }
+        $this->db()->update(
+            'UPDATE `dw_ajuan` SET `hadir`=?, `hadir_nota`=?, `hadir_oleh`=?, `hadir_at`=?
+              WHERE `id`=?',
+            [$hadir, self::pot($nota, 255), self::pot($by, 120), self::ms(), self::s($id)]
+        );
+
+        return ['saved' => true, 'id' => self::s($id)];
+    }
+
+    /**
+     * The approved worker calls in sick; someone else comes instead. The old
+     * row is NOT re-pointed nor deleted — its no-show history is what HR
+     * checks before calling the same person again — it is marked ALFA with
+     * the reason, and the replacement is born as its OWN row, already
+     * DISETUJUI and already HADIR, so pay moves to who really came with no
+     * extra step. permintaan_id is COPIED along, or the head request that
+     * birthed it reads "0 of 1" and HRD assigns a second person to a shift
+     * that already has its replacement. ONE transaction: stopping halfway
+     * leaves the shift with nobody, or two people for one slot.
+     */
+    public function gantiOrang(mixed $id, mixed $dwBaru, mixed $nota, string $by): array
+    {
+        $id = self::s($id);
+        $dwBaru = self::pot($dwBaru, 32);
+        if ($id === '' || $dwBaru === '') {
+            throw new RuntimeException('Butuh shift dan penggantinya');
+        }
+
+        $a = $this->ajuanById($id);
+        if (! $a) {
+            throw new RuntimeException('Shift tidak ditemukan: '.$id);
+        }
+        if ($a['status'] !== 'DISETUJUI') {
+            throw new RuntimeException('Hanya shift yang sudah disetujui yang bisa diganti orangnya.');
+        }
+        if ((string) $a['dw_id'] === (string) $dwBaru) {
+            throw new RuntimeException('Penggantinya orang yang sama.');
+        }
+
+        $baru = $this->db()->selectOne('SELECT `nama`,`status` FROM `dw_pekerja` WHERE `id` = ?', [$dwBaru]);
+        if (! $baru) {
+            throw new RuntimeException('Pengganti tidak ditemukan: '.$dwBaru);
+        }
+        if ($baru->status === 'NONAKTIF' || $baru->status === 'BLOKIR') {
+            throw new RuntimeException($baru->nama.' berstatus tidak aktif dan tidak bisa dijadwalkan.');
+        }
+
+        $B = $this->bentrokAjuanRow($dwBaru, $a['tgl'], $a['jam_mulai'], $a['jam_selesai'], $a['divisi']);
+        if ($B) {
+            throw new RuntimeException($baru->nama.' sudah punya shift yang jamnya bertindih di tanggal itu ('
+                .$B['tgl'].' '.$B['m'].'-'.$B['s'].').');
+        }
+
+        $r2 = $this->db()->selectOne('SELECT `nama` FROM `dw_pekerja` WHERE `id` = ?', [$a['dw_id']]);
+        $namaLama = $r2 ? $r2->nama : $a['dw_id'];
+
+        $t = self::ms();
+        $idBaru = self::idBaru('AJ');
+        $pm = isset($a['permintaan_id']) ? $a['permintaan_id'] : '';
+        $nota = self::s($nota);
+        $ekor = ($nota !== '') ? ' - '.$nota : '';
+        $by = self::pot($by, 120);
+
+        // Positional placeholders: each ? binds once, so the repeated
+        // timestamps and names need no :t1/:t2/:t3 dance (HY093).
+        $this->db()->transaction(function () use ($id, $baru, $dwBaru, $a, $namaLama, $ekor, $t, $by, $idBaru, $pm) {
+            $this->db()->update(
+                'UPDATE `dw_ajuan`
+                    SET `hadir`=\'ALFA\', `hadir_nota`=?, `hadir_oleh`=?, `hadir_at`=?
+                  WHERE `id`=?',
+                [self::pot('Digantikan '.$baru->nama.$ekor, 255), $by, $t, $id]
+            );
+            $this->db()->insert(
+                'INSERT INTO `dw_ajuan`
+                   (`id`,`dw_id`,`tgl`,`jam_mulai`,`jam_selesai`,`divisi`,`posisi`,`catatan`,
+                    `status`,`dibuat_at`,`dibuat_oleh`,`putus_at`,`putus_oleh`,`putus_nota`,
+                    `hadir`,`hadir_nota`,`hadir_oleh`,`hadir_at`,`permintaan_id`)
+                 VALUES (?,?,?,?,?,?,?,?,\'DISETUJUI\',?,?,?,?,?,\'HADIR\',?,?,?,?)',
+                [$idBaru, $dwBaru, $a['tgl'], $a['jam_mulai'], $a['jam_selesai'],
+                    $a['divisi'], $a['posisi'],
+                    self::pot('Pengganti '.$namaLama, 255),
+                    $t, $by, $t, $by,
+                    self::pot('Pengganti '.$namaLama.$ekor, 255),
+                    self::pot('Hadir sebagai pengganti '.$namaLama, 255),
+                    $by, $t,
+                    self::pot($pm, 32)]
+            );
+        });
+
+        $lama = $this->ajuanById($id);
+        $bar = $this->ajuanById($idBaru);
+
+        return [
+            'saved' => true,
+            'lama' => $lama ? $this->bentukAjuan($lama) : null,
+            'baru' => $bar ? $this->bentukAjuan($bar) : null,
+        ];
+    }
+
+    // ---------------------------------------------------------------- bayar
+
+    /**
+     * The "already transferred" tick on the Pembayaran screen. Its OWN path,
+     * not simpanSetting: it touches ONE key read-modify-write inside ONE
+     * transaction (SELECT … FOR UPDATE kept), so two people ticking at once
+     * never overwrite each other's tariffs and quotas — and HRD may tick it,
+     * while simpanSetting's hr/akses keys stay admin-only.
+     */
+    public function tandaiBayar(mixed $senin, mixed $kunciTujuan, mixed $nyala, string $by): array
+    {
+        $senin = self::tglValid($senin);
+        $kunciTujuan = self::pot($kunciTujuan, 120);
+        if ($senin === '' || $kunciTujuan === '') {
+            throw new RuntimeException('Penanda pembayaran butuh minggu & tujuan');
+        }
+        $nyala = ! empty($nyala);
+        $by = self::pot($by, 120);
+        $k = $senin.'|'.$kunciTujuan;
+
+        $this->db()->transaction(function () use ($k, $nyala, $by) {
+            $row = $this->db()->selectOne('SELECT `data` FROM `dw_setting` WHERE `id` = 1 FOR UPDATE');
+            $data = ($row && $row->data !== null && $row->data !== '') ? json_decode($row->data, true) : [];
+            if (! is_array($data)) {
+                $data = [];
+            }
+            if (! isset($data['bayarLunas']) || ! is_array($data['bayarLunas'])) {
+                $data['bayarLunas'] = [];
+            }
+            if ($nyala) {
+                $data['bayarLunas'][$k] = ['at' => self::ms(), 'oleh' => $by];
+            } else {
+                unset($data['bayarLunas'][$k]);
+            }
+            $this->db()->statement(
+                'INSERT INTO `dw_setting` (`id`,`data`,`updated_at`,`updated_by`) VALUES (1,?,?,?)
+                 ON DUPLICATE KEY UPDATE `data`=VALUES(`data`), `updated_at`=VALUES(`updated_at`), `updated_by`=VALUES(`updated_by`)',
+                [json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), self::ms(), $by]
+            );
+        });
+
+        return ['saved' => true, 'kunci' => $k, 'nyala' => $nyala ? 1 : 0];
+    }
+
+    // ---------------------------------------------------------------- setting
+
+    /**
+     * Writes the WHOLE setting blob (tariffs, quotas, default hours,
+     * position maps, hr list, access matrix, payment ticks). HRD sets tariffs
+     * and quotas — that is their job. What they may NOT touch is the hr list
+     * itself (an HRD who can edit the HRD list is no restriction at all) nor
+     * the akses matrix (the Hak Akses screen's, admin-only): both are KEPT
+     * from the stored value when the caller is not a module admin — kept
+     * AS-IS, so a never-set key stays unset instead of filling from an
+     * unauthorised sender. The one exception to whole-blob writes is the
+     * payment tick above, which has its own path.
+     */
+    public function saveSetting(mixed $data, string $by, bool $bolehUbahHr = true): array
+    {
+        if (! is_array($data) && ! is_object($data)) {
+            throw new RuntimeException('Payload setting kosong/invalid');
+        }
+        if (! $bolehUbahHr) {
+            $lama = json_decode(json_encode($this->setting()), true);
+            $hrLama = (is_array($lama) && isset($lama['hr']) && is_array($lama['hr'])) ? $lama['hr'] : [];
+            $data = (array) $data;
+            $data['hr'] = $hrLama;
+            $data['akses'] = (is_array($lama) && isset($lama['akses']) && is_array($lama['akses']))
+                ? $lama['akses'] : [];
+        }
+        $this->db()->statement(
+            'INSERT INTO `dw_setting` (`id`,`data`,`updated_at`,`updated_by`) VALUES (1,?,?,?)
+             ON DUPLICATE KEY UPDATE `data`=VALUES(`data`), `updated_at`=VALUES(`updated_at`), `updated_by`=VALUES(`updated_by`)',
+            [json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), self::ms(), self::pot($by, 120)]
+        );
+
+        return ['saved' => true, 'ts' => gmdate('c')];
+    }
+
+    /**
+     * Empties every head request and every assignment, so the module can
+     * start from zero. The talent pool (names, phone numbers, months of
+     * no-show track record) only follows on explicit request. The setting
+     * blob stays. ONE transaction; no undo.
+     */
+    public function kosongkanSemua(bool $ikutPekerja, string $by): array
+    {
+        $nAjuan = 0;
+        $nMinta = 0;
+        $nOrang = 0;
+        $this->db()->transaction(function () use ($ikutPekerja, &$nAjuan, &$nMinta, &$nOrang) {
+            $nAjuan = $this->db()->delete('DELETE FROM `dw_ajuan`');
+            $nMinta = $this->db()->delete('DELETE FROM `dw_permintaan`');
+            $nOrang = $ikutPekerja ? $this->db()->delete('DELETE FROM `dw_pekerja`') : 0;
+        });
+
+        return ['cleared' => true, 'ajuan' => $nAjuan, 'permintaan' => $nMinta,
+            'pekerja' => $nOrang, 'ikutPekerja' => $ikutPekerja,
+            'oleh' => self::pot($by, 120), 'ts' => gmdate('c')];
     }
 
     // ---------------------------------------------------------------- diagnostics

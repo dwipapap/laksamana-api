@@ -7,6 +7,7 @@ use App\Support\Legacy\Envelope;
 use App\Support\Legacy\LegacyController;
 use App\Support\Legacy\LegacyRequest;
 use App\Support\Legacy\Sesi;
+use RuntimeException;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -19,9 +20,10 @@ use Symfony\Component\HttpFoundation\Response;
  * on both sites until someone hand-edits config.php in cPanel.
  *
  * Every write carries `sesi`; `by` from the client is ignored (names come
- * from the session). Cluster (1) only — simpanHadir, gantiOrang,
- * tandaiBayar, simpanSetting and kosongkanSemua arrive with #14 and answer
- * "unknown action" until then.
+ * from the session). Clusters (1) and (2): reads, Pekerja Harian,
+ * permintaan, ajuan, attendance (simpanHadir), replacement (gantiOrang),
+ * payment ticks (tandaiBayar), settings (simpanSetting) and the full wipe
+ * (kosongkanSemua).
  */
 class DwLegacyController extends LegacyController
 {
@@ -41,6 +43,28 @@ class DwLegacyController extends LegacyController
     private function hrd(LegacyRequest $req, string $apa): array
     {
         return $this->dw->assertHrd($this->office($req), $apa);
+    }
+
+    private function admin(LegacyRequest $req, string $apa): array
+    {
+        $u = $this->office($req);
+        if (! DwService::isAdmin($u)) {
+            Sesi::rejectForbidden($apa.' hanya bisa dilakukan admin modul Daily Worker.');
+        }
+
+        return $u;
+    }
+
+    /**
+     * The division stored on the assignment row — the attendance gates read
+     * it before deciding who may touch the shift. '' for a missing row: it
+     * still passes the general gate, then the service reports it not found.
+     */
+    private function divisiAjuan(mixed $id): string
+    {
+        $a = $this->dw->ajuanById($id);
+
+        return $a ? (string) $a['divisi'] : '';
     }
 
     /** Legacy pot(): mb_substr(trim((string)$v), 0, $n) — kept for the gates. */
@@ -172,6 +196,66 @@ class DwLegacyController extends LegacyController
                 $this->hrd($req, 'Menghapus ajuan');
 
                 return Envelope::okData($dw->deleteAjuan($ambil('id')));
+
+            case 'simpanHadir':
+                // Who may confirm is decided per ROW, from the division
+                // stored on it — never from the request. A missing row still
+                // passes the gate; the service answers "not found" (a
+                // mistyped id is not an access problem).
+                $u = $dw->assertMinta($this->office($req), $this->divisiAjuan($ambil('id')));
+
+                return Envelope::okData($dw->saveHadir(
+                    $ambil('id'), $ambil('hadir'),
+                    $ambil('nota'), (string) $u['name']));
+
+                // A replacement on location. Same gate as attendance: who finally
+                // came is known by whoever was there.
+            case 'gantiOrang':
+                $u = $dw->assertMinta($this->office($req), $this->divisiAjuan($ambil('id')));
+
+                return Envelope::okData($dw->gantiOrang(
+                    $ambil('id'), $ambil('dwBaru'),
+                    $ambil('nota'), (string) $u['name']));
+
+                // The "already transferred" tick — HRD, not admin, because this
+                // is pressed dozens of times while doing transfers. Its own path
+                // (not simpanSetting) so two people ticking at once never
+                // overwrite each other's tariffs and quotas.
+            case 'tandaiBayar':
+                $u = $this->hrd($req, 'Menandai pembayaran');
+
+                return Envelope::okData($dw->tandaiBayar(
+                    $ambil('senin'), $ambil('kunci'),
+                    ! empty($b['nyala']), (string) $u['name']));
+
+            case 'simpanSetting':
+                // HRD sets tariffs, quotas, default hours and position maps —
+                // that is their job. What does not follow: the HRD list
+                // itself, kept from the stored value unless the caller is a
+                // module admin (see DwService::saveSetting).
+                $u = $this->hrd($req, 'Mengubah pengaturan modul');
+
+                return Envelope::okData($dw->saveSetting(
+                    $ambil('data', null), (string) $u['name'],
+                    DwService::isAdmin($u)));
+
+                // Emptying every request & assignment so the module can start
+                // from zero. MODULE ADMIN only — not HRD. Approving shifts is
+                // HRD's daily job; deleting all of history is not, and a button
+                // sharing a page with tariffs must not be pressable by everyone
+                // allowed to set tariffs.
+                //
+                // `pekerja` (talent pool) only follows on explicit request. The
+                // confirmation keyword is checked again here so a stray API call
+                // — never passing the screen and its modal — deletes nothing.
+            case 'kosongkanSemua':
+                $u = $this->admin($req, 'Mengosongkan seluruh data modul');
+                if (trim((string) $ambil('konfirmasi', '')) !== 'HAPUS SEMUA') {
+                    throw new RuntimeException('Konfirmasi tidak cocok — pengosongan dibatalkan.');
+                }
+
+                return Envelope::okData($dw->kosongkanSemua(
+                    ! empty($b['pekerja']), (string) $u['name']));
 
             default:
                 return Envelope::error('Aksi tidak dikenal: '.$req->action);

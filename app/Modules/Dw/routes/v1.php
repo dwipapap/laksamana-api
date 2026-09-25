@@ -23,5 +23,11 @@ Route::middleware(['auth:sanctum', 'module:dw'])->prefix('dw')->group(function (
     Route::post('assignments/decisions', [C::class, 'decideMany']);
     Route::get('assignments/{id}', [C::class, 'assignment']);
     Route::post('assignments/{id}/decision', [C::class, 'decideAssignment']);
+    Route::post('assignments/{id}/attendance', [C::class, 'attendance']);
+    Route::post('assignments/{id}/replace', [C::class, 'replace']);
     Route::delete('assignments/{id}', [C::class, 'deleteAssignment']);
+    Route::get('settings', [C::class, 'settings']);
+    Route::put('settings', [C::class, 'saveSettings']);
+    Route::post('payments/marks', [C::class, 'markPaid']);
+    Route::post('admin/clear', [C::class, 'clearAll'])->middleware('module:dw,admin');
 });
