@@ -1,0 +1,63 @@
+{
+  "dir": "bd-mysql",
+  "legacyPath": "bd-api-mysql",
+  "dbEnv": "BD",
+  "db": "lakk5493_db_bd",
+  "ignore": ["data.ts", "data.backend", "data.db", "data._serverTs", "data.tsMs"],
+  "cases": [
+    {"name": "ping", "method": "GET", "query": {"action": "ping"}},
+    {"name": "getAll", "method": "GET", "query": {"action": "getAll"}},
+    {"name": "getAll is the GET default", "method": "GET", "query": {}},
+    {"name": "stats", "method": "GET", "query": {"action": "stats"}, "ignore": ["data.blobChars", "data.blobMB"]},
+    {"name": "unknown GET action", "method": "GET", "query": {"action": "nope"}},
+    {"name": "POST without action", "body": {}},
+    {"name": "POST unknown action", "body": {"action": "hapusSemua"}},
+
+    {"name": "saveAll without data", "body": {"action": "saveAll"}},
+    {"name": "saveAll data not an object", "body": {"action": "saveAll", "data": "x"}},
+    {"name": "saveAll empty object touches nothing", "body": {"action": "saveAll", "data": {}, "sinceTs": 1}},
+    {"name": "saveAll upsert + column extraction", "body": {"action": "saveAll", "sinceTs": 0, "data": {
+      "tasks": [
+        {"id": "px-t1", "name": "Parity task", "div": "BD", "pics": ["p1", "p2"], "status": "Doing", "priority": "High",
+         "deadline": "2026-10-01", "important": true, "urgent": 0, "type": "task", "project": "px-p1", "progress": "40",
+         "updatedAt": 9999999999998, "createdAt": 1, "meta": {}, "note": "a/b \"q\" ✓"},
+        {"id": "px-t2", "name": "No deadline", "deadline": "", "pic": "solo", "updatedAt": "2026-09-25T00:00:00Z"},
+        {"id": "", "name": "skipped"}, "not a row", {"name": "no id"}
+      ],
+      "projects": [{"id": "px-p1", "name": "P", "pics": [], "start": "2026-01-01", "end": "bad", "budget": 1.9, "spent": "x", "updatedAt": 9999999999998, "createdAt": 2}],
+      "focus": {"p1": {"teks": "fokus", "tgl": "2026-09-25"}},
+      "approverSets": [],
+      "promos": [{"id": "pm1", "nama": "Promo"}]
+    }}},
+    {"name": "getAll after upsert", "method": "GET", "query": {"action": "getAll"}},
+    {"name": "saveAll older stamp does not overwrite", "body": {"action": "saveAll", "data": {"projects": [{"id": "px-p1", "name": "OLDER", "updatedAt": 5}]}, "sinceTs": 1}},
+    {"name": "saveAll deletes missing rows up to sinceTs", "body": {"action": "saveAll", "sinceTs": 9999999999999, "data": {"tasks": [{"id": "px-t1", "name": "kept", "updatedAt": 9999999999999}]}}},
+    {"name": "getAll after bounded delete", "method": "GET", "query": {"action": "getAll"}},
+    {"name": "saveAll empty list with sinceTs deletes", "body": {"action": "saveAll", "sinceTs": 9999999999999, "data": {"agenda": []}}},
+    {"name": "saveAll empty list without sinceTs keeps", "body": {"action": "saveAll", "data": {"routines": []}}},
+    {"name": "stats after saves", "method": "GET", "query": {"action": "stats"}},
+
+    {"name": "addPo nothing", "body": {"action": "addPo"}},
+    {"name": "addPo empty list", "body": {"action": "addPo", "items": []}},
+    {"name": "addPo too many", "body": {"action": "addPo", "items": [
+      1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,
+      51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,
+      101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,147,148,149,150,
+      151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201]}},
+    {"name": "addPo skips rows without item", "body": {"action": "addPo", "items": [{"vendor": "x"}, "junk"]}},
+    {"name": "addPo inserts one", "body": {"action": "addPo", "items": [{"id": "ignored", "item": "Parity barang", "qty": "3", "amount": 15000, "div": "Marketing", "needBy": "2026-10-02", "pic": "u1"}]}},
+    {"name": "getAll after addPo", "method": "GET", "query": {"action": "getAll"},
+     "ignore": ["data.po.*.id", "data.po.*.updatedAt", "data.po.*.createdAt"]},
+
+    {"name": "setRealisasi without id", "body": {"action": "setRealisasi", "realisasi": 5}},
+    {"name": "setRealisasi unknown PO", "body": {"action": "setRealisasi", "id": "nope", "realisasi": 5}},
+    {"name": "setRealisasi sets", "body": {"action": "setRealisasi", "id": "ponv3hxrv", "realisasi": "Rp 950.000", "oleh": "  Kasir Satu  "}},
+    {"name": "setRealisasi sets again (status already final)", "body": {"action": "setRealisasi", "id": "ponv3hxrv", "realisasi": 900000.5, "oleh": "Kasir"}},
+    {"name": "getAll after setRealisasi", "method": "GET", "query": {"action": "getAll"},
+     "ignore": ["data.po.*.id", "data.po.*.updatedAt", "data.po.*.createdAt", "data.po.*.prosesAt"]},
+    {"name": "setRealisasi clears", "body": {"action": "setRealisasi", "id": "ponv3hxrv", "realisasi": ""}},
+    {"name": "setRealisasi missing value clears", "body": {"action": "setRealisasi", "id": "pobx622z4"}},
+    {"name": "getAll after clear", "method": "GET", "query": {"action": "getAll"},
+     "ignore": ["data.po.*.id", "data.po.*.updatedAt", "data.po.*.createdAt", "data.po.*.prosesAt"]}
+  ]
+}

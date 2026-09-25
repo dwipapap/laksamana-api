@@ -24,14 +24,14 @@ $modules = [
     'account' => ['env' => 'ACCOUNT',   'database' => 'lakk5493_db_account',   'legacy' => 'account-api-mysql'],
     'absensi' => ['env' => 'ABSENSI',   'database' => 'lakk5493_db_absensi',   'legacy' => 'absensi/api'],
     'akademi' => ['env' => 'AKADEMI',   'database' => 'lakk5493_db_akademi',   'legacy' => 'akademi-api-mysql',   'data_dir' => '/home/lakk5493/akademi-db'],
-    'bd' => ['env' => 'BD',        'database' => 'lakk5493_db_bd',        'legacy' => 'bd-api-mysql'],
+    'bd' => ['env' => 'BD',        'database' => 'lakk5493_db_bd',        'legacy' => 'bd-api-mysql', 'server_sql_mode' => true],
     'dw' => ['env' => 'DW',        'database' => 'lakk5493_db_dw',        'legacy' => 'dw-api-mysql'],
     'event' => ['env' => 'EMS',       'database' => 'lakk5493_db_ems',       'legacy' => 'event-api-mysql',     'data_dir' => '/home/lakk5493/event-db'],
     'ticketing' => ['env' => 'EMS',       'database' => 'lakk5493_db_ems',       'legacy' => 'ticketing-api'],
     'finance' => ['env' => 'FINANCE',   'database' => 'lakk5493_db_finance',   'legacy' => 'finance-api-mysql'],
-    // server_sql_mode: do not force Laravel's strict sql_mode — the legacy PDO used the server
-    // default, and production (non-strict) stores e.g. dreams year "" as tahun=0. Strict mode
-    // would reject every saveAll of the real data.
+    // server_sql_mode (hlife, bd): do not force Laravel's strict sql_mode — the legacy PDO used
+    // the server default, and production (non-strict) stores e.g. hlife dreams year "" as
+    // tahun=0. Strict mode would reject writes legacy accepted (see #97 for the other modules).
     'hlife' => ['env' => 'HLIFE',     'database' => 'lakk5493_db_hlife',     'legacy' => 'howandi-life-api-mysql', 'server_sql_mode' => true],
     'hr' => ['env' => 'HR',        'database' => 'lakk5493_db_hr',        'legacy' => 'hr-api-mysql'],
     'jadwal' => ['env' => 'JADWAL',    'database' => 'lakk5493_db_jadwal',    'legacy' => 'jadwal-api-mysql'],

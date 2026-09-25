@@ -41,7 +41,7 @@ const DB = 'lakk5493_db_hlife';
 const TAG = 'e2e' + Date.now().toString(36);
 
 const sql = (q, db = DB) =>
-  execFileSync(MYSQL, ['-uroot', '-h127.0.0.1', '-N', '-B', db, '-e', q], { encoding: 'utf8' }).trim();
+  execFileSync(MYSQL, ['-uroot', '-h127.0.0.1', '--default-character-set=utf8mb4', '-N', '-B', db, '-e', q], { encoding: 'utf8' }).trim();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function until(fn, what, ms = 30000) {
   const t0 = Date.now();

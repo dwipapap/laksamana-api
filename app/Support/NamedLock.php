@@ -16,14 +16,14 @@ use RuntimeException;
  */
 final class NamedLock
 {
-    public static function run(string $module, string $name, Closure $fn, int $timeoutSeconds = 10): mixed
+    public static function run(string $module, string $name, Closure $fn, int $timeoutSeconds = 10, string $busy = 'server sibuk, coba lagi'): mixed
     {
         $db = Modules::db($module);
         $lock = Modules::databaseName($module).':'.$name;
 
         $got = (int) ($db->selectOne('SELECT GET_LOCK(?, ?) AS l', [$lock, $timeoutSeconds])->l ?? 0);
         if ($got !== 1) {
-            throw new RuntimeException('server sibuk, coba lagi');
+            throw new RuntimeException($busy);
         }
         try {
             return $fn();
