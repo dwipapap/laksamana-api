@@ -21,6 +21,11 @@ final class DummyImporter implements Importer
         return 'legacy_account';
     }
 
+    public function targetConnection(): string
+    {
+        return 'core';
+    }
+
     public function import(): int
     {
         $users = DB::connection($this->legacyConnection())
@@ -28,7 +33,7 @@ final class DummyImporter implements Importer
             ->orderBy('id')
             ->get(['id', 'name', 'username', 'created_at', 'updated_at']);
 
-        DB::connection('core')->transaction(function () use ($users): void {
+        DB::connection($this->targetConnection())->transaction(function () use ($users): void {
             foreach ($users as $user) {
                 $probe = CoreImportProbe::withTrashed()->firstOrNew(['legacy_id' => (string) $user->id]);
                 $name = (string) $user->name;
@@ -50,9 +55,7 @@ final class DummyImporter implements Importer
                     'deleted_at' => null,
                 ]);
 
-                if ($probe->exists) {
-                    $probe->version = (int) $probe->version + 1;
-                } else {
+                if (! $probe->exists) {
                     $probe->created_at = Carbon::parse((string) $user->created_at);
                 }
 

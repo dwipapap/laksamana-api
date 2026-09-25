@@ -44,6 +44,77 @@ $modules = [
     'stock' => ['env' => 'STOCK',     'database' => 'lakk5493_db_stock',     'legacy' => 'stock-api-mysql',     'data_dir' => '/home/lakk5493/data-latih', 'server_sql_mode' => true],
 ];
 
+// Legacy routes dispatch by action, not HTTP method. During an offline cutover
+// only these actions may continue; unknown and every write action are refused.
+$legacyPolicies = [
+    'account' => [
+        'default' => 'ping',
+        'read' => ['whoami', 'listUsers', 'listModules', 'listAccess', 'listModuleMembers', 'listModuleRoster', 'listDivisiRoster', 'sessionRefresh', 'ping', 'stats'],
+    ],
+    'absensi' => [
+        'default' => 'konteks',
+        'read' => ['konteks', 'wajahDaftar', 'antrean', 'rekap', 'ping', 'stats'],
+    ],
+    'akademi' => [
+        'default' => 'getAll',
+        'read' => ['getAll', 'stats', 'trainingStats', 'receipt', 'ping'],
+    ],
+    'bd' => [
+        'default' => 'getAll',
+        'read' => ['getAll', 'stats', 'ping'],
+    ],
+    'dw' => [
+        'default' => 'getAll',
+        'read' => ['getAll', 'jadwalDW', 'stats', 'ping'],
+    ],
+    'event' => [
+        'default' => 'getAll',
+        'read' => ['getAll', 'stats', 'ping', 'eventsHari', 'file'],
+    ],
+    'ticketing' => [
+        'default' => '',
+        'read' => ['ping', 'events', 'event', 'poster', 'denah', 'order', 'saya', 'tiketSaya'],
+    ],
+    'finance' => [
+        'default' => 'getAll',
+        'query_first' => true,
+        'read' => ['getAll', 'ping', 'stats', 'brankasGet', 'invStatus', 'invBerkas', 'invDaftar', 'invAntre'],
+    ],
+    'hlife' => [
+        'default' => '',
+        'read' => ['ping', 'stats', 'getAll'],
+    ],
+    'hr' => [
+        'default' => '',
+        'read' => ['ping', 'stats', 'getAll'],
+    ],
+    'jadwal' => [
+        'default' => 'getAll',
+        'read' => ['getAll', 'shiftHari', 'headIds', 'stats', 'ping'],
+    ],
+    'kompas' => [
+        'default' => 'getAll',
+        'read' => ['getAll', 'omsetPic', 'stats', 'ping', 'performaDivisi', 'investorRingkas', 'investorAgenda', 'investorLaporFile', 'analyticsGet', 'voidList', 'briList'],
+    ],
+    'konten' => [
+        'default' => 'getAll',
+        'read' => ['getAll', 'stats', 'ping', 'receipt'],
+    ],
+    'marketing' => [
+        'default' => 'getAll',
+        'read' => ['getAll', 'stats', 'ping', 'eventsHari', 'dpMasuk', 'designReqs', 'designReq', 'receipt'],
+    ],
+    'reservasi' => [
+        'default' => 'getAll',
+        'read' => ['getAll', 'getFile', 'stats', 'ping'],
+    ],
+    'stock' => [
+        'default' => '',
+        'method_guard' => true,
+        'error_style' => 'status',
+    ],
+];
+
 foreach ($modules as $key => &$m) {
     $envKey = strtoupper($key);
     // A per-Modul override wins; the shared env connection keeps existing
@@ -61,6 +132,7 @@ unset($m);
 
 return [
     'modules' => $modules,
+    'legacy_policies' => $legacyPolicies,
 
     // Read-only stubs for databases that have no Office backend yet (out of v1 scope).
     'extra_connections' => [

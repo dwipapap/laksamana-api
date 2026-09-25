@@ -20,8 +20,22 @@ abstract class CoreRecord extends Model
 
     protected static function booted(): void
     {
-        static::creating(function (self $record): void {
-            $record->version ??= 1;
+        static::saving(function (self $record): void {
+            if (! $record->exists) {
+                $record->version = max(1, (int) $record->version);
+
+                return;
+            }
+
+            if ($record->isDirty() && ! $record->isDirty('version')) {
+                $record->version = ((int) $record->getRawOriginal('version')) + 1;
+            }
+        });
+
+        // SoftDeletes updates deleted_at directly and does not fire saving().
+        static::registerModelEvent('trashed', function (self $record): void {
+            $record->version = ((int) $record->getRawOriginal('version')) + 1;
+            $record->saveQuietly();
         });
     }
 

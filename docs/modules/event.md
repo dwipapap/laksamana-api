@@ -4,7 +4,7 @@
 
 - **Legacy source:** `laksamana-office/event-mysql/`
 - **Legacy URL:** `/event-api-mysql/api.php`
-- **Database:** `lakk5493_db_ems`. This database is **shared with ticketing**: ticketing writes to its own tables (`seat_holds`, `tix_*`) but also to `orders`, `tickets` and `seats`. Both modules share one Laravel connection (`legacy_ems`), which keeps the server `sql_mode` (#97: production is non-strict, e.g. an over-long phone is truncated, not refused).
+- **Database:** `lakk5493_db_ems`. This database is **shared with ticketing**: ticketing writes to its own tables (`seat_holds`, `tix_*`) but also to `orders`, `tickets` and `seats`. Both default to one Laravel connection (`legacy_ems`), which keeps the server `sql_mode` (#97: production is non-strict, e.g. an over-long phone is truncated, not refused). During consolidation they have independent switches (`DB_EVENT_CONNECTION` / `DB_TICKETING_CONNECTION` and `EVENT_MAINTENANCE` / `TICKETING_MAINTENANCE`) so one Modul can be imported without moving the other.
 - **Data dir:** `/home/lakk5493/event-db`, set via env `EVENT_DATA_DIR`. Files live under `files/`.
 - **Code:** `app/Modules/Event` (`EventSchema`, `EventState`, `EventFiles`, `EventRecords`) on the RowSync helper.
 

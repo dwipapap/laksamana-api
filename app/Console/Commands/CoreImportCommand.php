@@ -24,9 +24,34 @@ final class CoreImportCommand extends Command
         }
 
         $importer = $importers->get($module);
+        foreach ([$importer->legacyConnection(), $importer->targetConnection()] as $connection) {
+            if (! $this->isLocalConnection($connection)) {
+                $this->components->error("Refusing core:import: {$connection} must use a local host.");
+
+                return self::FAILURE;
+            }
+        }
+
         $rows = $importer->import();
-        $this->components->info("Imported {$rows} rows from {$importer->legacyConnection()} into core.");
+        $this->components->info(
+            "Imported {$rows} rows from {$importer->legacyConnection()} into {$importer->targetConnection()}."
+        );
 
         return self::SUCCESS;
+    }
+
+    private function isLocalConnection(string $connection): bool
+    {
+        $config = config("database.connections.{$connection}");
+        if (! is_array($config)) {
+            return false;
+        }
+
+        $host = strtolower(trim((string) ($config['host'] ?? '')));
+        if (in_array($host, ['127.0.0.1', 'localhost', '::1'], true)) {
+            return true;
+        }
+
+        return $host === '' && (string) ($config['unix_socket'] ?? '') !== '';
     }
 }

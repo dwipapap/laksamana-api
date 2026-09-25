@@ -10,6 +10,8 @@ interface Importer
 
     public function legacyConnection(): string;
 
-    /** Import from the legacy connection into `core`; return rows processed. */
+    public function targetConnection(): string;
+
+    /** Import from the legacy connection into the target; return rows processed. */
     public function import(): int;
 }

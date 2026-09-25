@@ -35,6 +35,16 @@ it('imports the dummy records idempotently through the registry', function () {
         ->and(collect($first)->every(fn (array $row) => Str::isUlid($row['id']) && $row['version'] === 1))->toBeTrue();
 });
 
+it('refuses a core import unless its legacy source is local', function () {
+    config(['database.connections.legacy_account.host' => 'db.example.com']);
+
+    $this->artisan('core:import', ['module' => 'dummy'])
+        ->expectsOutputToContain('Refusing core:import: legacy_account must use a local host.')
+        ->assertFailed();
+
+    expect(CoreImportProbe::query()->count())->toBe(0);
+});
+
 it('provides ULIDs, one version, technical actors and optional soft deletes', function () {
     $createdBy = strtolower((string) Str::ulid());
     $updatedBy = strtolower((string) Str::ulid());
@@ -53,8 +63,13 @@ it('provides ULIDs, one version, technical actors and optional soft deletes', fu
         ->and($probe->created_by)->toBe($createdBy)
         ->and($probe->updated_by)->toBe($updatedBy);
 
+    $probe->update(['name' => 'Updated through Eloquent']);
+    expect($probe->version)->toBe(2);
+
     $probe->delete();
-    expect(CoreImportProbe::withTrashed()->findOrFail($probe->id)->trashed())->toBeTrue();
+    $deleted = CoreImportProbe::withTrashed()->findOrFail($probe->id);
+    expect($deleted->trashed())->toBeTrue()
+        ->and($deleted->version)->toBe(3);
 
     expect(fn () => CoreImportProbe::query()->create([
         'legacy_id' => 'probe-technical-columns',
@@ -77,4 +92,7 @@ it('keeps every Modul opt-in and switches shared legacy connections independentl
         ->and(Modules::connectionName('ticketing'))->toBe('legacy_ems')
         ->and(Modules::isInMaintenance('event'))->toBeTrue()
         ->and(Modules::isInMaintenance('ticketing'))->toBeFalse();
+
+    config(['laksamana.modules.event.connection' => 'missing_connection']);
+    expect(fn () => Modules::connectionName('event'))->toThrow('Unknown database connection');
 });

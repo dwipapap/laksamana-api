@@ -58,9 +58,9 @@ Each cut-over ticket registers an idempotent `App\Core\Imports\Importer` and run
 php artisan core:import <module-key>
 ```
 
-Importers read a named legacy connection and write only to `core`. Repeating an
-import must update changed rows without creating a second row for the same
-`legacy_id`.
+Importers read a named legacy connection and write only to `core`. The command
+refuses to run unless both database hosts are local. Repeating an import must
+update changed rows without creating a second row for the same `legacy_id`.
 
 A Modul opts into cut-over only when its own work is ready. Its two independent
 settings are:
@@ -75,6 +75,11 @@ The connection is per Modul, not per database. For example, `event` and
 without moving the other. Defaults keep every Modul on its current connection
 and writable; existing behaviour does not change merely because this scaffold
 exists.
+
+After changing either environment variable, rebuild Laravel's config cache
+when one is in use (`php artisan config:clear` followed by the deployment's
+normal `config:cache` step) and reload the application. A cached configuration
+otherwise keeps the previous switch values.
 
 The production sequence is defined by ADR-0004 and remains owner-operated: turn
 on one Modul's maintenance flag, export locally, import and run parity, upload
