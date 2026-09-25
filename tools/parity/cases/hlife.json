@@ -1,0 +1,58 @@
+{
+  "dir": "howandi-life-mysql",
+  "legacyPath": "howandi-life-api-mysql",
+  "dbEnv": "HLIFE",
+  "db": "lakk5493_db_hlife",
+  "ignore": [],
+  "cases": [
+    {"name": "ping", "method": "GET", "query": {"action": "ping"}, "ignore": ["data.time"]},
+    {"name": "getAll", "method": "GET", "query": {"action": "getAll", "token": "HL-5mHh8Lfu8bpiPMkgtRphSmvM"}},
+    {"name": "stats", "method": "GET", "query": {"action": "stats", "token": "HL-5mHh8Lfu8bpiPMkgtRphSmvM"}},
+    {"name": "GET without action", "method": "GET", "query": {"token": "HL-5mHh8Lfu8bpiPMkgtRphSmvM"}},
+    {"name": "GET unknown action", "method": "GET", "query": {"action": "saveAll", "token": "HL-5mHh8Lfu8bpiPMkgtRphSmvM"}},
+    {"name": "POST unknown action", "body": {"action": "getAll", "token": "HL-5mHh8Lfu8bpiPMkgtRphSmvM"}},
+    {"name": "POST action from query", "query": {"action": "saveAll"}, "body": {"token": "HL-5mHh8Lfu8bpiPMkgtRphSmvM"}},
+    {"name": "POST body not an object", "body": "just a string"},
+    {"name": "saveAll without data", "body": {"action": "saveAll", "token": "HL-5mHh8Lfu8bpiPMkgtRphSmvM"}},
+    {"name": "saveAll tasks not an array", "body": {"action": "saveAll", "token": "HL-5mHh8Lfu8bpiPMkgtRphSmvM", "data": {"tasks": {}}}},
+    {"name": "saveAll data is a list", "body": {"action": "saveAll", "token": "HL-5mHh8Lfu8bpiPMkgtRphSmvM", "data": [1, 2]}},
+    {"name": "getAll unchanged after rejected saves", "method": "GET", "query": {"action": "getAll", "token": "HL-5mHh8Lfu8bpiPMkgtRphSmvM"}},
+    {"name": "saveAll full state", "body": {"action": "saveAll", "token": "HL-5mHh8Lfu8bpiPMkgtRphSmvM", "data": {
+      "firstRun": false, "mood": 4, "energy": 2, "focus": "Parity ✓", "weeklyTarget": "ship",
+      "auth": {"enabled": false, "hash": ""},
+      "channels": ["TikTok", "YouTube"], "dump": ["ide b", "ide a"],
+      "businesses": [{"id": "pb1", "name": "Bisnis Satu", "field": "F&B", "revenue": 1.5, "meta": {}}],
+      "projects": [{"id": "pp1", "name": "Proyek", "biz": "Bisnis Satu", "stage": "Doing", "pic": null, "due": "2026-10-01", "team": [], "extra": {"a": {}}}],
+      "tasks": [
+        {"id": "pt1", "name": "Satu", "done": true, "biz": "", "project": "pp1", "owner": "Saya", "due": "2026-09-30", "important": true, "urgent": false, "est": 30},
+        {"id": "pt2", "name": "Dua", "done": false, "desc": "multi\nline \"quote\" / slash"},
+        {"id": "", "name": "no id — skipped"},
+        {"name": "missing id — skipped", "done": false},
+        "not an object"
+      ],
+      "goals": [{"id": "pg1", "name": "Goal", "area": {"nested": 1}, "cur": 3, "target": 10}],
+      "dreams": [{"id": "pd1", "title": "Mimpi", "cat": "Travel", "status": "Idea", "year": null}, {"id": "pd2", "title": "Mimpi 2", "year": 2030}],
+      "roadmap": [{"id": "pr1", "title": "R", "year": [2027], "done": false}],
+      "content": [{"id": "pc1", "title": "Video", "channel": "TikTok", "platform": "tt", "stage": "Idea", "date": "2026-09-26"}],
+      "learning": [{"id": "pl1", "title": "Buku", "type": "Book", "status": "Reading"}],
+      "habits": [{"id": "ph1", "name": "Olahraga", "streak": 7, "log": {}}],
+      "events": [{"id": "pe1", "title": "Rapat", "date": "2026-09-27", "type": "Meeting"}],
+      "assets": [{"id": "pa1", "name": "Rumah", "cat": "Property", "value": 1000000000, "liab": false, "qty": 0, "unit": ""}],
+      "reviews": [{"id": "prv1", "weekStart": "2026-09-21", "sPersonal": 3, "answers": {}}],
+      "finance": {"ledger": [
+        {"id": "pl-b", "month": "2026-09", "scope": "personal", "income": 100.5, "expense": 20, "note": ""},
+        {"id": "pl-a", "month": "2026-08", "scope": "__umum", "income": 0, "expense": 0}
+      ]},
+      "notASetting": "ignored"
+    }}},
+    {"name": "getAll after full save", "method": "GET", "query": {"action": "getAll", "token": "HL-5mHh8Lfu8bpiPMkgtRphSmvM"}},
+    {"name": "stats after full save", "method": "GET", "query": {"action": "stats", "token": "HL-5mHh8Lfu8bpiPMkgtRphSmvM"}},
+    {"name": "saveAll ledger without expense fails like legacy (strict mode)", "body": {"action": "saveAll", "token": "HL-5mHh8Lfu8bpiPMkgtRphSmvM", "data": {"tasks": [], "finance": {"ledger": [{"id": "lx", "month": "2026-01", "income": 1}]}}}},
+    {"name": "stats unchanged after failed save", "method": "GET", "query": {"action": "stats", "token": "HL-5mHh8Lfu8bpiPMkgtRphSmvM"}},
+    {"name": "saveAll only tasks empties the rest", "body": {"action": "saveAll", "token": "HL-5mHh8Lfu8bpiPMkgtRphSmvM", "data": {"tasks": [{"id": "pt2", "name": "Dua lagi", "done": true}], "finance": {"ledger": {}}}}},
+    {"name": "getAll after tasks-only save", "method": "GET", "query": {"action": "getAll", "token": "HL-5mHh8Lfu8bpiPMkgtRphSmvM"}},
+    {"name": "saveAll empty tasks", "body": {"action": "saveAll", "token": "HL-5mHh8Lfu8bpiPMkgtRphSmvM", "data": {"tasks": [], "mood": null}}},
+    {"name": "stats after empty save", "method": "GET", "query": {"action": "stats", "token": "HL-5mHh8Lfu8bpiPMkgtRphSmvM"}},
+    {"name": "getAll after empty save", "method": "GET", "query": {"action": "getAll", "token": "HL-5mHh8Lfu8bpiPMkgtRphSmvM"}}
+  ]
+}

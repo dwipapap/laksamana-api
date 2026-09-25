@@ -36,8 +36,10 @@ $laksamanaMysql = function (array $over = []) {
 $laksamanaConnections = ['core' => $laksamanaMysql()];
 $laksamanaRegistry = require __DIR__.'/laksamana.php';
 $laksamanaDbs = [];
+$laksamanaServerMode = [];
 foreach ($laksamanaRegistry['modules'] as $m) {
     $laksamanaDbs[$m['env']] = $m['database'];
+    $laksamanaServerMode[$m['env']] = ! empty($m['server_sql_mode']);
 }
 foreach ($laksamanaRegistry['extra_connections'] as $envKey => $dbName) {
     $laksamanaDbs[$envKey] = $dbName;
@@ -48,7 +50,11 @@ foreach ($laksamanaDbs as $envKey => $dbName) {
         'database' => env("DB_{$envKey}_DATABASE", $dbName),
         'username' => env("DB_{$envKey}_USERNAME", env('DB_LEGACY_USERNAME', env('DB_USERNAME', 'root'))),
         'password' => env("DB_{$envKey}_PASSWORD", env('DB_LEGACY_PASSWORD', env('DB_PASSWORD', ''))),
-    ]);
+    ] + ($laksamanaServerMode[$envKey] ?? false ? [
+        // strict=null: Laravel leaves sql_mode alone. DB_<ENV>_SQL_MODE pins one (local runs).
+        'strict' => null,
+        'modes' => array_filter(explode(',', (string) env("DB_{$envKey}_SQL_MODE", ''))) ?: null,
+    ] : []));
 }
 
 return [
