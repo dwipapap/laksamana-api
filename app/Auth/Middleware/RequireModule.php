@@ -12,6 +12,7 @@ use Symfony\Component\HttpFoundation\Response;
  * v1 gate: `module:<key>` — the Sanctum user must hold the module (same
  * resolution as legacy whoami.modules). `module:<key>,admin` requires being
  * that module's admin (or superadmin). `module:*,admin` = superadmin only.
+ * `module:a|b` passes when the user holds any of the listed modules.
  */
 class RequireModule
 {
@@ -24,13 +25,16 @@ class RequireModule
             return ApiResponse::error('unauthenticated', 'Login required.', 401);
         }
         $id = (string) $user->getKey();
+        // `a|b` = any of these modules (one Backend serving several Panels, e.g. stock).
+        $keys = explode('|', $module);
 
         if ($level === 'admin') {
-            $ok = $module === '*' ? $this->access->isSuperadmin($id) : $this->access->isModuleAdmin($id, $module);
+            $ok = $module === '*' ? $this->access->isSuperadmin($id)
+                : collect($keys)->contains(fn ($k) => $this->access->isModuleAdmin($id, $k));
             if (! $ok) {
                 return ApiResponse::error('forbidden', "Admin rights for module [$module] required.", 403);
             }
-        } elseif (! $this->access->hasModule($id, $module)) {
+        } elseif (! collect($keys)->contains(fn ($k) => $this->access->hasModule($id, $k))) {
             return ApiResponse::error('module_not_granted', "Your account has no access to module [$module].", 403);
         }
 

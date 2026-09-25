@@ -1,5 +1,13 @@
 # stock — purchasing, ordering, central kitchen, usage/waste, HPP
 
+**Status:** part 1 (#34) done — `items.php`, `vendors.php`, `orders.php`, `stock.php` on Laravel (`app/Modules/Stock`), v1 in [docs/api/stock.md](../api/stock.md), parity `tools/parity/cases/stock.json`. Parts 2–4 (#35–#37) pending.
+
+Port notes (part 1):
+- **Time is WIB, explicitly.** Legacy used `date()`, i.e. the hosting's zone; the stored order times (peaking 16:00–01:00) show that zone is WIB. Order numbers, batch ids, `waktu` and CK row ids use `Asia/Jakarta`.
+- **Team scoping** (`pur_batas_tim`) is `App\Modules\Stock\Services\StockTeamScope`, answered in-process by `Sesi`; switch `STOCK_BATAS_PER_TIM` (unset = on only when the env label is `dev`).
+- The connection keeps the server `sql_mode` (#97): e.g. a `tim` longer than 20 chars is truncated, as production does.
+- `OPTIONS` answers 204 with CORS headers (the shared legacy middleware); legacy stock answered 405. The frontends are same-origin, so nothing depends on it.
+
 - **Legacy source:** `laksamana-office/stock-mysql/`. Each endpoint is its own `.php` file.
 - **Legacy URLs:** `/stock-api-mysql/<file>.php`. Register one route per legacy file.
 - **Database:** `lakk5493_db_stock` (8 MB, mostly photos).

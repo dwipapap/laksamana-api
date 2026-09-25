@@ -3,9 +3,8 @@
 namespace App\Modules\Stock\Services;
 
 use App\Support\Modules;
-use DateTime;
-use DateTimeZone;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Support\Carbon;
 use stdClass;
 
 /**
@@ -32,7 +31,7 @@ final class StockSupport
     /** date($format) in WIB. */
     public static function now(string $format = 'Y-m-d H:i:s'): string
     {
-        return (new DateTime('now', new DateTimeZone(self::TZ)))->format($format);
+        return Carbon::now(self::TZ)->format($format);
     }
 
     public static function enc(mixed $v): string
