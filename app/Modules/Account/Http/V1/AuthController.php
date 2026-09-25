@@ -2,11 +2,10 @@
 
 namespace App\Modules\Account\Http\V1;
 
-use App\Auth\AccountUser;
+use App\Auth\AccountRepository;
 use App\Auth\OfficeAccess;
 use App\Modules\Account\Services\AccountService;
 use App\Support\Api\ApiResponse;
-use App\Support\Modules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -23,6 +22,7 @@ class AuthController
     public function __construct(
         private readonly OfficeAccess $access,
         private readonly AccountService $account,
+        private readonly AccountRepository $users,
     ) {}
 
     public function login(Request $request): JsonResponse
@@ -47,8 +47,7 @@ class AuthController
         }
         RateLimiter::clear($key);
 
-        /** @var AccountUser $user */
-        $user = AccountUser::query()->findOrFail($row['id']);
+        $user = $this->users->tokenOwner($row['id']);
         $days = (int) config('sanctum.token_days', 30);
         $token = $user->createToken($data['device'] ?? 'api', ['*'], now()->addDays($days));
 
@@ -89,7 +88,7 @@ class AuthController
         if (! $row || trim((string) $row['pin']) !== trim($data['currentPin'])) {
             return ApiResponse::error('invalid_credentials', 'Current PIN is wrong.', 422);
         }
-        Modules::db('account')->update('UPDATE `users` SET pin = ? WHERE id = ?', [$data['newPin'], $id]);
+        $this->users->updatePinById($id, $data['newPin']);
 
         return ApiResponse::ok(['changed' => true]);
     }
