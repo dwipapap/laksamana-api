@@ -1,0 +1,799 @@
+{
+  "dir": "dw-mysql",
+  "legacyPath": "dw-api-mysql",
+  "dbEnv": "DW",
+  "db": "lakk5493_db_dw",
+  "sessions": {
+    "admin": "SELECT CONCAT(name,'|',pin) FROM users WHERE id='u-admin'",
+    "hrd": "SELECT CONCAT(name,'|',pin) FROM users WHERE id='u-rizkiarfan'",
+    "headbar": "SELECT CONCAT(name,'|',pin) FROM users WHERE id='u-arif'",
+    "headfloor": "SELECT CONCAT(name,'|',pin) FROM users WHERE id='u-mella'",
+    "crew": "SELECT CONCAT(name,'|',pin) FROM users WHERE id='u-yuzaalfarel'"
+  },
+  "ignore": [
+    "data.ts",
+    "data.backend",
+    "data.db",
+    "data.env",
+    "data.ajuan.*.dibuatAt",
+    "data.ajuan.*.putusAt",
+    "data.ajuan.*.hadirAt",
+    "data.pekerja.*.dibuatAt",
+    "data.permintaan.*.dibuatAt",
+    "data.permintaan.*.putusAt",
+    "data.permintaan.*.diubahAt",
+    "data.row.dibuatAt",
+    "data.row.putusAt",
+    "data.row.diubahAt",
+    "data.row.hadirAt"
+  ],
+  "cases": [
+    {
+      "name": "ping",
+      "method": "GET",
+      "query": {
+        "action": "ping"
+      }
+    },
+    {
+      "name": "stats",
+      "method": "GET",
+      "query": {
+        "action": "stats"
+      }
+    },
+    {
+      "name": "jadwalDW sept (open)",
+      "method": "GET",
+      "query": {
+        "action": "jadwalDW",
+        "dari": "2026-09-01",
+        "sampai": "2026-09-30"
+      }
+    },
+    {
+      "name": "jadwalDW swapped",
+      "method": "GET",
+      "query": {
+        "action": "jadwalDW",
+        "dari": "2026-09-30",
+        "sampai": "2026-09-01"
+      }
+    },
+    {
+      "name": "jadwalDW bad date",
+      "method": "GET",
+      "query": {
+        "action": "jadwalDW",
+        "dari": "2026-13-01",
+        "sampai": "2026-09-30"
+      }
+    },
+    {
+      "name": "jadwalDW empty future",
+      "method": "GET",
+      "query": {
+        "action": "jadwalDW",
+        "dari": "2031-01-01",
+        "sampai": "2031-01-31"
+      }
+    },
+    {
+      "name": "getAll without session",
+      "method": "GET",
+      "query": {
+        "action": "getAll"
+      }
+    },
+    {
+      "name": "getAll bad token",
+      "method": "GET",
+      "query": {
+        "action": "getAll",
+        "sesi": "deadbeef"
+      }
+    },
+    {
+      "name": "getAll crew without module",
+      "method": "GET",
+      "query": {
+        "action": "getAll",
+        "sesi": "$sesi:crew",
+        "dari": "2026-09-01",
+        "sampai": "2026-09-30"
+      }
+    },
+    {
+      "name": "getAll hrd sept",
+      "method": "GET",
+      "query": {
+        "action": "getAll",
+        "sesi": "$sesi:hrd",
+        "dari": "2026-09-01",
+        "sampai": "2026-09-30"
+      }
+    },
+    {
+      "name": "getAll headbar sept",
+      "method": "GET",
+      "query": {
+        "action": "getAll",
+        "sesi": "$sesi:headbar",
+        "dari": "2026-09-01",
+        "sampai": "2026-09-30"
+      }
+    },
+    {
+      "name": "getAll default action (GET, no action)",
+      "method": "GET",
+      "query": {
+        "sesi": "$sesi:admin",
+        "dari": "2026-08-01",
+        "sampai": "2026-08-31"
+      }
+    },
+    {
+      "name": "getAll no dates (admin)",
+      "method": "GET",
+      "query": {
+        "action": "getAll",
+        "sesi": "$sesi:admin"
+      }
+    },
+    {
+      "name": "unknown action",
+      "body": {
+        "action": "nope",
+        "sesi": "$sesi:admin"
+      }
+    },
+    {
+      "name": "sweep fixture ajuan (past MENUNGGU)",
+      "body": {
+        "action": "simpanAjuan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "id": "AJpar_sw1",
+          "dwId": "DWmty9fok2781",
+          "tgl": "2020-05-06",
+          "m": "18:00",
+          "s": "23:00",
+          "divisi": "floor"
+        }
+      }
+    },
+    {
+      "name": "sweep fixture permintaan (past MENUNGGU)",
+      "body": {
+        "action": "simpanPermintaan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "divisi": "floor",
+          "tgl": "2020-05-06",
+          "m": "18:00",
+          "s": "23:00",
+          "jumlah": 1
+        }
+      },
+      "ignore": [
+        "data.row.id"
+      ]
+    },
+    {
+      "name": "getAll sweeps past MENUNGGU to KEDALUWARSA",
+      "method": "GET",
+      "query": {
+        "action": "getAll",
+        "sesi": "$sesi:hrd",
+        "dari": "2020-05-01",
+        "sampai": "2020-05-31"
+      },
+      "ignore": [
+        "data.permintaan.*.id"
+      ]
+    },
+    {
+      "name": "simpanPekerja empty nama",
+      "body": {
+        "action": "simpanPekerja",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "nama": "",
+          "hp": "080000000011"
+        }
+      }
+    },
+    {
+      "name": "simpanPekerja empty hp",
+      "body": {
+        "action": "simpanPekerja",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "nama": "No HP",
+          "hp": ""
+        }
+      }
+    },
+    {
+      "name": "simpanPekerja duplicate no_hp",
+      "body": {
+        "action": "simpanPekerja",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "nama": "Kembar",
+          "hp": "$each"
+        }
+      },
+      "each": "SELECT no_hp FROM dw_pekerja WHERE id='DWmtxzw6fd369'"
+    },
+    {
+      "name": "simpanPekerja update restored catatan",
+      "body": {
+        "action": "simpanPekerja",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "id": "DWmszpxytp886",
+          "nama": "Christina",
+          "hp": "0132123",
+          "status": "NONAKTIF",
+          "catatan": "parity"
+        }
+      }
+    },
+    {
+      "name": "getAll after worker update",
+      "method": "GET",
+      "query": {
+        "action": "getAll",
+        "sesi": "$sesi:hrd",
+        "dari": "2026-09-01",
+        "sampai": "2026-09-30"
+      }
+    },
+    {
+      "name": "simpanPekerja head refused",
+      "body": {
+        "action": "simpanPekerja",
+        "sesi": "$sesi:headbar",
+        "row": {
+          "nama": "X",
+          "hp": "080000000099"
+        }
+      }
+    },
+    {
+      "name": "simpanAjuan missing dw",
+      "body": {
+        "action": "simpanAjuan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "tgl": "2030-05-01",
+          "m": "18:00",
+          "s": "23:00"
+        }
+      }
+    },
+    {
+      "name": "simpanAjuan missing jam",
+      "body": {
+        "action": "simpanAjuan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "dwId": "DWmtxzw6fd369",
+          "tgl": "2030-05-01"
+        }
+      }
+    },
+    {
+      "name": "simpanAjuan unknown dw",
+      "body": {
+        "action": "simpanAjuan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "dwId": "DWtidakada",
+          "tgl": "2030-05-01",
+          "m": "18:00",
+          "s": "23:00"
+        }
+      }
+    },
+    {
+      "name": "simpanAjuan NONAKTIF worker",
+      "body": {
+        "action": "simpanAjuan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "dwId": "DWmszpxytp886",
+          "tgl": "2030-05-01",
+          "m": "18:00",
+          "s": "23:00"
+        }
+      }
+    },
+    {
+      "name": "simpanAjuan inherits primary divisi",
+      "body": {
+        "action": "simpanAjuan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "id": "AJpar_in1",
+          "dwId": "DWmszpwipk196",
+          "tgl": "2030-05-02",
+          "m": "18:00",
+          "s": "23:00",
+          "status": "DISETUJUI"
+        }
+      }
+    },
+    {
+      "name": "simpanAjuan overlap same day",
+      "body": {
+        "action": "simpanAjuan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "dwId": "DWmtxzw6fd369",
+          "tgl": "2026-09-12",
+          "m": "19:00",
+          "s": "20:00"
+        }
+      }
+    },
+    {
+      "name": "simpanAjuan overlap lintasHari",
+      "body": {
+        "action": "simpanAjuan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "dwId": "DWmty03raq618",
+          "tgl": "2026-09-13",
+          "m": "00:00",
+          "s": "01:00"
+        }
+      }
+    },
+    {
+      "name": "simpanAjuan fixture 2031 booking",
+      "body": {
+        "action": "simpanAjuan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "id": "AJpar_fx1",
+          "dwId": "DWmtxzw6fd369",
+          "tgl": "2031-06-01",
+          "m": "18:00",
+          "s": "23:00",
+          "divisi": "floor"
+        }
+      }
+    },
+    {
+      "name": "putusAjuan approve fixture",
+      "body": {
+        "action": "putusAjuan",
+        "sesi": "$sesi:hrd",
+        "id": "AJpar_fx1",
+        "status": "DISETUJUI"
+      }
+    },
+    {
+      "name": "putusAjuan bad status",
+      "body": {
+        "action": "putusAjuan",
+        "sesi": "$sesi:hrd",
+        "id": "AJpar_in1",
+        "status": "YES"
+      }
+    },
+    {
+      "name": "putusAjuan missing id",
+      "body": {
+        "action": "putusAjuan",
+        "sesi": "$sesi:hrd",
+        "id": "AJtidakada",
+        "status": "DITOLAK"
+      }
+    },
+    {
+      "name": "putusAjuan approve",
+      "body": {
+        "action": "putusAjuan",
+        "sesi": "$sesi:hrd",
+        "id": "AJpar_in1",
+        "status": "DISETUJUI",
+        "nota": "parity"
+      }
+    },
+    {
+      "name": "putusBanyak empty",
+      "body": {
+        "action": "putusBanyak",
+        "sesi": "$sesi:hrd",
+        "ids": [],
+        "status": "DISETUJUI"
+      }
+    },
+    {
+      "name": "simpanAjuan bulk one",
+      "body": {
+        "action": "simpanAjuan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "id": "AJpar_bk1",
+          "dwId": "DWmtxzw6fd369",
+          "tgl": "2030-06-01",
+          "m": "10:00",
+          "s": "12:00"
+        }
+      }
+    },
+    {
+      "name": "simpanAjuan bulk two",
+      "body": {
+        "action": "simpanAjuan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "id": "AJpar_bk2",
+          "dwId": "DWmtxzw6fd369",
+          "tgl": "2030-06-01",
+          "m": "13:00",
+          "s": "15:00"
+        }
+      }
+    },
+    {
+      "name": "putusBanyak approve two",
+      "body": {
+        "action": "putusBanyak",
+        "sesi": "$sesi:hrd",
+        "ids": [
+          "AJpar_bk1",
+          "AJpar_bk2"
+        ],
+        "status": "DISETUJUI"
+      }
+    },
+    {
+      "name": "hapusAjuan",
+      "body": {
+        "action": "hapusAjuan",
+        "sesi": "$sesi:hrd",
+        "id": "AJpar_bk1"
+      }
+    },
+    {
+      "name": "simpanAjuan timpa by id",
+      "body": {
+        "action": "simpanAjuan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "dwId": "DWmtxzw6fd369",
+          "tgl": "2026-09-12",
+          "m": "19:00",
+          "s": "21:00",
+          "timpa": true
+        }
+      }
+    },
+    {
+      "name": "putusAjuan head refused",
+      "body": {
+        "action": "putusAjuan",
+        "sesi": "$sesi:headbar",
+        "id": "AJpar_in1",
+        "status": "DITOLAK"
+      }
+    },
+    {
+      "name": "simpanPermintaan missing tgl",
+      "body": {
+        "action": "simpanPermintaan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "divisi": "bar",
+          "tgl": "",
+          "m": "18:00",
+          "s": "23:00",
+          "jumlah": 2
+        }
+      }
+    },
+    {
+      "name": "simpanPermintaan missing jam",
+      "body": {
+        "action": "simpanPermintaan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "divisi": "bar",
+          "tgl": "2030-08-01",
+          "m": "",
+          "s": "23:00",
+          "jumlah": 2
+        }
+      }
+    },
+    {
+      "name": "simpanPermintaan missing divisi",
+      "body": {
+        "action": "simpanPermintaan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "divisi": "",
+          "tgl": "2030-08-01",
+          "m": "18:00",
+          "s": "23:00",
+          "jumlah": 2
+        }
+      }
+    },
+    {
+      "name": "simpanPermintaan jumlah range",
+      "body": {
+        "action": "simpanPermintaan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "divisi": "bar",
+          "tgl": "2030-08-01",
+          "m": "18:00",
+          "s": "23:00",
+          "jumlah": 31
+        }
+      }
+    },
+    {
+      "name": "simpanPermintaan edit keeps requester",
+      "body": {
+        "action": "simpanPermintaan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "id": "PMmtx5n8l9872",
+          "divisi": "floor",
+          "tgl": "2031-05-01",
+          "m": "18:00",
+          "s": "23:00",
+          "jumlah": 2
+        }
+      }
+    },
+    {
+      "name": "putusPermintaan head approve refused",
+      "body": {
+        "action": "putusPermintaan",
+        "sesi": "$sesi:headbar",
+        "id": "PMmte64ed3912",
+        "status": "DISETUJUI"
+      }
+    },
+    {
+      "name": "putusPermintaan head cancel own",
+      "body": {
+        "action": "putusPermintaan",
+        "sesi": "$sesi:headbar",
+        "id": "PMmte64ed3912",
+        "status": "BATAL",
+        "nota": "parity"
+      }
+    },
+    {
+      "name": "putusPermintaan head cancel other refused",
+      "body": {
+        "action": "putusPermintaan",
+        "sesi": "$sesi:headfloor",
+        "id": "PMmte64ed3912",
+        "status": "BATAL"
+      }
+    },
+    {
+      "name": "putusPermintaan hrd refuse",
+      "body": {
+        "action": "putusPermintaan",
+        "sesi": "$sesi:hrd",
+        "id": "PMmte64ed3912",
+        "status": "DITOLAK"
+      }
+    },
+    {
+      "name": "tugaskanDW missing request",
+      "body": {
+        "action": "tugaskanDW",
+        "sesi": "$sesi:hrd",
+        "permintaanId": "PMtidakada",
+        "dwIds": [
+          "DWmtxzw6fd369"
+        ]
+      }
+    },
+    {
+      "name": "tugaskanDW empty dwIds",
+      "body": {
+        "action": "tugaskanDW",
+        "sesi": "$sesi:hrd",
+        "permintaanId": "PMmtx5n8l9872",
+        "dwIds": []
+      }
+    },
+    {
+      "name": "tugaskanDW head refused",
+      "body": {
+        "action": "tugaskanDW",
+        "sesi": "$sesi:headbar",
+        "permintaanId": "PMmtx5n8l9872",
+        "dwIds": [
+          "DWmtxzw6fd369"
+        ]
+      }
+    },
+    {
+      "name": "tugaskanDW assigns two",
+      "body": {
+        "action": "tugaskanDW",
+        "sesi": "$sesi:hrd",
+        "permintaanId": "PMmtx5n8l9872",
+        "dwIds": [
+          "DWmtxzw6fd369",
+          "DWmty9fok2781"
+        ]
+      },
+      "ignore": [
+        "data.ditugaskan"
+      ]
+    },
+    {
+      "name": "tugaskanDW holds back the booked",
+      "body": {
+        "action": "tugaskanDW",
+        "sesi": "$sesi:hrd",
+        "permintaanId": "PMmtx5n8l9872",
+        "dwIds": [
+          "DWmtxzw6fd369"
+        ]
+      },
+      "ignore": [
+        "data.ditugaskan"
+      ]
+    },
+    {
+      "name": "stats after assigns",
+      "method": "GET",
+      "query": {
+        "action": "stats"
+      }
+    },
+    {
+      "name": "hapusPermintaan other division refused",
+      "body": {
+        "action": "hapusPermintaan",
+        "sesi": "$sesi:headfloor",
+        "id": "PMmty90c3x691"
+      }
+    },
+    {
+      "name": "hapusPermintaan hrd",
+      "body": {
+        "action": "hapusPermintaan",
+        "sesi": "$sesi:hrd",
+        "id": "PMmty90c3x691"
+      }
+    },
+    {
+      "name": "getAll shows unlinked shift",
+      "method": "GET",
+      "query": {
+        "action": "getAll",
+        "sesi": "$sesi:hrd",
+        "dari": "2026-09-12",
+        "sampai": "2026-09-12"
+      }
+    },
+    {
+      "name": "simpanPermintaan filters usulan",
+      "body": {
+        "action": "simpanPermintaan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "divisi": "floor",
+          "tgl": "2031-06-01",
+          "m": "18:00",
+          "s": "23:00",
+          "jumlah": 2,
+          "usulan": [
+            "DWmtxzw6fd369",
+            "DWmszpxytp886",
+            "DWtidakada",
+            "DWmty9fok2781",
+            "DWmtxzw6fd369"
+          ]
+        }
+      },
+      "ignore": [
+        "data.row.id"
+      ]
+    },
+    {
+      "name": "simpanPermintaan insert path",
+      "body": {
+        "action": "simpanPermintaan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "divisi": "bar",
+          "tgl": "2031-07-01",
+          "m": "18:00",
+          "s": "23:00",
+          "jumlah": 1
+        }
+      },
+      "ignore": [
+        "data.row.id"
+      ]
+    },
+    {
+      "name": "simpanPekerja insert path",
+      "body": {
+        "action": "simpanPekerja",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "nama": "Parity Coba",
+          "hp": "080000000041",
+          "divisi": "bar"
+        }
+      },
+      "ignore": [
+        "data.id"
+      ]
+    },
+    {
+      "name": "stats final writes",
+      "method": "GET",
+      "query": {
+        "action": "stats"
+      }
+    },
+    {
+      "name": "orphan fixture ajuan",
+      "body": {
+        "action": "simpanAjuan",
+        "sesi": "$sesi:hrd",
+        "row": {
+          "id": "AJpar_orp1",
+          "dwId": "DWmuavyylg601",
+          "tgl": "2031-08-01",
+          "m": "18:00",
+          "s": "23:00",
+          "divisi": "bar"
+        }
+      }
+    },
+    {
+      "name": "orphan approve",
+      "body": {
+        "action": "putusAjuan",
+        "sesi": "$sesi:hrd",
+        "id": "AJpar_orp1",
+        "status": "DISETUJUI"
+      }
+    },
+    {
+      "name": "orphan delete worker",
+      "body": {
+        "action": "hapusPekerja",
+        "sesi": "$sesi:hrd",
+        "id": "DWmuavyylg601"
+      }
+    },
+    {
+      "name": "jadwalDW draws orphan as removed",
+      "method": "GET",
+      "query": {
+        "action": "jadwalDW",
+        "dari": "2031-08-01",
+        "sampai": "2031-08-01"
+      }
+    },
+    {
+      "name": "stats final",
+      "method": "GET",
+      "query": {
+        "action": "stats"
+      }
+    }
+  ]
+}
