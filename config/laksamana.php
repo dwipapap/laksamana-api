@@ -29,7 +29,10 @@ $modules = [
     'event' => ['env' => 'EMS',       'database' => 'lakk5493_db_ems',       'legacy' => 'event-api-mysql',     'data_dir' => '/home/lakk5493/event-db'],
     'ticketing' => ['env' => 'EMS',       'database' => 'lakk5493_db_ems',       'legacy' => 'ticketing-api'],
     'finance' => ['env' => 'FINANCE',   'database' => 'lakk5493_db_finance',   'legacy' => 'finance-api-mysql'],
-    'hlife' => ['env' => 'HLIFE',     'database' => 'lakk5493_db_hlife',     'legacy' => 'howandi-life-api-mysql'],
+    // server_sql_mode: do not force Laravel's strict sql_mode — the legacy PDO used the server
+    // default, and production (non-strict) stores e.g. dreams year "" as tahun=0. Strict mode
+    // would reject every saveAll of the real data.
+    'hlife' => ['env' => 'HLIFE',     'database' => 'lakk5493_db_hlife',     'legacy' => 'howandi-life-api-mysql', 'server_sql_mode' => true],
     'hr' => ['env' => 'HR',        'database' => 'lakk5493_db_hr',        'legacy' => 'hr-api-mysql'],
     'jadwal' => ['env' => 'JADWAL',    'database' => 'lakk5493_db_jadwal',    'legacy' => 'jadwal-api-mysql'],
     'kompas' => ['env' => 'KOMPAS',    'database' => 'lakk5493_db_kompas',    'legacy' => 'kompas-api-mysql',    'data_dir' => '/home/lakk5493/kompas-db'],
@@ -63,4 +66,8 @@ return [
     // Optional shared API_TOKEN the old backends accepted via ?token= / body.token.
     // Empty = open (the default everywhere today). Only honoured on legacy routes.
     'legacy_api_token' => env('LEGACY_API_TOKEN', ''),
+
+    // howandi-life's own API_TOKEN (checked by its compat controller only). It is
+    // embedded in the frontend HTML, so it is not a secret. Empty = open.
+    'hlife_api_token' => env('HLIFE_API_TOKEN', 'HL-5mHh8Lfu8bpiPMkgtRphSmvM'),
 ];
