@@ -53,6 +53,28 @@
     {"name": "simpanPeran clear", "query": {"action": "simpanPeran"}, "body": {"kunci": "#u-jb", "peran": ""}},
     {"name": "simpanAkses (clamped, junk skipped)", "query": {"action": "simpanAkses"}, "body": {"peta": {"staf": {"kk_input": 1, "rekap": 7, "invoice": -3, "": 2}, "viewer": "junk", "": {"x": 1}, "manajemen": {}}}},
     {"name": "simpanAkses without peta empties", "query": {"action": "simpanAkses"}, "body": {}},
+    {"name": "brankasGet", "method": "GET", "query": {"action": "brankasGet"}},
+    {"name": "brankasSave without data", "query": {"action": "brankasSave"}, "body": {"oleh": "x"}},
+    {"name": "brankasSave data not a map", "query": {"action": "brankasSave"}, "body": {"data": "x"}},
+    {"name": "brankasSave filters to the kept keys", "query": {"action": "brankasSave"}, "ignore": ["data.updated_at"], "body": {"oleh": "  CFO Parity  ", "data": {
+      "rekening": [{"id": "r1", "bank": "BRI", "saldoAwal": 1000}],
+      "piutang": {"a": {"id": "p1", "nominal": 5}},
+      "bayar": "junk",
+      "investor": [{"id": "i1", "nama": "Inv", "modal": 1e9}],
+      "mutasi": [{"id": "m1", "tgl": "2026-09-01", "ket": "a/b ✓"}],
+      "setting": {},
+      "unknownKey": [1, 2, 3]
+    }}},
+    {"name": "brankasGet after save", "method": "GET", "query": {"action": "brankasGet"}, "ignore": ["data.updated_at"]},
+    {"name": "bayarSave without bayar", "query": {"action": "bayarSave"}, "body": {"oleh": "Kasir"}},
+    {"name": "bayarSave replaces only bayar", "query": {"action": "bayarSave"}, "ignore": ["data.updated_at"], "body": {"oleh": "Kasir", "bayar": {"x": {"id": "b1", "status": "paid", "nominal": 25000}}}},
+    {"name": "brankasGet after bayarSave", "method": "GET", "query": {"action": "brankasGet"}, "ignore": ["data.updated_at"]},
+    {"name": "brankasSave data as a list", "query": {"action": "brankasSave"}, "ignore": ["data.updated_at"], "body": {"data": [1, 2]}},
+    {"name": "brankasGet after list save", "method": "GET", "query": {"action": "brankasGet"}, "ignore": ["data.updated_at"]},
+    {"name": "brankasAkses", "query": {"action": "brankasAkses"}, "body": {"peta": {"cfo": {"saldo": 2, "investor": 5}, "staf": {"saldo": -1}, "x": "junk"}}},
+    {"name": "brankasPeran without key", "query": {"action": "brankasPeran"}, "body": {"peran": "cfo"}},
+    {"name": "brankasPeran set", "query": {"action": "brankasPeran"}, "body": {"kunci": "#u-parity", "peran": "cfo"}},
+    {"name": "brankasPeran clear", "query": {"action": "brankasPeran"}, "body": {"kunci": "#u-parity", "peran": " "}},
     {"name": "getAll at the end", "method": "GET", "query": {"action": "getAll"}},
     {"name": "stats at the end", "method": "GET", "query": {"action": "stats"}}
   ]
