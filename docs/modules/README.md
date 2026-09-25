@@ -15,7 +15,7 @@ source disagree, the source wins; then correct the spec.
 | dw | [dw.md](dw.md) | **done** | full contract, see docs/api/dw.md | 110/110 | 48 + 27 |
 | absensi | [absensi.md](absensi.md) | pending | pending | — | — |
 | marketing | [marketing.md](marketing.md) | **done** | full contract, see docs/api/marketing.md | 46/46 | 18 + RowSync unit |
-| konten | [konten.md](konten.md) | pending | pending | — | — |
+| konten | [konten.md](konten.md) | **done** | full contract, see docs/api/konten.md | 22/22 | 30 |
 | akademi | [akademi.md](akademi.md) | pending | pending | — | — |
 | bd | [bd.md](bd.md) | pending | pending | — | — |
 | event | [event.md](event.md) | pending | pending | — | — |
