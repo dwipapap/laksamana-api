@@ -5,6 +5,7 @@ namespace App\Modules\Reservasi\Services;
 use App\Support\Modules;
 use App\Support\NamedLock;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -24,6 +25,13 @@ use RuntimeException;
  * the `.lock` flock file are shared with the old backends during cutover.
  *
  * JSON is handled as assoc arrays, like legacy.
+ *
+ * Cut over to `core` (#71) behind DB_RESERVASI_CONNECTION: the legacy branch
+ * runs the statements below against `reservations` / `audit` / `settings`, the
+ * core branch against `reservasi_reservations` / `reservasi_audit` /
+ * `reservasi_pengaturan` with the legacy ids in `legacy_id` (the settings key
+ * stays `k`) and a `version` column counting accepted writes. On the wire
+ * nothing changes: the app still speaks legacy ids and `updated_at`/`_ver`.
  */
 class ReservasiState
 {
@@ -32,6 +40,34 @@ class ReservasiState
     public function db(): ConnectionInterface
     {
         return Modules::db('reservasi');
+    }
+
+    /** Reservasi cut over (#71): the Modul reads and writes the reservasi_* tables of core. */
+    public static function onCore(): bool
+    {
+        return Modules::connectionName('reservasi') === 'core';
+    }
+
+    /** Physical table for a legacy table name on the current connection. */
+    public static function t(string $legacy): string
+    {
+        if (! self::onCore()) {
+            return $legacy;
+        }
+
+        // only `settings` is renamed on core: the `master` / `_ver` documents
+        return $legacy === 'settings' ? 'reservasi_pengaturan' : 'reservasi_'.$legacy;
+    }
+
+    /** The row key: the legacy id, kept in `legacy_id` on core. */
+    public static function idCol(): string
+    {
+        return self::onCore() ? 'legacy_id' : 'id';
+    }
+
+    private static function ulid(): string
+    {
+        return strtolower((string) Str::ulid());
     }
 
     private static function s(mixed $v): string
@@ -262,7 +298,7 @@ class ReservasiState
     /** The master blob alone. v1 reads one section without loading the ~2.4 MB reservation list. */
     public function readMaster(bool $lock = false): ?array
     {
-        $m = $this->db()->selectOne("SELECT v FROM settings WHERE k='master' LIMIT 1".($lock ? ' FOR UPDATE' : ''));
+        $m = $this->db()->selectOne('SELECT v FROM '.self::t('settings')." WHERE k='master' LIMIT 1".($lock ? ' FOR UPDATE' : ''));
         if (! $m || ! isset($m->v)) {
             return null;
         }
@@ -275,7 +311,7 @@ class ReservasiState
     public function readAudit(): array
     {
         $audit = [];
-        foreach ($this->db()->select('SELECT data FROM audit ORDER BY ts DESC LIMIT 500') as $r) {
+        foreach ($this->db()->select('SELECT data FROM '.self::t('audit').' ORDER BY ts DESC LIMIT 500') as $r) {
             $d = json_decode((string) $r->data, true);
             if (is_array($d)) {
                 $audit[] = $d;
@@ -289,7 +325,7 @@ class ReservasiState
     public function read(): array
     {
         $res = [];
-        foreach ($this->db()->select('SELECT data FROM reservations ORDER BY created_at ASC, id ASC') as $r) {
+        foreach ($this->db()->select('SELECT data FROM '.self::t('reservations').' ORDER BY created_at ASC, '.self::idCol().' ASC') as $r) {
             $d = json_decode((string) $r->data, true);
             if (is_array($d)) {
                 $res[] = $d;
@@ -301,7 +337,7 @@ class ReservasiState
 
     public function ver(): int
     {
-        $r = $this->db()->selectOne("SELECT v FROM settings WHERE k='_ver' LIMIT 1");
+        $r = $this->db()->selectOne('SELECT v FROM '.self::t('settings')." WHERE k='_ver' LIMIT 1");
 
         return $r && isset($r->v) && ctype_digit((string) $r->v) ? (int) $r->v : 0;
     }
@@ -356,16 +392,49 @@ class ReservasiState
         ];
     }
 
+    /**
+     * settings upsert by key: legacy binds only `v` (byte-identical statement),
+     * core additionally mints the ULID and bumps `version` — every settings
+     * write is accepted, there is no ordering guard to honour.
+     */
+    private function putSetting(string $k, string $v): void
+    {
+        if (self::onCore()) {
+            $this->db()->insert('INSERT INTO '.self::t('settings')." (id,k,v,version) VALUES (?,'".$k."',?,1) ON DUPLICATE KEY UPDATE version = version + 1, v = VALUES(v)", [self::ulid(), $v]);
+
+            return;
+        }
+        $this->db()->insert("INSERT INTO settings (k,v) VALUES ('".$k."',?) ON DUPLICATE KEY UPDATE v = VALUES(v)", [$v]);
+    }
+
+    /** `_ver` exists before it is locked (`INSERT IGNORE`, exactly as legacy). */
+    private function ensureVerRow(): void
+    {
+        if (self::onCore()) {
+            $this->db()->insert('INSERT IGNORE INTO '.self::t('settings')." (id,k,v,version) VALUES (?,'_ver','0',1)", [self::ulid()]);
+
+            return;
+        }
+        $this->db()->insert("INSERT IGNORE INTO settings (k,v) VALUES ('_ver','0')");
+    }
+
     /** Append-only, like legacy saveAll: INSERT IGNORE by id, then keep the newest 500 by ts. */
     public function appendAudit(array $row): void
     {
         if (empty($row['id'])) {
             return;
         }
-        $this->db()->insert('INSERT IGNORE INTO audit (id, ts, data) VALUES (?,?,?)', [
-            self::s($row['id']), intval($row['ts'] ?? 0), self::enc($row),
-        ]);
-        $this->db()->delete('DELETE FROM audit WHERE id NOT IN (SELECT id FROM (SELECT id FROM audit ORDER BY ts DESC LIMIT 500) t)');
+        if (self::onCore()) {
+            $this->db()->insert('INSERT IGNORE INTO '.self::t('audit').' (id,legacy_id,ts,data,version) VALUES (?,?,?,?,1)', [
+                self::ulid(), self::s($row['id']), intval($row['ts'] ?? 0), self::enc($row),
+            ]);
+        } else {
+            $this->db()->insert('INSERT IGNORE INTO audit (id, ts, data) VALUES (?,?,?)', [
+                self::s($row['id']), intval($row['ts'] ?? 0), self::enc($row),
+            ]);
+        }
+        $id = self::idCol();
+        $this->db()->delete('DELETE FROM '.self::t('audit')." WHERE $id NOT IN (SELECT $id FROM (SELECT $id FROM ".self::t('audit').' ORDER BY ts DESC LIMIT 500) t)');
     }
 
     /**
@@ -386,12 +455,12 @@ class ReservasiState
             $moved = $this->externalize($state); // writes files only: safe even if the save is refused below
 
             $db = $this->db();
-            $db->insert("INSERT IGNORE INTO settings (k,v) VALUES ('_ver','0')");
+            $this->ensureVerRow();
             $reservations = isset($state['reservations']) && is_array($state['reservations']) ? $state['reservations'] : [];
             $audit = isset($state['audit']) && is_array($state['audit']) ? $state['audit'] : [];
 
             $out = $db->transaction(function () use ($db, $state, $baseVer, $reservations, $audit) {
-                $curVer = (int) $db->selectOne("SELECT v FROM settings WHERE k='_ver' FOR UPDATE")->v;
+                $curVer = (int) $db->selectOne('SELECT v FROM '.self::t('settings')." WHERE k='_ver' FOR UPDATE")->v;
                 if ((string) $curVer !== self::s($baseVer)) {
                     return ['conflict' => true, 'saved' => false, 'ver' => $curVer];
                 }
@@ -407,19 +476,26 @@ class ReservasiState
                 }
                 // an empty payload never empties a populated table
                 if ($ids) {
-                    $db->delete('DELETE FROM reservations WHERE id NOT IN ('.implode(',', array_fill(0, count($ids), '?')).')', $ids);
+                    $idc = self::idCol();
+                    $db->delete('DELETE FROM '.self::t('reservations')." WHERE $idc NOT IN (".implode(',', array_fill(0, count($ids), '?')).')', $ids);
                 }
                 foreach ($audit as $a) {
                     if (is_array($a) && ! empty($a['id'])) {
-                        $db->insert('INSERT IGNORE INTO audit (id, ts, data) VALUES (?,?,?)', [self::s($a['id']), intval($a['ts'] ?? 0), self::enc($a)]);
+                        $db->insert(self::onCore()
+                            ? 'INSERT IGNORE INTO '.self::t('audit').' (id,legacy_id,ts,data,version) VALUES (?,?,?,?,1)'
+                            : 'INSERT IGNORE INTO audit (id, ts, data) VALUES (?,?,?)',
+                            self::onCore()
+                                ? [self::ulid(), self::s($a['id']), intval($a['ts'] ?? 0), self::enc($a)]
+                                : [self::s($a['id']), intval($a['ts'] ?? 0), self::enc($a)]);
                     }
                 }
-                $db->delete('DELETE FROM audit WHERE id NOT IN (SELECT id FROM (SELECT id FROM audit ORDER BY ts DESC LIMIT 500) t)');
+                $auditId = self::idCol();
+                $db->delete('DELETE FROM '.self::t('audit')." WHERE $auditId NOT IN (SELECT $auditId FROM (SELECT $auditId FROM ".self::t('audit').' ORDER BY ts DESC LIMIT 500) t)');
                 if (isset($state['master'])) {
-                    $db->insert("INSERT INTO settings (k,v) VALUES ('master',?) ON DUPLICATE KEY UPDATE v = VALUES(v)", [self::enc($state['master'])]);
+                    $this->putSetting('master', self::enc($state['master']));
                 }
                 $newVer = $curVer + 1;
-                $db->update("UPDATE settings SET v = ? WHERE k = '_ver'", [(string) $newVer]);
+                $db->update('UPDATE '.self::t('settings')." SET v = ? WHERE k = '_ver'", [(string) $newVer]);
 
                 return ['ver' => $newVer, 'buang' => $buang];
             });
@@ -432,7 +508,13 @@ class ReservasiState
         });
     }
 
-    /** One reservation row: indexed columns + the full JSON, applied only when its updatedAt is not older. */
+    /**
+     * One reservation row: indexed columns + the full JSON, applied only when
+     * its updatedAt is not older. On core the insert also carries the ULID,
+     * the `legacy_id` and `version`; the version bump is the FIRST update
+     * assignment, so it reads the stored `updated_at` (later assignments see
+     * the new one) and only accepted writes count.
+     */
     public function upsertRow(array $r): void
     {
         $cols = ['name', 'phone', 'tanggal', 'jam', 'pax', 'status', 'pic_name', 'source', 'dp_amount', 'data'];
@@ -440,13 +522,21 @@ class ReservasiState
             .', updated_at = IF(VALUES(updated_at) >= updated_at, VALUES(updated_at), updated_at)';
         $str = fn ($k) => isset($r[$k]) ? self::s($r[$k]) : null;
         $date = trim(self::s($r['date'] ?? ''));
-        $this->db()->insert('INSERT INTO reservations (id,name,phone,tanggal,jam,pax,status,pic_name,source,dp_amount,updated_at,created_at,data)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE '.$upd, [
-            self::s($r['id']), $str('name'), $str('phone'), preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) ? $date : null,
+        $args = [$str('name'), $str('phone'), preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) ? $date : null,
             isset($r['time']) ? substr(self::s($r['time']), 0, 8) : null, intval($r['pax'] ?? 0),
             $str('status'), $str('picName'), $str('source'), intval($r['dpAmount'] ?? 0),
-            intval($r['updatedAt'] ?? 0), intval($r['createdAt'] ?? 0), self::enc($r),
-        ]);
+            intval($r['updatedAt'] ?? 0), intval($r['createdAt'] ?? 0), self::enc($r)];
+
+        if (self::onCore()) {
+            $this->db()->insert('INSERT INTO '.self::t('reservations').' (id,legacy_id,name,phone,tanggal,jam,pax,status,pic_name,source,dp_amount,updated_at,created_at,data,version)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE version = version + IF(VALUES(updated_at) >= updated_at, 1, 0), '.$upd,
+                [self::ulid(), self::s($r['id']), ...$args, 1]);
+
+            return;
+        }
+
+        $this->db()->insert('INSERT INTO reservations (id,name,phone,tanggal,jam,pax,status,pic_name,source,dp_amount,updated_at,created_at,data)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE '.$upd, [self::s($r['id']), ...$args]);
     }
 
     // ───────────────────────────── v1 helpers ──
@@ -486,7 +576,7 @@ class ReservasiState
     /** Save the blob exactly as given; callers externalize only the part they own. */
     public function saveMasterRaw(array $master): array
     {
-        $this->db()->insert("INSERT INTO settings (k,v) VALUES ('master',?) ON DUPLICATE KEY UPDATE v = VALUES(v)", [self::enc($master)]);
+        $this->putSetting('master', self::enc($master));
 
         return $master;
     }
@@ -538,14 +628,14 @@ class ReservasiState
     /** _ver + 1 (the row must be locked FOR UPDATE by the caller's transaction or be created here). */
     public function bumpVer(): void
     {
-        $this->db()->insert("INSERT IGNORE INTO settings (k,v) VALUES ('_ver','0')");
-        $v = (int) $this->db()->selectOne("SELECT v FROM settings WHERE k='_ver' FOR UPDATE")->v;
-        $this->db()->update("UPDATE settings SET v = ? WHERE k = '_ver'", [(string) ($v + 1)]);
+        $this->ensureVerRow();
+        $v = (int) $this->db()->selectOne('SELECT v FROM '.self::t('settings')." WHERE k='_ver' FOR UPDATE")->v;
+        $this->db()->update('UPDATE '.self::t('settings')." SET v = ? WHERE k = '_ver'", [(string) ($v + 1)]);
     }
 
     public function stats(): array
     {
-        $count = (int) $this->db()->selectOne('SELECT COUNT(*) c FROM reservations')->c;
+        $count = (int) $this->db()->selectOne('SELECT COUNT(*) c FROM '.self::t('reservations'))->c;
         $state = $this->read();
         $blob = strlen(self::enc($state));
         $inline = 0;

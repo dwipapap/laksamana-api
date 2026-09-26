@@ -19,6 +19,7 @@ use App\Core\Imports\JadwalImporter;
 use App\Core\Imports\KompasImporter;
 use App\Core\Imports\KontenImporter;
 use App\Core\Imports\MarketingImporter;
+use App\Core\Imports\ReservasiImporter;
 use App\Core\Imports\TicketingImporter;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
@@ -46,6 +47,7 @@ final class CoreServiceProvider extends ServiceProvider
             $app->make(KompasImporter::class),
             $app->make(KontenImporter::class),
             $app->make(MarketingImporter::class),
+            $app->make(ReservasiImporter::class),
             $app->make(TicketingImporter::class),
         ));
     }
