@@ -3,6 +3,8 @@
 use App\Support\Modules;
 use Illuminate\Testing\TestResponse;
 
+require_once __DIR__.'/helpers.php';
+
 /* u-andry holds module reservasi; u-adit does not. */
 
 beforeEach(function () {
@@ -16,14 +18,14 @@ function rsPost(array $body): TestResponse
 
 function rsVer(): int
 {
-    return (int) Modules::db('reservasi')->selectOne("SELECT v FROM settings WHERE k='_ver'")->v;
+    return (int) Modules::db('reservasi')->selectOne(rsSql("SELECT v FROM settings WHERE k='_ver'"))->v;
 }
 
 it('getAll returns reservations, master, audit and the global _ver', function () {
     $d = $this->get('/reservasi-api-mysql/api.php')->assertOk()->json('data');
     expect(array_keys($d))->toBe(['reservations', 'master', 'audit', '_ver'])
         ->and($d['_ver'])->toBe(rsVer())
-        ->and(count($d['reservations']))->toBe((int) Modules::db('reservasi')->selectOne('SELECT COUNT(*) c FROM reservations')->c);
+        ->and(count($d['reservations']))->toBe((int) Modules::db('reservasi')->selectOne(rsSql('SELECT COUNT(*) c FROM reservations'))->c);
 });
 
 it('saveAll: APP_LAWAS without baseVer, conflict on a stale one', function () {
@@ -35,13 +37,13 @@ it('saveAll: APP_LAWAS without baseVer, conflict on a stale one', function () {
 
 it('saveAll moves inline photos to files and bumps _ver; the file is served back', function () {
     $ver = rsVer();
-    $rows = Modules::db('reservasi')->select('SELECT data FROM reservations');
+    $rows = Modules::db('reservasi')->select(rsSql('SELECT data FROM reservations'));
     $all = array_map(fn ($r) => json_decode($r->data, true), $rows);
     $all[0]['dpProofData'] = 'data:image/png;base64,QUJD';
     $id = $all[0]['id'];
     rsPost(['action' => 'saveAll', 'baseVer' => $ver, 'data' => ['reservations' => $all]])
         ->assertJsonPath('data.saved', true)->assertJsonPath('data.ver', $ver + 1)->assertJsonPath('data.fotoDipisah', 1);
-    expect(json_decode(Modules::db('reservasi')->selectOne('SELECT data FROM reservations WHERE id=?', [$id])->data, true)['dpProofData'])->toBe("@f:r:$id:dp");
+    expect(json_decode(Modules::db('reservasi')->selectOne(rsSql('SELECT data FROM reservations WHERE id=?'), [$id])->data, true)['dpProofData'])->toBe("@f:r:$id:dp");
     $this->get('/reservasi-api-mysql/api.php?action=getFile&key='.urlencode("r:$id:dp"))->assertJsonPath('data.data', 'data:image/png;base64,QUJD');
 });
 
@@ -57,7 +59,7 @@ it('v1: create, patch with the row version, delete; each bumps _ver', function (
     $id = $res->json('data.id');
     $v = $res->json('meta.version');
     expect($res->json('data.dpProofData'))->toBe("@f:r:$id:dp")->and(rsVer())->toBe($ver + 1)
-        ->and(Modules::db('reservasi')->selectOne('SELECT tanggal, pax FROM reservations WHERE id=?', [$id]))->tanggal->toBe('2026-10-10')->pax->toBe(4);
+        ->and(Modules::db('reservasi')->selectOne(rsSql('SELECT tanggal, pax FROM reservations WHERE id=?'), [$id]))->tanggal->toBe('2026-10-10')->pax->toBe(4);
 
     $this->withToken($token)->patchJson("/api/v1/reservasi/reservations/$id", ['pax' => 5])->assertStatus(428);
     $this->withToken($token)->patchJson("/api/v1/reservasi/reservations/$id?version=1", ['pax' => 5])->assertStatus(409);

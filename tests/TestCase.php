@@ -14,6 +14,7 @@ use App\Modules\Jadwal\Services\JadwalService;
 use App\Modules\Kompas\Services\KompasState;
 use App\Modules\Konten\Services\KontenSchema;
 use App\Modules\Marketing\Services\MarketingSchema;
+use App\Modules\Reservasi\Services\ReservasiState;
 use App\Modules\Ticketing\Services\TicketSchema;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
@@ -94,6 +95,9 @@ abstract class TestCase extends BaseTestCase
         }
         if (KompasState::onCore()) {
             Artisan::call('core:import', ['module' => 'kompas']);
+        }
+        if (ReservasiState::onCore()) {
+            Artisan::call('core:import', ['module' => 'reservasi']);
         }
     }
 
