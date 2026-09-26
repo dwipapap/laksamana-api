@@ -2,6 +2,7 @@
 
 namespace App\Modules\Ticketing\Services;
 
+use App\Modules\Event\Services\EventState;
 use App\Support\Modules;
 use App\Support\NamedLock;
 use Exception;
@@ -29,6 +30,9 @@ use Throwable;
 class TicketShop
 {
     public const LIB_VERSION = '2026-07-31a';
+
+    /** The EMS side (events, ticket_classes, seats, orders, tickets) is reached through it, never with our own SQL (ADR-0002). */
+    public function __construct(private readonly EventState $ems) {}
 
     private function db(): ConnectionInterface
     {
@@ -58,23 +62,6 @@ class TicketShop
     private function locked(\Closure $fn): mixed
     {
         return NamedLock::run('ticketing', 'tix', $fn, 10, 'Server sedang sibuk, coba lagi sebentar.');
-    }
-
-    /** @return list<array> the decoded `data` of each row */
-    private function fetch(string $sql, array $args = []): array
-    {
-        $out = [];
-        foreach ($this->db()->select($sql, $args) as $r) {
-            $d = json_decode($r->data ?? '{}', true);
-            $out[] = is_array($d) ? $d : [];
-        }
-
-        return $out;
-    }
-
-    private static function enc(array $v): string
-    {
-        return json_encode($v, JSON_UNESCAPED_UNICODE);
     }
 
     // ───────────────────────────── environment ──
@@ -151,10 +138,11 @@ class TicketShop
     {
         try {
             $this->db()->select('SELECT 1');
-            $t = $this->db()->select("SHOW TABLES LIKE 'seats'");
-            $h = $this->db()->select("SHOW TABLES LIKE 'seat_holds'");
+            // EMS data goes through the event service (ADR-0002); the hold table is ours.
+            $t = $this->ems->emsTableExists('seats');
+            $h = $this->db()->selectOne('SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?', [TicketSchema::table('seat_holds')]) !== null;
 
-            return ['db_ok' => true, 'tabel_ems' => (bool) $t, 'tabel_hold' => (bool) $h];
+            return ['db_ok' => true, 'tabel_ems' => $t, 'tabel_hold' => $h];
         } catch (Throwable $e) {
             $p = ($e->getCode() === '42000' || str_contains($e->getMessage(), '1044'))
                 ? 'akses ditolak / nama database salah' : 'tidak bisa menyambung';
@@ -168,7 +156,7 @@ class TicketShop
     /** Expired holds that no order owns, then orders past their payment window. */
     public function sweepHolds(): void
     {
-        $this->db()->delete("DELETE FROM seat_holds WHERE expires_at < ? AND (order_id IS NULL OR order_id = '')", [self::nowMs()]);
+        $this->db()->delete('DELETE FROM `'.TicketSchema::table('seat_holds')."` WHERE expires_at < ? AND (order_id IS NULL OR order_id = '')", [self::nowMs()]);
         $this->sweepExpiredOrders();
     }
 
@@ -176,7 +164,7 @@ class TicketShop
     {
         try {
             $now = time();
-            foreach ($this->db()->select("SELECT id, data FROM orders WHERE payment_status = 'Pending' ORDER BY created_at DESC LIMIT 50") as $row) {
+            foreach ($this->ems->emsColumns('orders', ['id', 'data'], ['payment_status' => 'Pending'], 'created_at DESC', 50) as $row) {
                 $o = json_decode($row->data, true);
                 if (! is_array($o) || empty($o['expires_at'])) {
                     continue;
@@ -200,7 +188,7 @@ class TicketShop
         $n = 0;
         try {
             $now = self::nowMs();
-            foreach ($this->db()->select("SELECT id, data FROM orders WHERE payment_status = 'Pending' ORDER BY created_at DESC LIMIT 30") as $row) {
+            foreach ($this->ems->emsColumns('orders', ['id', 'data'], ['payment_status' => 'Pending'], 'created_at DESC', 30) as $row) {
                 if ($n >= $max) {
                     break;
                 }
@@ -239,7 +227,7 @@ class TicketShop
     {
         $this->sweepPendingXendit(2);
         $out = [];
-        foreach ($this->fetch('SELECT data FROM events ORDER BY start_datetime ASC') as $e) {
+        foreach ($this->ems->emsRows('events', [], 'start_datetime ASC') as $e) {
             if (! self::sellable((string) ($e['status'] ?? ''))) {
                 continue;
             }
@@ -288,7 +276,7 @@ class TicketShop
 
     public function event(string $id): ?array
     {
-        $rows = $this->fetch('SELECT data FROM events WHERE id = ?', [$id]);
+        $rows = $this->ems->emsRows('events', ['id' => $id]);
         if (! $rows || ! self::sellable((string) ($rows[0]['status'] ?? ''))) {
             return null;
         }
@@ -299,14 +287,14 @@ class TicketShop
     /** An event whatever its status: a past or cancelled event still belongs in a Buyer's history. */
     public function eventAnyStatus(string $id): ?array
     {
-        $rows = $this->fetch('SELECT data FROM events WHERE id = ?', [$id]);
+        $rows = $this->ems->emsRows('events', ['id' => $id]);
 
         return $rows ? $this->summary($rows[0]) : null;
     }
 
     private function classes(string $eid): array
     {
-        return $this->fetch('SELECT data FROM ticket_classes WHERE event_id = ?', [$eid]);
+        return $this->ems->emsRows('ticketClasses', ['event_id' => $eid]);
     }
 
     /** Sellable tickets per class: quota - sold, minus live Pending orders (they already hold tickets). */
@@ -317,9 +305,8 @@ class TicketShop
             $out[$c['id']] = max(0, (int) $c['quota'] - (int) $c['sold']);
         }
         $now = time();
-        foreach ($this->db()->select("SELECT data FROM orders WHERE event_id = ? AND payment_status = 'Pending'", [$eid]) as $row) {
-            $o = json_decode($row->data, true);
-            if (! is_array($o) || empty($o['items'])) {
+        foreach ($this->ems->emsRows('orders', ['event_id' => $eid, 'payment_status' => 'Pending']) as $o) {
+            if (empty($o['items'])) {
                 continue;
             }
             if (! empty($o['expires_at']) && strtotime($o['expires_at']) < $now) {
@@ -375,7 +362,7 @@ class TicketShop
      */
     public function poster(string $eid): ?array
     {
-        $rows = $this->fetch('SELECT data FROM events WHERE id = ?', [$eid]);
+        $rows = $this->ems->emsRows('events', ['id' => $eid]);
         if (! $rows || ! self::sellable((string) ($rows[0]['status'] ?? ''))) {
             return null;
         }
@@ -429,7 +416,7 @@ class TicketShop
     public function seatMap(string $eid, string $holdToken = ''): array
     {
         $this->sweepHolds();
-        $seats = $this->fetch('SELECT data FROM seats WHERE event_id = ?', [$eid]);
+        $seats = $this->ems->emsRows('seats', ['event_id' => $eid]);
         $byId = [];
         $byName = [];
         foreach ($this->classes($eid) as $c) {
@@ -439,7 +426,7 @@ class TicketShop
 
         // a live ticket means sold, whatever seats.status says
         $sold = [];
-        foreach ($this->db()->select('SELECT seat_id, status FROM tickets WHERE seat_id IS NOT NULL') as $r) {
+        foreach ($this->ems->emsColumns('tickets', ['seat_id', 'status'], ['seat_id' => ['notNull' => true]]) as $r) {
             if ($r->status === 'Cancelled') {
                 continue;
             }
@@ -449,7 +436,7 @@ class TicketShop
         $hold = [];
         $holdExp = [];
         $holdOrder = [];
-        foreach ($this->db()->select('SELECT seat_id, hold_token, expires_at, order_id FROM seat_holds WHERE event_id = ?', [$eid]) as $r) {
+        foreach ($this->db()->select('SELECT seat_id, hold_token, expires_at, order_id FROM `'.TicketSchema::table('seat_holds').'` WHERE event_id = ?', [$eid]) as $r) {
             $hold[$r->seat_id] = $r->hold_token;
             $holdExp[$r->seat_id] = (float) $r->expires_at;
             $holdOrder[$r->seat_id] = isset($r->order_id) ? (string) $r->order_id : '';
@@ -558,13 +545,23 @@ class TicketShop
                     continue;
                 }
                 // ON DUPLICATE never takes over someone else's hold; only our own is extended
-                $this->db()->insert('INSERT INTO seat_holds (id,event_id,seat_id,hold_token,expires_at,created_at)
-                    VALUES (?,?,?,?,?,?)
-                    ON DUPLICATE KEY UPDATE
-                      hold_token = IF(hold_token = VALUES(hold_token), hold_token, hold_token),
-                      expires_at = IF(hold_token = VALUES(hold_token), VALUES(expires_at), expires_at)',
-                    [self::uid('hold'), $eid, $sid, $holdToken, $exp, self::nowMs()]);
-                $row = $this->db()->selectOne('SELECT hold_token FROM seat_holds WHERE seat_id = ?', [$sid]);
+                if (TicketSchema::onCore()) {
+                    // core: a fresh ULID `id` (the legacy id moves to legacy_id) and version = 1
+                    $this->db()->insert('INSERT INTO `'.TicketSchema::table('seat_holds').'` (id,legacy_id,event_id,seat_id,hold_token,expires_at,created_at,version)
+                        VALUES (?,?,?,?,?,?,?,1)
+                        ON DUPLICATE KEY UPDATE
+                          hold_token = IF(hold_token = VALUES(hold_token), hold_token, hold_token),
+                          expires_at = IF(hold_token = VALUES(hold_token), VALUES(expires_at), expires_at)',
+                        [TicketSchema::newId(), self::uid('hold'), $eid, $sid, $holdToken, $exp, self::nowMs()]);
+                } else {
+                    $this->db()->insert('INSERT INTO seat_holds (id,event_id,seat_id,hold_token,expires_at,created_at)
+                        VALUES (?,?,?,?,?,?)
+                        ON DUPLICATE KEY UPDATE
+                          hold_token = IF(hold_token = VALUES(hold_token), hold_token, hold_token),
+                          expires_at = IF(hold_token = VALUES(hold_token), VALUES(expires_at), expires_at)',
+                        [self::uid('hold'), $eid, $sid, $holdToken, $exp, self::nowMs()]);
+                }
+                $row = $this->db()->selectOne('SELECT hold_token FROM `'.TicketSchema::table('seat_holds').'` WHERE seat_id = ?', [$sid]);
                 if ($row && $row->hold_token === $holdToken) {
                     $ok[] = $sid;
                 } else {
@@ -583,9 +580,9 @@ class TicketShop
         }
         if ($seatIds) {
             $in = implode(',', array_fill(0, count($seatIds), '?'));
-            $n = $this->db()->delete("DELETE FROM seat_holds WHERE hold_token = ? AND order_id IS NULL AND seat_id IN ($in)", array_merge([$holdToken], $seatIds));
+            $n = $this->db()->delete('DELETE FROM `'.TicketSchema::table('seat_holds').'` WHERE hold_token = ? AND order_id IS NULL AND seat_id IN ('.$in.')', array_merge([$holdToken], $seatIds));
         } else {
-            $n = $this->db()->delete('DELETE FROM seat_holds WHERE hold_token = ? AND order_id IS NULL', [$holdToken]);
+            $n = $this->db()->delete('DELETE FROM `'.TicketSchema::table('seat_holds').'` WHERE hold_token = ? AND order_id IS NULL', [$holdToken]);
         }
 
         return ['released' => $n];
@@ -598,11 +595,12 @@ class TicketShop
         if (! $token || is_array($token)) {
             return null;
         }
-        $r = $this->db()->selectOne('SELECT user_id FROM tix_sessions WHERE token = ? AND expires_at > ?', [(string) $token, self::nowMs()]);
+        $r = $this->db()->selectOne('SELECT user_id FROM `'.TicketSchema::table('tix_sessions').'` WHERE `'.TicketSchema::idCol('tix_sessions').'` = ? AND expires_at > ?', [(string) $token, self::nowMs()]);
         if (! $r) {
             return null;
         }
-        $u = $this->db()->selectOne('SELECT * FROM tix_users WHERE id = ?', [$r->user_id]);
+        // `id` is the legacy Buyer id on either connection, which is what the shop speaks
+        $u = $this->db()->selectOne('SELECT `'.TicketSchema::idCol('tix_users').'` AS id, email, pass_hash, name, phone, created_at FROM `'.TicketSchema::table('tix_users').'` WHERE `'.TicketSchema::idCol('tix_users').'` = ?', [$r->user_id]);
 
         return $u ? (array) $u : null;
     }
@@ -656,7 +654,7 @@ class TicketShop
         $this->sweepHolds();
         // the seats paid for are those this token STILL holds, not bound to another order
         $seatIds = array_map(fn ($r) => $r->seat_id, $this->db()->select(
-            "SELECT seat_id FROM seat_holds WHERE hold_token = ? AND event_id = ? AND expires_at > ? AND (order_id IS NULL OR order_id = '')",
+            'SELECT seat_id FROM `'.TicketSchema::table('seat_holds')."` WHERE hold_token = ? AND event_id = ? AND expires_at > ? AND (order_id IS NULL OR order_id = '')",
             [$tok, $eid, self::nowMs()]));
 
         $general = (isset($b['umum']) && is_array($b['umum'])) ? $b['umum'] : [];
@@ -741,7 +739,7 @@ class TicketShop
             // bound holds are no longer swept: the buyer is on the payment page
             if ($seatIds) {
                 $in = implode(',', array_fill(0, count($seatIds), '?'));
-                $this->db()->update("UPDATE seat_holds SET order_id = ?, expires_at = ? WHERE seat_id IN ($in)",
+                $this->db()->update('UPDATE `'.TicketSchema::table('seat_holds')."` SET order_id = ?, expires_at = ? WHERE seat_id IN ($in)",
                     array_merge([$oid, self::nowMs() + self::payMinutes() * 60000], $seatIds));
             }
 
@@ -764,32 +762,24 @@ class TicketShop
 
     public function saveOrder(array $o): void
     {
-        $this->db()->insert('INSERT INTO orders (id,event_id,buyer_name,phone,email,total,payment_status,payment_ref,updated_at,created_at,data)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)
-            ON DUPLICATE KEY UPDATE buyer_name=VALUES(buyer_name), phone=VALUES(phone), email=VALUES(email),
-              total=VALUES(total), payment_status=VALUES(payment_status), payment_ref=VALUES(payment_ref),
-              updated_at=VALUES(updated_at), data=VALUES(data)',
-            [$o['id'], $o['event_id'], $o['buyer_name'], $o['phone'], $o['email'], $o['total'], $o['payment_status'],
-                $o['payment_ref'], self::nowMs(), self::nowMs(), self::enc($o)]);
+        $this->ems->emsSaveOrder($o);
     }
 
     // ───────────────────────────── upgrade ──
 
     private function ticketForUpgrade(string $ticketId, array $user): array
     {
-        $rows = $this->fetch('SELECT data FROM tickets WHERE id = ?', [$ticketId]);
-        if (! $rows) {
+        $tk = $this->ems->emsRow('tickets', $ticketId);
+        if (! $tk) {
             throw new Exception('Tiket tidak ditemukan.');
         }
-        $tk = $rows[0];
         if (($tk['status'] ?? '') !== 'Valid') {
             throw new Exception('Tiket ini tidak berlaku lagi.');
         }
-        $ords = $this->fetch('SELECT data FROM orders WHERE id = ?', [(string) ($tk['order_item_id'] ?? '')]);
-        if (! $ords) {
+        $o = $this->ems->emsRow('orders', (string) ($tk['order_item_id'] ?? ''));
+        if (! $o) {
             throw new Exception('Pesanan tiket ini tidak ditemukan.');
         }
-        $o = $ords[0];
         if (($o['payment_status'] ?? '') !== 'Paid') {
             throw new Exception('Tiket ini belum lunas.');
         }
@@ -836,9 +826,8 @@ class TicketShop
         [$order, $oid, $ref, $access, $diff] = $this->locked(function () use ($ticketId, $newSeat, $tk, $o, $user) {
             $this->sweepHolds();
             // one live upgrade per ticket
-            foreach ($this->db()->select("SELECT data FROM orders WHERE payment_status = 'Pending' ORDER BY created_at DESC LIMIT 50") as $row) {
-                $p = json_decode($row->data, true);
-                if (is_array($p) && ($p['upgrade']['tiket_lama'] ?? '') === $ticketId) {
+            foreach ($this->ems->emsRows('orders', ['payment_status' => 'Pending'], 'created_at DESC', 50) as $p) {
+                if (($p['upgrade']['tiket_lama'] ?? '') === $ticketId) {
                     throw new Exception('Upgrade untuk tiket ini sedang menunggu pembayaran. Selesaikan atau tunggu waktunya habis.');
                 }
             }
@@ -865,12 +854,21 @@ class TicketShop
 
             $exp = self::nowMs() + self::payMinutes() * 60000;
             $tokUp = 'up_'.self::randomToken(10);
-            $this->db()->insert('INSERT INTO seat_holds (id,event_id,seat_id,hold_token,expires_at,created_at)
-                VALUES (?,?,?,?,?,?)
-                ON DUPLICATE KEY UPDATE
-                  hold_token = IF(hold_token = VALUES(hold_token), hold_token, hold_token)',
-                [self::uid('hold'), $o['event_id'], $newSeat, $tokUp, $exp, self::nowMs()]);
-            $row = $this->db()->selectOne('SELECT hold_token FROM seat_holds WHERE seat_id = ?', [$newSeat]);
+            if (TicketSchema::onCore()) {
+                // core: a fresh ULID `id` (the legacy id moves to legacy_id) and version = 1
+                $this->db()->insert('INSERT INTO `'.TicketSchema::table('seat_holds').'` (id,legacy_id,event_id,seat_id,hold_token,expires_at,created_at,version)
+                    VALUES (?,?,?,?,?,?,?,1)
+                    ON DUPLICATE KEY UPDATE
+                      hold_token = IF(hold_token = VALUES(hold_token), hold_token, hold_token)',
+                    [TicketSchema::newId(), self::uid('hold'), $o['event_id'], $newSeat, $tokUp, $exp, self::nowMs()]);
+            } else {
+                $this->db()->insert('INSERT INTO seat_holds (id,event_id,seat_id,hold_token,expires_at,created_at)
+                    VALUES (?,?,?,?,?,?)
+                    ON DUPLICATE KEY UPDATE
+                      hold_token = IF(hold_token = VALUES(hold_token), hold_token, hold_token)',
+                    [self::uid('hold'), $o['event_id'], $newSeat, $tokUp, $exp, self::nowMs()]);
+            }
+            $row = $this->db()->selectOne('SELECT hold_token FROM `'.TicketSchema::table('seat_holds').'` WHERE seat_id = ?', [$newSeat]);
             if (! $row || $row->hold_token !== $tokUp) {
                 throw new Exception('Kursi '.$new['label'].' baru saja diambil orang lain. Pilih kursi lain.');
             }
@@ -899,7 +897,7 @@ class TicketShop
                 'created' => gmdate('c'),
             ];
             $this->saveOrder($order);
-            $this->db()->update('UPDATE seat_holds SET order_id = ? WHERE seat_id = ?', [$oid, $newSeat]);
+            $this->db()->update('UPDATE `'.TicketSchema::table('seat_holds').'` SET order_id = ? WHERE seat_id = ?', [$oid, $newSeat]);
 
             return [$order, $oid, $ref, $access, $diff];
         });
@@ -924,38 +922,32 @@ class TicketShop
         if (! $u || empty($u['tiket_lama'])) {
             return;
         }
-        $rows = $this->fetch('SELECT data FROM tickets WHERE id = ?', [$u['tiket_lama']]);
-        if ($rows) {
-            $tk = $rows[0];
+        $tk = $this->ems->emsRow('tickets', (string) $u['tiket_lama']);
+        if ($tk) {
             $tk['status'] = 'Cancelled';
             $tk['upgrade_ke'] = $o['id'];
-            $this->db()->update('UPDATE tickets SET status = ?, updated_at = ?, data = ? WHERE id = ?',
-                ['Cancelled', self::nowMs(), self::enc($tk), $u['tiket_lama']]);
+            $this->ems->emsSetTicketStatus((string) $u['tiket_lama'], 'Cancelled', $tk, self::nowMs());
         }
         if (! empty($u['seat_lama'])) {
             $inUse = false;
-            foreach ($this->fetch('SELECT data FROM tickets WHERE seat_id = ?', [$u['seat_lama']]) as $t) {
+            foreach ($this->ems->emsRows('tickets', ['seat_id' => $u['seat_lama']]) as $t) {
                 if (($t['status'] ?? '') !== 'Cancelled') {
                     $inUse = true;
                 }
             }
             if (! $inUse) {
-                $sr = $this->fetch('SELECT data FROM seats WHERE id = ?', [$u['seat_lama']]);
-                if ($sr) {
-                    $s = $sr[0];
+                $s = $this->ems->emsRow('seats', (string) $u['seat_lama']);
+                if ($s) {
                     $s['status'] = 'Available';
-                    $this->db()->update("UPDATE seats SET status = 'Available', updated_at = ?, data = ? WHERE id = ?",
-                        [self::nowMs(), self::enc($s), $u['seat_lama']]);
+                    $this->ems->emsSetSeatStatus((string) $u['seat_lama'], 'Available', $s, self::nowMs());
                 }
             }
         }
         if (! empty($u['kelas_lama'])) {
-            $cr = $this->fetch('SELECT data FROM ticket_classes WHERE id = ?', [$u['kelas_lama']]);
-            if ($cr) {
-                $c = $cr[0];
+            $c = $this->ems->emsRow('ticketClasses', (string) $u['kelas_lama']);
+            if ($c) {
                 $c['sold'] = max(0, (int) $c['sold'] - 1);
-                $this->db()->update('UPDATE ticket_classes SET sold = ?, updated_at = ?, data = ? WHERE id = ?',
-                    [$c['sold'], self::nowMs(), self::enc($c), $u['kelas_lama']]);
+                $this->ems->emsSetClassSold((string) $u['kelas_lama'], $c['sold'], $c, self::nowMs());
             }
         }
     }
@@ -1020,11 +1012,11 @@ class TicketShop
             throw new Exception('external_id kosong.');
         }
         if ($status === 'PAID' || $status === 'SETTLED') {
-            $rows = $this->fetch('SELECT data FROM orders WHERE id = ?', [(string) $oid]);
-            if (! $rows) {
+            $o = $this->ems->emsRow('orders', (string) $oid);
+            if (! $o) {
                 throw new Exception('Pesanan tidak ditemukan: '.$oid);
             }
-            $inv = (string) ($rows[0]['payment']['invoice_id'] ?? '');
+            $inv = (string) ($o['payment']['invoice_id'] ?? '');
             $check = self::invoicePaid($inv);
             if ($check === null && $inv !== '' && ! str_starts_with($inv, 'SIM-')) {
                 throw new Exception('Belum bisa memastikan status ke Xendit — coba lagi.');
@@ -1049,11 +1041,10 @@ class TicketShop
     public function markPaid(string $oid, array $body = []): array
     {
         return $this->locked(function () use ($oid, $body) {
-            $rows = $this->fetch('SELECT data FROM orders WHERE id = ?', [$oid]);
-            if (! $rows) {
+            $o = $this->ems->emsRow('orders', $oid);
+            if (! $o) {
                 throw new Exception('Pesanan tidak ditemukan: '.$oid);
             }
-            $o = $rows[0];
             if ($o['payment_status'] === 'Paid') {
                 return ['sudah' => true, 'order_id' => $oid];
             }
@@ -1067,7 +1058,7 @@ class TicketShop
             ]);
 
             $tickets = [];
-            $no = (int) $this->db()->selectOne('SELECT COUNT(*) c FROM tickets')->c;
+            $no = $this->ems->emsCount('tickets');
             // one ticket PER GUEST; the number runs over the whole order
             $seq = 0;
             foreach ($o['items'] as $it) {
@@ -1084,20 +1075,16 @@ class TicketShop
                         'kind' => $kind, 'pax_no' => $p, 'pax_total' => $pax,
                         'buyer_name' => $o['buyer_name'], 'issued_at' => gmdate('c'),
                     ];
-                    $this->db()->insert('INSERT INTO tickets (id,order_item_id,ticket_class_id,seat_id,ticket_number,qr_token,status,updated_at,data)
-                        VALUES (?,?,?,?,?,?,?,?,?)',
-                        [$tk['id'], $oid, $tk['ticket_class_id'], $tk['seat_id'], $tk['ticket_number'], $tk['qr_token'], 'Valid', self::nowMs(), self::enc($tk)]);
+                    $this->ems->emsInsertTicket($tk, self::nowMs());
                     $tickets[] = $tk;
                     $seq++;
                 }
                 // Sold ONCE per place: a table stays one `seats` row
                 if ($it['seat_id']) {
-                    $sr = $this->fetch('SELECT data FROM seats WHERE id = ?', [$it['seat_id']]);
-                    if ($sr) {
-                        $s = $sr[0];
+                    $s = $this->ems->emsRow('seats', (string) $it['seat_id']);
+                    if ($s) {
                         $s['status'] = 'Sold';
-                        $this->db()->update("UPDATE seats SET status = 'Sold', updated_at = ?, data = ? WHERE id = ?",
-                            [self::nowMs(), self::enc($s), $it['seat_id']]);
+                        $this->ems->emsSetSeatStatus((string) $it['seat_id'], 'Sold', $s, self::nowMs());
                     }
                 }
             }
@@ -1105,7 +1092,7 @@ class TicketShop
             $this->applyUpgrade($o);
             $o['email_eticket'] = app(TicketMail::class)->sendEticket($o, $tickets);
             $this->saveOrder($o);
-            $this->db()->delete('DELETE FROM seat_holds WHERE order_id = ?', [$oid]);
+            $this->db()->delete('DELETE FROM `'.TicketSchema::table('seat_holds').'` WHERE order_id = ?', [$oid]);
 
             return ['order_id' => $oid, 'tiket' => count($tickets)];
         });
@@ -1122,30 +1109,27 @@ class TicketShop
             $hit[$it['class_id']] = ($hit[$it['class_id']] ?? 0) + max(1, (int) ($it['capacity'] ?? 1));
         }
         foreach ($hit as $cid => $n) {
-            $rows = $this->fetch('SELECT data FROM ticket_classes WHERE id = ?', [(string) $cid]);
-            if (! $rows) {
+            $c = $this->ems->emsRow('ticketClasses', (string) $cid);
+            if (! $c) {
                 continue;
             }
-            $c = $rows[0];
             $c['sold'] = (int) $c['sold'] + $n;
-            $this->db()->update('UPDATE ticket_classes SET sold = ?, updated_at = ?, data = ? WHERE id = ?',
-                [$c['sold'], self::nowMs(), self::enc($c), (string) $cid]);
+            $this->ems->emsSetClassSold((string) $cid, $c['sold'], $c, self::nowMs());
         }
     }
 
     public function cancel(string $oid, string $reason): array
     {
-        $rows = $this->fetch('SELECT data FROM orders WHERE id = ?', [$oid]);
-        if (! $rows) {
+        $o = $this->ems->emsRow('orders', $oid);
+        if (! $o) {
             return ['order_id' => $oid, 'tidak_ada' => true];
         }
-        $o = $rows[0];
         if ($o['payment_status'] === 'Paid') {
             return ['order_id' => $oid, 'sudah_lunas' => true];
         }
         $o['payment_status'] = ($reason === 'EXPIRED') ? 'Expired' : 'Failed';
         $this->saveOrder($o);
-        $this->db()->delete('DELETE FROM seat_holds WHERE order_id = ?', [$oid]);
+        $this->db()->delete('DELETE FROM `'.TicketSchema::table('seat_holds').'` WHERE order_id = ?', [$oid]);
 
         return ['order_id' => $oid, 'status' => $o['payment_status']];
     }
@@ -1156,7 +1140,7 @@ class TicketShop
         if (! self::simulation()) {
             throw new Exception('Mode simulasi tidak aktif di server ini.');
         }
-        $rows = $this->fetch('SELECT data FROM orders WHERE payment_ref = ?', [$ref]);
+        $rows = $this->ems->emsRows('orders', ['payment_ref' => $ref]);
         if (! $rows) {
             throw new Exception('Pesanan tidak ditemukan.');
         }
@@ -1182,7 +1166,7 @@ class TicketShop
     public function throttle(string $kind, $who, int $max = 8, int $minutes = 15): void
     {
         try {
-            $n = (int) $this->db()->selectOne('SELECT COUNT(*) c FROM tix_gagal WHERE kunci = ? AND at > ?',
+            $n = (int) $this->db()->selectOne('SELECT COUNT(*) c FROM `'.TicketSchema::table('tix_gagal').'` WHERE kunci = ? AND at > ?',
                 [self::failKey($kind, $who), self::nowMs() - $minutes * 60000])->c;
         } catch (QueryException) {
             return;
@@ -1195,8 +1179,14 @@ class TicketShop
     public function recordFailure(string $kind, $who): void
     {
         try {
-            $this->db()->insert('INSERT INTO tix_gagal (id,kunci,at) VALUES (?,?,?)', [self::uid('g'), self::failKey($kind, $who), self::nowMs()]);
-            $this->db()->delete('DELETE FROM tix_gagal WHERE at < ?', [self::nowMs() - 24 * 3600000]);
+            if (TicketSchema::onCore()) {
+                // core: a fresh ULID `id` (the legacy id moves to legacy_id) and version = 1
+                $this->db()->insert('INSERT INTO `'.TicketSchema::table('tix_gagal').'` (id,legacy_id,kunci,at,version) VALUES (?,?,?,?,1)',
+                    [TicketSchema::newId(), self::uid('g'), self::failKey($kind, $who), self::nowMs()]);
+            } else {
+                $this->db()->insert('INSERT INTO tix_gagal (id,kunci,at) VALUES (?,?,?)', [self::uid('g'), self::failKey($kind, $who), self::nowMs()]);
+            }
+            $this->db()->delete('DELETE FROM `'.TicketSchema::table('tix_gagal').'` WHERE at < ?', [self::nowMs() - 24 * 3600000]);
         } catch (QueryException) {
             // table missing
         }
@@ -1205,7 +1195,7 @@ class TicketShop
     private function rateLimiterOn(): bool
     {
         try {
-            $this->db()->select('SELECT 1 FROM tix_gagal LIMIT 1');
+            $this->db()->select('SELECT 1 FROM `'.TicketSchema::table('tix_gagal').'` LIMIT 1');
 
             return true;
         } catch (Throwable) {
@@ -1232,9 +1222,9 @@ class TicketShop
         $st = strtoupper((string) ($d['status'] ?? ''));
         if ($st === 'PAID' || $st === 'SETTLED') {
             $this->markPaid($o['id'], $d);
-            $r2 = $this->fetch('SELECT data FROM orders WHERE id = ?', [$o['id']]);
+            $r2 = $this->ems->emsRow('orders', (string) $o['id']);
             if ($r2) {
-                return $r2[0];
+                return $r2;
             }
         } elseif ($st === 'EXPIRED') {
             $this->cancel($o['id'], 'EXPIRED');
@@ -1247,7 +1237,7 @@ class TicketShop
     private function openOrder(string $ref, string $access): array
     {
         $this->throttle('tiket', $ref, 20, 10);
-        $rows = $this->fetch('SELECT data FROM orders WHERE payment_ref = ?', [$ref]);
+        $rows = $this->ems->emsRows('orders', ['payment_ref' => $ref]);
         if (! $rows) {
             $this->recordFailure('tiket', $ref);
             throw new Exception('Pesanan tidak ditemukan.');
@@ -1269,9 +1259,9 @@ class TicketShop
             throw new Exception('Pesanan ini belum lunas.');
         }
         $tickets = array_values(array_filter(
-            $this->fetch('SELECT data FROM tickets WHERE order_item_id = ? ORDER BY ticket_number', [$o['id']]),
+            $this->ems->emsRows('tickets', ['order_item_id' => $o['id']], 'ticket_number'),
             fn ($t) => ($t['status'] ?? '') !== 'Cancelled'));
-        $ev = $this->fetch('SELECT data FROM events WHERE id = ?', [(string) $o['event_id']])[0] ?? null;
+        $ev = $this->ems->emsRow('events', (string) $o['event_id']);
 
         return ['name' => TicketPdf::fileName($o), 'pdf' => TicketPdf::eticket($o, $tickets, $ev, 0)];
     }
@@ -1282,7 +1272,7 @@ class TicketShop
         $ev = $this->event((string) $o['event_id']);
         $tickets = [];
         if ($o['payment_status'] === 'Paid') {
-            foreach ($this->fetch('SELECT data FROM tickets WHERE order_item_id = ?', [$o['id']]) as $t) {
+            foreach ($this->ems->emsRows('tickets', ['order_item_id' => $o['id']]) as $t) {
                 $tickets[] = ['id' => $t['id'], 'ticket_number' => $t['ticket_number'], 'qr_token' => $t['qr_token'],
                     'terbayar' => self::pricePaid($t, $o),
                     'seat_label' => $t['seat_label'] ?? '',

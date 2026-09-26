@@ -6,6 +6,7 @@ use App\Support\Modules;
 use App\Support\NamedLock;
 use App\Support\RowSync;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -45,17 +46,19 @@ class EventState
         $db = $this->db();
         $out = [];
 
-        foreach (EventSchema::collections() as $name => $c) {
-            $order = ! empty($c['created']) ? 'created_at ASC, id ASC' : 'id ASC';
+        foreach (EventSchema::defs() as $name => $c) {
+            $key = $c['id'];
+            $order = ! empty($c['created']) ? "created_at ASC, `$key` ASC" : "`$key` ASC";
             $out[$name] = $this->rows($db->select("SELECT data FROM `{$c['table']}` ORDER BY $order"));
         }
 
         // checkins: append-only, newest first (capped so the blob stays small)
-        $out['checkins'] = $this->rows($db->select('SELECT data FROM checkins ORDER BY checked_in_at DESC LIMIT '.self::CHECKIN_LIMIT));
+        $out['checkins'] = $this->rows($db->select('SELECT data FROM `'.EventSchema::table('checkins')
+            .'` ORDER BY checked_in_at DESC LIMIT '.self::CHECKIN_LIMIT));
 
         // eventDetails: map event_id -> detail (PHP array keys: "12" becomes int, like legacy)
         $ed = [];
-        foreach ($db->select('SELECT event_id, data FROM event_details') as $row) {
+        foreach ($db->select('SELECT event_id, data FROM `'.EventSchema::table('event_details').'`') as $row) {
             $r = json_decode((string) $row->data, true);
             if (is_array($r)) {
                 $ed[$row->event_id] = $r;
@@ -85,7 +88,7 @@ class EventState
 
     public function setting(string $k, mixed $default): mixed
     {
-        $row = $this->db()->selectOne('SELECT v FROM settings WHERE k = ? LIMIT 1', [$k]);
+        $row = $this->db()->selectOne('SELECT v FROM `'.EventSchema::table('settings').'` WHERE k = ? LIMIT 1', [$k]);
         if (! $row) {
             return $default;
         }
@@ -117,13 +120,13 @@ class EventState
             $bentrok = [];
             $versi = [];
 
-            foreach (EventSchema::collections() as $name => $c) {
+            foreach (EventSchema::defs() as $name => $c) {
                 if (! array_key_exists($name, $state)) {
                     continue; // not sent -> untouched
                 }
                 $rows = is_array($state[$name]) ? $state[$name] : [];
                 $ids = RowSync::upsertCollection($db, $c, $rows, $name, ['keepBase' => true], $bentrok, $versi);
-                RowSync::deleteMissing($db, $c['table'], 'id', $ids, 'maxUpd', self::maxStamp($rows));
+                RowSync::deleteMissing($db, $c['table'], $c['id'], $ids, 'maxUpd', self::maxStamp($rows));
                 $hitung[$name] = count($ids);
             }
 
@@ -150,13 +153,13 @@ class EventState
                     $ids[] = (string) $eid;
                     $this->upsertDetail((string) $eid, $d);
                 }
-                RowSync::deleteMissing($db, 'event_details', 'event_id', $ids, 'notIn');
+                RowSync::deleteMissing($db, EventSchema::table('event_details'), 'event_id', $ids, 'notIn');
                 $hitung['eventDetails'] = count($ids);
             }
 
             foreach (array_keys(EventSchema::SETTINGS) as $k) {
                 if (isset($state[$k])) {
-                    RowSync::putSetting($db, $k, $state[$k]);
+                    RowSync::putSetting($db, $k, $state[$k], EventSchema::table('settings'), EventSchema::onCore());
                 }
             }
 
@@ -182,26 +185,49 @@ class EventState
     /** INSERT IGNORE: an existing check-in is never touched. Returns true when inserted. */
     public function insertCheckin(array $ci): bool
     {
-        return $this->db()->affectingStatement('INSERT IGNORE INTO checkins
-                (id, ticket_id, checked_in_at, staff, gate, result, data) VALUES (?,?,?,?,?,?,?)', [
-            (string) $ci['id'],
+        $id = (string) $ci['id'];
+        $cols = [
             RowSync::ambil($ci, 'ticket_id', 'strRaw'),
             RowSync::ambil($ci, 'checked_in_at', 'datetimeWib'),
             RowSync::ambil($ci, 'staff', 'strRaw'),
             RowSync::ambil($ci, 'gate', 'strRaw'),
             RowSync::ambil($ci, 'result', 'strRaw'),
             RowSync::enc($ci),
-        ]) > 0;
+        ];
+        $table = EventSchema::table('checkins');
+        if (! EventSchema::onCore()) {
+            return $this->db()->affectingStatement("INSERT IGNORE INTO `$table`
+                (id, ticket_id, checked_in_at, staff, gate, result, data) VALUES (?,?,?,?,?,?,?)", [$id, ...$cols]) > 0;
+        }
+
+        return $this->db()->affectingStatement("INSERT IGNORE INTO `$table`
+            (id, legacy_id, ticket_id, checked_in_at, staff, gate, result, data, version) VALUES (?,?,?,?,?,?,?,?,1)",
+            [strtolower((string) Str::ulid()), $id, ...$cols]) > 0;
     }
 
     /** One event_details row with the updated_at guard. */
     public function upsertDetail(string $eventId, array $d): void
     {
-        $this->db()->statement('INSERT INTO event_details (event_id, updated_at, data) VALUES (?,?,?)
+        $table = EventSchema::table('event_details');
+        $stamp = RowSync::ms($d['updatedAt'] ?? 0);
+        $data = RowSync::enc($d);
+        if (! EventSchema::onCore()) {
+            $this->db()->statement("INSERT INTO `$table` (event_id, updated_at, data) VALUES (?,?,?)
             ON DUPLICATE KEY UPDATE
               data       = IF(VALUES(updated_at) >= updated_at, VALUES(data),       data),
-              updated_at = IF(VALUES(updated_at) >= updated_at, VALUES(updated_at), updated_at)',
-            [$eventId, RowSync::ms($d['updatedAt'] ?? 0), RowSync::enc($d)]);
+              updated_at = IF(VALUES(updated_at) >= updated_at, VALUES(updated_at), updated_at)",
+                [$eventId, $stamp, $data]);
+
+            return;
+        }
+
+        // core: event_id stays the natural key; legacy_id carries the same value.
+        $this->db()->statement("INSERT INTO `$table` (id, legacy_id, event_id, updated_at, data, version) VALUES (?,?,?,?,?,1)
+            ON DUPLICATE KEY UPDATE
+              `version`  = `version` + IF(VALUES(updated_at) >= updated_at, 1, 0),
+              data       = IF(VALUES(updated_at) >= updated_at, VALUES(data),       data),
+              updated_at = IF(VALUES(updated_at) >= updated_at, VALUES(updated_at), updated_at)",
+            [strtolower((string) Str::ulid()), $eventId, $eventId, $stamp, $data]);
     }
 
     /**
@@ -215,9 +241,10 @@ class EventState
             throw new RuntimeException('tanggal tidak sah: '.$tgl);
         }
         $out = [];
+        // On core the row key is `legacy_id`, aliased back to the legacy `id`.
         foreach ($this->db()->select(
-            "SELECT id, title, status, venue, pic, start_datetime, data
-               FROM events
+            'SELECT `'.EventSchema::idCol().'` AS id, title, status, venue, pic, start_datetime, data
+               FROM `'.EventSchema::table('events')."`
               WHERE DATE(start_datetime) = ?
                 AND status NOT IN ('Planning', 'Draft', 'Cancelled')
               ORDER BY start_datetime, title", [$tgl]) as $r) {
@@ -252,7 +279,7 @@ class EventState
         $db = $this->db();
         $out = array_merge(['backend' => 'laravel'], $this->identity());
         foreach (EventSchema::STATS_TABLES as $t) {
-            $out[$t] = (int) $db->selectOne("SELECT COUNT(*) AS c FROM `$t`")->c;
+            $out[$t] = (int) $db->selectOne('SELECT COUNT(*) AS c FROM `'.EventSchema::table($t).'`')->c;
         }
         $blob = strlen(RowSync::enc($this->read()));
         $out['blobChars'] = $blob;
@@ -260,5 +287,202 @@ class EventState
         $out['ts'] = gmdate('c');
 
         return $out;
+    }
+
+    /** Is event served from `core` (DB_EVENT_CONNECTION=core)? */
+    public static function onCore(): bool
+    {
+        return EventSchema::onCore();
+    }
+
+    // ────────── EMS records for the Modul that shares this database (ticketing) ──
+    // The public shop owns seat_holds/tix_* only; it reads and writes the EMS
+    // tables above through these methods, never with its own SQL (ADR-0002, #61).
+    // $cols and $order are code literals, never request input.
+
+    /**
+     * Decoded `data` of the rows matching $where (legacy column names), in the
+     * legacy order. Where values: null means IS NULL, ['notNull' => true] means
+     * IS NOT NULL, ['ne' => $v] means <>, anything else is `=`.
+     *
+     * @return list<array>
+     */
+    public function emsRows(string $collection, array $where = [], string $order = '', int $limit = 0): array
+    {
+        $out = [];
+        foreach ($this->emsSelect($collection, ['data'], $where, $order, $limit) as $r) {
+            $d = json_decode((string) $r->data, true);
+            if (is_array($d)) {
+                $out[] = $d;
+            }
+        }
+
+        return $out;
+    }
+
+    /** One row's decoded `data` by its legacy id, or null. */
+    public function emsRow(string $collection, string $id): ?array
+    {
+        return $this->emsRows($collection, ['id' => $id], '', 1)[0] ?? null;
+    }
+
+    /** Raw column projection (legacy column names) — for column-only reads. */
+    public function emsColumns(string $collection, array $cols, array $where = [], string $order = '', int $limit = 0): array
+    {
+        return $this->emsSelect($collection, $cols, $where, $order, $limit);
+    }
+
+    /** COUNT(*) with the same where protocol. */
+    public function emsCount(string $collection, array $where = []): int
+    {
+        $def = $this->emsDef($collection);
+        [$sql, $args] = $this->emsWhere("SELECT COUNT(*) AS c FROM `{$def['table']}`", $def, $where);
+
+        return (int) ($this->db()->selectOne($sql, $args)?->c ?? 0);
+    }
+
+    /** Does the physical table behind $collection exist (ping/diagnostics probe)? */
+    public function emsTableExists(string $collection): bool
+    {
+        return $this->db()->selectOne(
+            'SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
+            [$this->emsDef($collection)['table']]
+        ) !== null;
+    }
+
+    private function emsDef(string $collection): array
+    {
+        return EventSchema::defs()[$collection] ?? throw new RuntimeException("Unknown EMS collection [$collection].");
+    }
+
+    private function emsSelect(string $collection, array $cols, array $where, string $order = '', int $limit = 0): array
+    {
+        $def = $this->emsDef($collection);
+        // `id` is always the LEGACY id the shop speaks, so alias it back on core.
+        $sql = 'SELECT '.implode(', ', array_map(
+            fn (string $c) => $c === 'id' ? "`{$def['id']}` AS `id`" : "`$c`",
+            $cols
+        ))." FROM `{$def['table']}`";
+        [$sql, $args] = $this->emsWhere($sql, $def, $where);
+        if ($order !== '') {
+            $sql .= " ORDER BY $order";
+        }
+        if ($limit > 0) {
+            $sql .= ' LIMIT '.$limit;
+        }
+
+        return $this->db()->select($sql, $args);
+    }
+
+    /** @return array{0:string,1:list<mixed>} the SQL with its WHERE appended */
+    private function emsWhere(string $sql, array $def, array $where): array
+    {
+        $parts = [];
+        $args = [];
+        foreach ($where as $col => $v) {
+            $col = $col === 'id' ? (string) $def['id'] : (string) $col;
+            if ($v === null) {
+                $parts[] = "`$col` IS NULL";
+            } elseif (is_array($v) && array_key_exists('notNull', $v)) {
+                $parts[] = "`$col` IS NOT NULL";
+            } elseif (is_array($v) && array_key_exists('ne', $v)) {
+                $parts[] = "`$col` <> ?";
+                $args[] = $v['ne'];
+            } else {
+                $parts[] = "`$col` = ?";
+                $args[] = $v;
+            }
+        }
+        if ($parts) {
+            $sql .= ' WHERE '.implode(' AND ', $parts);
+        }
+
+        return [$sql, $args];
+    }
+
+    // ── EMS writes for the public shop: the same statements, core-aware ──
+
+    /**
+     * saveOrder: insert, or overwrite the columns the shop owns. created_at is
+     * written on INSERT only and there is no updated_at guard, exactly like the
+     * legacy statement (a webhook may confirm an order the app just saved).
+     */
+    public function emsSaveOrder(array $o): void
+    {
+        $table = EventSchema::table('orders');
+        $data = RowSync::enc($o);
+        $cols = [$o['event_id'], $o['buyer_name'], $o['phone'], $o['email'], $o['total'],
+            $o['payment_status'], $o['payment_ref']];
+        $upd = 'buyer_name=VALUES(buyer_name), phone=VALUES(phone), email=VALUES(email),
+              total=VALUES(total), payment_status=VALUES(payment_status), payment_ref=VALUES(payment_ref),
+              updated_at=VALUES(updated_at), data=VALUES(data)';
+        if (! EventSchema::onCore()) {
+            $this->db()->insert("INSERT INTO `$table` (id,event_id,buyer_name,phone,email,total,payment_status,payment_ref,updated_at,created_at,data)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE $upd",
+                [(string) $o['id'], ...$cols, $this->nowMs(), $this->nowMs(), $data]);
+
+            return;
+        }
+        $this->db()->insert("INSERT INTO `$table` (id,legacy_id,event_id,buyer_name,phone,email,total,payment_status,payment_ref,updated_at,created_at,data,version)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1) ON DUPLICATE KEY UPDATE $upd, `version` = `version` + 1",
+            [strtolower((string) Str::ulid()), (string) $o['id'], ...$cols, $this->nowMs(), $this->nowMs(), $data]);
+    }
+
+    /** UPDATE orders SET updated_at, data (a Buyer claiming orders placed before signing up). */
+    public function emsTouchOrder(string $id, array $o, int $updatedAt): void
+    {
+        $this->db()->update('UPDATE `'.EventSchema::table('orders').'` SET `updated_at` = ?, `data` = ?'
+            .$this->emsVersionSuffix().' WHERE `'.EventSchema::idCol().'` = ?',
+            [$updatedAt, RowSync::enc($o), $id]);
+    }
+
+    /** Issue one ticket: a plain INSERT, exactly like the shop (a reused id must fail). */
+    public function emsInsertTicket(array $tk, int $updatedAt): void
+    {
+        $table = EventSchema::table('tickets');
+        $cols = [$tk['order_item_id'], $tk['ticket_class_id'], $tk['seat_id'], $tk['ticket_number'],
+            $tk['qr_token'], 'Valid', $updatedAt, RowSync::enc($tk)];
+        if (! EventSchema::onCore()) {
+            $this->db()->insert("INSERT INTO `$table` (id,order_item_id,ticket_class_id,seat_id,ticket_number,qr_token,status,updated_at,data)
+                VALUES (?,?,?,?,?,?,?,?,?)", [(string) $tk['id'], ...$cols]);
+
+            return;
+        }
+        $this->db()->insert("INSERT INTO `$table` (id,legacy_id,order_item_id,ticket_class_id,seat_id,ticket_number,qr_token,status,updated_at,data,version)
+            VALUES (?,?,?,?,?,?,?,?,?,?,1)", [strtolower((string) Str::ulid()), (string) $tk['id'], ...$cols]);
+    }
+
+    /** Ticket status + full row (the upgrade path cancels the old ticket). */
+    public function emsSetTicketStatus(string $id, string $status, array $tk, int $updatedAt): void
+    {
+        $this->db()->update('UPDATE `'.EventSchema::table('tickets').'` SET `status` = ?, `updated_at` = ?, `data` = ?'
+            .$this->emsVersionSuffix().' WHERE `'.EventSchema::idCol().'` = ?',
+            [$status, $updatedAt, RowSync::enc($tk), $id]);
+    }
+
+    /** Seat status + full row (Sold on payment, Available again after an upgrade). */
+    public function emsSetSeatStatus(string $id, string $status, array $seat, int $updatedAt): void
+    {
+        $this->db()->update('UPDATE `'.EventSchema::table('seats').'` SET `status` = ?, `updated_at` = ?, `data` = ?'
+            .$this->emsVersionSuffix().' WHERE `'.EventSchema::idCol().'` = ?',
+            [$status, $updatedAt, RowSync::enc($seat), $id]);
+    }
+
+    /** Ticket-class `sold` counter + full row. */
+    public function emsSetClassSold(string $id, int $sold, array $c, int $updatedAt): void
+    {
+        $this->db()->update('UPDATE `'.EventSchema::table('ticket_classes').'` SET `sold` = ?, `updated_at` = ?, `data` = ?'
+            .$this->emsVersionSuffix().' WHERE `'.EventSchema::idCol().'` = ?',
+            [$sold, $updatedAt, RowSync::enc($c), $id]);
+    }
+
+    private function emsVersionSuffix(): string
+    {
+        return EventSchema::onCore() ? ', `version` = `version` + 1' : '';
+    }
+
+    public function nowMs(): int
+    {
+        return (int) round(microtime(true) * 1000);
     }
 }

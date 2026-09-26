@@ -2,6 +2,8 @@
 
 namespace App\Modules\Event\Services;
 
+use App\Support\Modules;
+
 /**
  * The collection map of event-mysql (collections() in lib_event_mysql.php),
  * in the RowSync definition format. Order matters: getAll, saveAll's
@@ -94,5 +96,53 @@ final class EventSchema
                 'type' => ['type', $s], 'title' => ['title', $s], 'tanggal' => ['date', 'date'],
             ]],
         ];
+    }
+
+    // ───────────────────────── connection mapping (core cutover, #61) ──
+
+    /** Is event served from `core` (DB_EVENT_CONNECTION=core)? */
+    public static function onCore(): bool
+    {
+        return Modules::connectionName('event') === 'core';
+    }
+
+    /** Physical table for a legacy EMS table name on the current connection. */
+    public static function table(string $legacy): string
+    {
+        if (! self::onCore()) {
+            return $legacy;
+        }
+
+        return $legacy === 'settings' ? 'event_pengaturan' : 'event_'.$legacy;
+    }
+
+    /** The row key: the legacy id, kept in `legacy_id` on core. */
+    public static function idCol(): string
+    {
+        return self::onCore() ? 'legacy_id' : 'id';
+    }
+
+    /**
+     * The collection definitions with the current connection applied. On core
+     * every table is `event_*`, the key is `legacy_id`, and rows take the
+     * cutover options: a fresh ULID `id` and a `version` that counts accepted
+     * writes only (an older row the guard refuses is not a write).
+     */
+    public static function defs(): array
+    {
+        $core = self::onCore();
+        $out = [];
+        foreach (self::collections() as $name => $c) {
+            $c['id'] = self::idCol();
+            $c['table'] = self::table($c['table']);
+            if ($core) {
+                $c['ulid'] = true;
+                $c['versioned'] = true;
+                $c['versionAccepted'] = true;
+            }
+            $out[$name] = $c;
+        }
+
+        return $out;
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Modules\Ticketing\Services;
 
+use App\Modules\Event\Services\EventState;
 use App\Support\Modules;
 use Exception;
 use Illuminate\Database\ConnectionInterface;
@@ -18,6 +19,7 @@ class TicketBuyers
     public function __construct(
         private readonly TicketShop $shop,
         private readonly TicketMail $mail,
+        private readonly EventState $ems,
     ) {}
 
     private function db(): ConnectionInterface
@@ -38,16 +40,38 @@ class TicketBuyers
         return is_array($v) ? 'Array' : (string) $v;
     }
 
+    /** The Buyer columns `SELECT *` returned, with the legacy id back as `id`. */
+    private static function userCols(): string
+    {
+        return '`'.TicketSchema::idCol('tix_users').'` AS id, email, pass_hash, name, phone, created_at';
+    }
+
+    /**
+     * The core ULID of a Buyer, resolved from the legacy id the shop speaks.
+     * NULL on legacy, where buyer_id does not exist next to user_id.
+     */
+    private function buyerRef(string $legacyId): ?string
+    {
+        if (! TicketSchema::onCore()) {
+            return null;
+        }
+        $r = $this->db()->selectOne('SELECT `id` FROM `'.TicketSchema::table('tix_users')
+            .'` WHERE `'.TicketSchema::idCol('tix_users').'` = ?', [$legacyId]);
+
+        return $r ? (string) $r->id : null;
+    }
+
     private function byEmail(string $email): ?array
     {
-        $r = $this->db()->selectOne('SELECT * FROM tix_users WHERE email = ?', [self::email($email)]);
+        $r = $this->db()->selectOne('SELECT '.self::userCols().' FROM `'.TicketSchema::table('tix_users').'` WHERE email = ?', [self::email($email)]);
 
         return $r ? (array) $r : null;
     }
 
     private function byId(string $id): ?array
     {
-        $r = $this->db()->selectOne('SELECT * FROM tix_users WHERE id = ?', [$id]);
+        $r = $this->db()->selectOne('SELECT '.self::userCols().' FROM `'.TicketSchema::table('tix_users')
+            .'` WHERE `'.TicketSchema::idCol('tix_users').'` = ?', [$id]);
 
         return $r ? (array) $r : null;
     }
@@ -60,9 +84,15 @@ class TicketBuyers
     private function newSession(string $userId): string
     {
         $tok = TicketShop::randomToken(24);
-        $this->db()->insert('INSERT INTO tix_sessions (token,user_id,expires_at,created_at) VALUES (?,?,?,?)',
-            [$tok, $userId, TicketShop::nowMs() + 30 * 24 * 3600 * 1000, TicketShop::nowMs()]);
-        $this->db()->delete('DELETE FROM tix_sessions WHERE expires_at < ?', [TicketShop::nowMs()]);
+        if (TicketSchema::onCore()) {
+            // core: the token is the legacy key (legacy_id); buyer_id is the real FK
+            $this->db()->insert('INSERT INTO `'.TicketSchema::table('tix_sessions').'` (id,legacy_id,user_id,buyer_id,expires_at,created_at,version) VALUES (?,?,?,?,?,?,1)',
+                [TicketSchema::newId(), $tok, $userId, $this->buyerRef($userId), TicketShop::nowMs() + 30 * 24 * 3600 * 1000, TicketShop::nowMs()]);
+        } else {
+            $this->db()->insert('INSERT INTO tix_sessions (token,user_id,expires_at,created_at) VALUES (?,?,?,?)',
+                [$tok, $userId, TicketShop::nowMs() + 30 * 24 * 3600 * 1000, TicketShop::nowMs()]);
+        }
+        $this->db()->delete('DELETE FROM `'.TicketSchema::table('tix_sessions').'` WHERE expires_at < ?', [TicketShop::nowMs()]);
 
         return $tok;
     }
@@ -71,14 +101,13 @@ class TicketBuyers
     private function linkOldOrders(string $userId, string $email): int
     {
         $n = 0;
-        foreach ($this->db()->select('SELECT id, data FROM orders WHERE email = ?', [$email]) as $row) {
+        foreach ($this->ems->emsColumns('orders', ['id', 'data'], ['email' => $email]) as $row) {
             $o = json_decode($row->data, true);
             if (! is_array($o) || ! empty($o['user_id'])) {
                 continue;
             }
             $o['user_id'] = $userId;
-            $this->db()->update('UPDATE orders SET updated_at = ?, data = ? WHERE id = ?',
-                [TicketShop::nowMs(), json_encode($o, JSON_UNESCAPED_UNICODE), $row->id]);
+            $this->ems->emsTouchOrder((string) $row->id, $o, TicketShop::nowMs());
             $n++;
         }
 
@@ -105,8 +134,14 @@ class TicketBuyers
             throw new Exception('Email ini sudah terdaftar. Silakan masuk.');
         }
         $id = TicketShop::uid('usr');
-        $this->db()->insert('INSERT INTO tix_users (id,email,pass_hash,name,phone,created_at) VALUES (?,?,?,?,?,?)',
-            [$id, $email, password_hash($pass, PASSWORD_DEFAULT), $name, $phone, TicketShop::nowMs()]);
+        if (TicketSchema::onCore()) {
+            // core: a fresh ULID `id` (the legacy id moves to legacy_id) and version = 1
+            $this->db()->insert('INSERT INTO `'.TicketSchema::table('tix_users').'` (id,legacy_id,email,pass_hash,name,phone,created_at,version) VALUES (?,?,?,?,?,?,?,1)',
+                [TicketSchema::newId(), $id, $email, password_hash($pass, PASSWORD_DEFAULT), $name, $phone, TicketShop::nowMs()]);
+        } else {
+            $this->db()->insert('INSERT INTO tix_users (id,email,pass_hash,name,phone,created_at) VALUES (?,?,?,?,?,?)',
+                [$id, $email, password_hash($pass, PASSWORD_DEFAULT), $name, $phone, TicketShop::nowMs()]);
+        }
         $n = $this->linkOldOrders($id, $email);
 
         return ['user' => self::public($this->byId($id)), 'token' => $this->newSession($id), 'pesanan_lama' => $n];
@@ -131,7 +166,7 @@ class TicketBuyers
     public function logout(string $tok): array
     {
         if ($tok !== '') {
-            $this->db()->delete('DELETE FROM tix_sessions WHERE token = ?', [$tok]);
+            $this->db()->delete('DELETE FROM `'.TicketSchema::table('tix_sessions').'` WHERE `'.TicketSchema::idCol('tix_sessions').'` = ?', [$tok]);
         }
 
         return ['keluar' => true];
@@ -145,10 +180,16 @@ class TicketBuyers
         $u = $this->byEmail(is_array($email) ? '' : (string) $email);
         if ($u) {
             // a new request voids the old link
-            $this->db()->delete('DELETE FROM tix_reset WHERE user_id = ?', [$u['id']]);
+            $this->db()->delete('DELETE FROM `'.TicketSchema::table('tix_reset').'` WHERE user_id = ?', [$u['id']]);
             $tok = TicketShop::randomToken(24);
-            $this->db()->insert('INSERT INTO tix_reset (token,user_id,expires_at,created_at) VALUES (?,?,?,?)',
-                [$tok, $u['id'], TicketShop::nowMs() + 3600000, TicketShop::nowMs()]);
+            if (TicketSchema::onCore()) {
+                // core: the token is the legacy key (legacy_id); buyer_id is the real FK
+                $this->db()->insert('INSERT INTO `'.TicketSchema::table('tix_reset').'` (id,legacy_id,user_id,buyer_id,expires_at,created_at,version) VALUES (?,?,?,?,?,?,1)',
+                    [TicketSchema::newId(), $tok, $u['id'], $this->buyerRef((string) $u['id']), TicketShop::nowMs() + 3600000, TicketShop::nowMs()]);
+            } else {
+                $this->db()->insert('INSERT INTO tix_reset (token,user_id,expires_at,created_at) VALUES (?,?,?,?)',
+                    [$tok, $u['id'], TicketShop::nowMs() + 3600000, TicketShop::nowMs()]);
+            }
             if (TicketMail::ready()) {
                 try {
                     $this->mail->send($u['email'], 'Atur ulang password — Laksamana Muda Ticketing',
@@ -169,14 +210,14 @@ class TicketBuyers
         if (strlen(is_array($new) ? '' : (string) $new) < 8) {
             throw new Exception('Password minimal 8 karakter.');
         }
-        $this->db()->delete('DELETE FROM tix_reset WHERE expires_at < ?', [TicketShop::nowMs()]);
-        $r = is_array($tok) ? null : $this->db()->selectOne('SELECT user_id FROM tix_reset WHERE token = ? AND expires_at > ?', [(string) $tok, TicketShop::nowMs()]);
+        $this->db()->delete('DELETE FROM `'.TicketSchema::table('tix_reset').'` WHERE expires_at < ?', [TicketShop::nowMs()]);
+        $r = is_array($tok) ? null : $this->db()->selectOne('SELECT user_id FROM `'.TicketSchema::table('tix_reset').'` WHERE `'.TicketSchema::idCol('tix_reset').'` = ? AND expires_at > ?', [(string) $tok, TicketShop::nowMs()]);
         if (! $r) {
             throw new Exception('Tautan sudah kedaluwarsa atau pernah dipakai. Minta tautan baru.');
         }
-        $this->db()->update('UPDATE tix_users SET pass_hash = ? WHERE id = ?', [password_hash((string) $new, PASSWORD_DEFAULT), $r->user_id]);
-        $this->db()->delete('DELETE FROM tix_reset WHERE token = ?', [(string) $tok]);
-        $this->db()->delete('DELETE FROM tix_sessions WHERE user_id = ?', [$r->user_id]);
+        $this->db()->update('UPDATE `'.TicketSchema::table('tix_users').'` SET pass_hash = ? WHERE `'.TicketSchema::idCol('tix_users').'` = ?', [password_hash((string) $new, PASSWORD_DEFAULT), $r->user_id]);
+        $this->db()->delete('DELETE FROM `'.TicketSchema::table('tix_reset').'` WHERE `'.TicketSchema::idCol('tix_reset').'` = ?', [(string) $tok]);
+        $this->db()->delete('DELETE FROM `'.TicketSchema::table('tix_sessions').'` WHERE user_id = ?', [$r->user_id]);
         $u = $this->byId($r->user_id);
 
         return ['user' => self::public($u), 'token' => $this->newSession($u['id'])];
@@ -215,14 +256,14 @@ class TicketBuyers
         }
         $this->shop->sweepPendingXendit(5);
         $orders = [];
-        foreach ($this->db()->select('SELECT id, data FROM orders WHERE email = ? ORDER BY created_at DESC', [$u['email']]) as $row) {
+        foreach ($this->ems->emsColumns('orders', ['id', 'data'], ['email' => $u['email']], 'created_at DESC') as $row) {
             $o = json_decode($row->data, true);
             if (is_array($o)) {
                 $orders[$row->id] = $o;
             }
         }
         // orders bought for someone else's email still belong to the Buyer (user_id is inside the JSON)
-        foreach ($this->db()->select('SELECT id, data FROM orders ORDER BY created_at DESC LIMIT 1000') as $row) {
+        foreach ($this->ems->emsColumns('orders', ['id', 'data'], [], 'created_at DESC', 1000) as $row) {
             if (isset($orders[$row->id])) {
                 continue;
             }
