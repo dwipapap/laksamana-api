@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /*
  * #61: EMS tables in core, imported from the restored EMS database: the legacy
@@ -31,11 +32,16 @@ it('copies every legacy EMS row 1:1 and is idempotent', function () {
         $legacy = DB::connection('legacy_ems')->table($t)->get();
         $legacyId = $t === 'event_details' ? 'event_id' : 'id';
         $core = DB::connection('core')->table('event_'.$t)->get()->keyBy('legacy_id');
-        expect($core->keys()->all())->toBe($legacy->pluck($legacyId)->map(fn ($v) => (string) $v)->sort()->values()->all(), $t);
+        // The set of ids must match; core's read order (ULID PK) is not the
+        // legacy sort order, so sort both sides (#140).
+        expect($core->keys()->sort()->values()->all())->toBe($legacy->pluck($legacyId)->map(fn ($v) => (string) $v)->sort()->values()->all(), $t);
+        $hasStamp = Schema::connection('legacy_ems')->hasColumn($t, 'updated_at');
         foreach ($legacy as $r) {
             $row = $core[(string) $r->{$legacyId}];
-            expect($row->data)->toBe($r->data)
-                ->and((int) $row->updated_at)->toBe((int) $r->updated_at, $t);
+            expect($row->data)->toBe($r->data);
+            if ($hasStamp) { // #140: legacy checkins has no updated_at
+                expect((int) $row->updated_at)->toBe((int) $r->updated_at, $t);
+            }
         }
     }
     expect(DB::connection('core')->table('event_pengaturan')->pluck('k')->sort()->values()->all())
