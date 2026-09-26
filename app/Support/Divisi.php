@@ -81,8 +81,11 @@ final class Divisi
      *
      * @param  array<string,string>  $override  divOverride map (uid => divisi)
      * @param  array<string,mixed>|null  $rosterRow  roster row (needs `keterangan`), null when unknown
+     * @param  array<string,array<int,string>>  $synonyms  Divisi words, first match wins (core: `divisi_kata` by `divisi.urutan`)
+     * @param  array<int,string>  $officeWords  words that make anyone Nonshift (core: `divisi_kata` without a Divisi)
      */
-    public static function resolve(string $uid, array $override, ?array $rosterRow): string
+    public static function resolve(string $uid, array $override, ?array $rosterRow,
+        array $synonyms = self::SYNONYMS, array $officeWords = self::OFFICE_WORDS): string
     {
         if (isset($override[$uid]) && $override[$uid] !== '') {
             return (string) $override[$uid];
@@ -91,12 +94,12 @@ final class Divisi
             return self::NONSHIFT;
         }
         $kata = preg_split('/[^a-z]+/', strtolower((string) ($rosterRow['keterangan'] ?? '')), -1, PREG_SPLIT_NO_EMPTY) ?: [];
-        foreach (self::OFFICE_WORDS as $x) {
+        foreach ($officeWords as $x) {
             if (in_array($x, $kata, true)) {
                 return self::NONSHIFT;
             }
         }
-        foreach (self::SYNONYMS as $kode => $sin) {
+        foreach ($synonyms as $kode => $sin) {
             foreach ($sin as $x) {
                 if (in_array($x, $kata, true)) {
                     return $kode;
