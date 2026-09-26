@@ -6,6 +6,7 @@ use App\Support\Modules;
 use App\Support\NamedLock;
 use App\Support\RowSync;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Support\Str;
 use RuntimeException;
 use stdClass;
 
@@ -79,6 +80,28 @@ class BdState
         ];
     }
 
+    /** BD cut over (#59): the Modul reads and writes the bd_* tables of core. */
+    public static function onCore(): bool
+    {
+        return Modules::connectionName('bd') === 'core';
+    }
+
+    /** Physical table for a legacy table name on the current connection. */
+    public static function table(string $legacy): string
+    {
+        if (! self::onCore()) {
+            return $legacy;
+        }
+
+        return $legacy === 'settings' ? 'bd_pengaturan' : 'bd_'.$legacy;
+    }
+
+    /** The row key: the legacy id, kept in `legacy_id` on core. */
+    public static function idCol(): string
+    {
+        return self::onCore() ? 'legacy_id' : 'id';
+    }
+
     public static function nowMs(): int
     {
         return (int) round(microtime(true) * 1000);
@@ -139,7 +162,9 @@ class BdState
     public function rows(string $table): array
     {
         $rows = [];
-        foreach ($this->db()->select("SELECT `data` FROM `$table` ORDER BY `created_at` ASC, `id` ASC") as $r) {
+        $t = self::table($table);
+        $id = self::idCol();
+        foreach ($this->db()->select("SELECT `data` FROM `$t` ORDER BY `created_at` ASC, `$id` ASC") as $r) {
             $d = json_decode((string) $r->data, true);
             if (is_array($d)) {
                 $rows[] = $d;
@@ -151,7 +176,7 @@ class BdState
 
     public function setting(string $k, mixed $default): mixed
     {
-        $row = $this->db()->selectOne('SELECT `v` FROM `settings` WHERE `k` = ? LIMIT 1', [$k]);
+        $row = $this->db()->selectOne('SELECT `v` FROM `'.self::table('settings').'` WHERE `k` = ? LIMIT 1', [$k]);
         if (! $row) {
             return $default;
         }
@@ -162,14 +187,14 @@ class BdState
 
     public function putSetting(string $k, mixed $v): void
     {
-        RowSync::putSetting($this->db(), $k, $v);
+        RowSync::putSetting($this->db(), $k, $v, self::table('settings'), self::onCore());
     }
 
     public function stats(): array
     {
         $out = ['backend' => 'laravel', ...$this->identity()];
         foreach (['people', 'projects', 'tasks', 'routines', 'coord_requests', 'purchase_orders', 'purchase_requests', 'agenda', 'settings'] as $t) {
-            $out[$t] = (int) $this->db()->selectOne("SELECT COUNT(*) c FROM `$t`")->c;
+            $out[$t] = (int) $this->db()->selectOne('SELECT COUNT(*) c FROM `'.self::table($t).'`')->c;
         }
         $blob = strlen(RowSync::enc($this->read()));
         $out['blobChars'] = $blob;
@@ -245,18 +270,31 @@ class BdState
      */
     public function writeRow(array $c, array $r, int $updatedAt, int $createdAt, bool $insertOnly): void
     {
+        $core = self::onCore();
         $cols = array_keys($c['cols']);
-        $names = ['id', ...$cols, 'updated_at', 'created_at', 'data'];
-        $args = [self::str($r['id'])];
+        $args = [];
         foreach ($c['cols'] as [$field, $type]) {
             $args[] = self::ambil($r, $field, $type);
         }
-        array_push($args, $updatedAt, $createdAt, RowSync::enc($r));
+        if ($core && $c['table'] === 'people') {
+            // the linked Office User as a real FK (NULL when unlinked or unknown)
+            $cols[] = 'user_id';
+            $officeId = $args[array_search('office_user_id', array_keys($c['cols']), true)];
+            $args[] = $officeId === null ? null : $this->db()->selectOne('SELECT `id` FROM `user` WHERE `legacy_id` = ?', [$officeId])?->id;
+        }
+        $names = $core
+            ? ['id', 'legacy_id', ...$cols, 'updated_at', 'created_at', 'data', 'version']
+            : ['id', ...$cols, 'updated_at', 'created_at', 'data'];
+        $args = $core
+            ? [strtolower((string) Str::ulid()), self::str($r['id']), ...$args, $updatedAt, $createdAt, RowSync::enc($r), 1]
+            : [self::str($r['id']), ...$args, $updatedAt, $createdAt, RowSync::enc($r)];
 
-        $sql = 'INSERT '.($insertOnly ? 'IGNORE ' : '')."INTO `{$c['table']}` (`".implode('`,`', $names).'`) VALUES ('
+        $sql = 'INSERT '.($insertOnly ? 'IGNORE ' : '').'INTO `'.self::table($c['table']).'` (`'.implode('`,`', $names).'`) VALUES ('
             .implode(',', array_fill(0, count($names), '?')).')';
         if (! $insertOnly) {
-            $upd = array_map(fn ($n) => "`$n` = IF(VALUES(`updated_at`) >= `updated_at`, VALUES(`$n`), `$n`)", [...$cols, 'data']);
+            // version first: later assignments see the NEW updated_at
+            $upd = $core ? ['`version` = `version` + IF(VALUES(`updated_at`) >= `updated_at`, 1, 0)'] : [];
+            array_push($upd, ...array_map(fn ($n) => "`$n` = IF(VALUES(`updated_at`) >= `updated_at`, VALUES(`$n`), `$n`)", [...$cols, 'data']));
             $upd[] = '`updated_at` = IF(VALUES(`updated_at`) >= `updated_at`, VALUES(`updated_at`), `updated_at`)';
             $sql .= ' ON DUPLICATE KEY UPDATE '.implode(', ', $upd);
         }
@@ -273,8 +311,9 @@ class BdState
         if (! $ids && $batas <= 0) {
             return;
         }
+        $table = self::table($table);
         if ($ids) {
-            $sql = "DELETE FROM `$table` WHERE `id` NOT IN (".implode(',', array_fill(0, count($ids), '?')).')';
+            $sql = "DELETE FROM `$table` WHERE `".self::idCol().'` NOT IN ('.implode(',', array_fill(0, count($ids), '?')).')';
             $args = $ids;
             if ($batas > 0) {
                 $sql .= ' AND `updated_at` <= ?';
@@ -341,7 +380,9 @@ class BdState
             if ($id === '') {
                 throw new RuntimeException('id PO kosong');
             }
-            $row = $this->db()->selectOne('SELECT `data` FROM `purchase_orders` WHERE `id` = ? LIMIT 1', [$id]);
+            $po = self::table('purchase_orders');
+            $key = self::idCol();
+            $row = $this->db()->selectOne("SELECT `data` FROM `$po` WHERE `$key` = ? LIMIT 1", [$id]);
             if (! $row) {
                 throw new RuntimeException('PO tidak ditemukan: '.$id);
             }
@@ -375,7 +416,7 @@ class BdState
             }
             $data['updatedAt'] = $now;
 
-            $this->db()->update('UPDATE `purchase_orders` SET `data` = ?, `status` = ?, `updated_at` = ? WHERE `id` = ?',
+            $this->db()->update("UPDATE `$po` SET `data` = ?, `status` = ?, `updated_at` = ?".(self::onCore() ? ', `version` = `version` + 1' : '')." WHERE `$key` = ?",
                 [RowSync::enc($data), isset($data['status']) ? self::str($data['status']) : '', $now, $id]);
 
             return [

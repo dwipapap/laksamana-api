@@ -5,6 +5,7 @@ namespace Tests;
 use App\Auth\AccountRepository;
 use App\Modules\Absensi\Services\AbsensiService;
 use App\Modules\Akademi\Services\AkademiSchema;
+use App\Modules\Bd\Services\BdState;
 use App\Modules\Jadwal\Services\JadwalService;
 use App\Modules\Konten\Services\KontenSchema;
 use App\Modules\Marketing\Services\MarketingSchema;
@@ -65,6 +66,9 @@ abstract class TestCase extends BaseTestCase
         }
         if (AkademiSchema::onCore()) {
             Artisan::call('core:import', ['module' => 'akademi']);
+        }
+        if (BdState::onCore()) {
+            Artisan::call('core:import', ['module' => 'bd']);
         }
     }
 
