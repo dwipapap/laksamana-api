@@ -101,3 +101,17 @@ The frontend draws QR codes in JS, and the server puts them into the PDF. Both m
 
   Result: 58/58 identical. After `--keep`, `seat_holds`, `orders`, `tickets`, `seats`, `ticket_classes` and `tix_gagal` match between old and new. The only exceptions are random ids/tokens and the order of seat items inside one order, which legacy reads without `ORDER BY` through an index on random hold ids. The runner gained `legacyDefines`, `laravelEnv`, per-case `headers`, `rawBody[Size]` and `manualRedirect`.
 - **Not in this cluster:** the Buyer account actions (`daftar`, `masuk`, `keluar`, `lupaPassword`, `resetPassword`, `saya`, `tiketSaya`) and `ujiEmail` still answer `Aksi tidak dikenal` on Laravel until #40.
+
+## Port notes (#40: Buyer accounts, mail, milestone)
+
+- **Buyer actions:** `daftar`, `masuk`, `keluar`, `lupaPassword`, `resetPassword`, `saya`, `tiketSaya` and `ujiEmail` → `TicketBuyers` and the compat controller. The rules are the legacy ones:
+  - `password_hash` bcrypt; 8-character minimum
+  - one message for unknown email and wrong password
+  - `tix_gagal` throttles on `masuk` (8/15 min) and `lupa` (5/30 min)
+  - reset links: 1 hour, single use, and they cut every session
+  - old orders linked by email
+  - `tiketSaya` by email + `user_id`
+  "Buyer" is in CONTEXT.md.
+- **Mail:** legacy `kirim_email` was a hand-written SMTP client. It is replaced by the `ticketing` mailer (Symfony SMTP) with the `ShopMail` mailable; the HTML bodies are the legacy ones. The mail's exact bytes on the wire differ; its content, attachment and failure handling do not. `TicketPdf` builds the attachment.
+- **Parity:** 83/83 identical, including every Buyer action. The Buyer reads run before any purchase, so the refs they list are stable.
+- **devproxy / e2e:** `node tools/devproxy/serve.mjs --laravel account,ticketing` routes `/ticketing-api` to Laravel with `XENDIT_MOCK` on. `node tools/e2e/ticketing.mjs` drives the real shop page and passes 15/15: events, register, session reload, seat map, hold, checkout, simulated payment, e-ticket with drawn QR codes, Tiket Saya, logout, forgot password, and the DB restored.

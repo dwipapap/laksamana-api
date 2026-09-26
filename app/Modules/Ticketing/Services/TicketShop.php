@@ -296,6 +296,14 @@ class TicketShop
         return $this->summary($rows[0]);
     }
 
+    /** An event whatever its status: a past or cancelled event still belongs in a Buyer's history. */
+    public function eventAnyStatus(string $id): ?array
+    {
+        $rows = $this->fetch('SELECT data FROM events WHERE id = ?', [$id]);
+
+        return $rows ? $this->summary($rows[0]) : null;
+    }
+
     private function classes(string $eid): array
     {
         return $this->fetch('SELECT data FROM ticket_classes WHERE event_id = ?', [$eid]);

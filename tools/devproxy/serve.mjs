@@ -49,6 +49,7 @@ const LEGACY = {
   akademi: ['akademi-mysql', 'akademi-api-mysql', 'lakk5493_db_akademi'],
   hr: ['hr-mysql', 'hr-api-mysql', 'lakk5493_db_hr'],
   hlife: ['howandi-life-mysql', 'howandi-life-api-mysql', 'lakk5493_db_hlife'],
+  ticketing: ['ticketing-mysql', 'ticketing-api', 'lakk5493_db_ems'],
 };
 const prefixToKey = Object.fromEntries(Object.entries(LEGACY).map(([k, v]) => [v[1], k]));
 
@@ -67,6 +68,7 @@ define('DATA_DIR', ${JSON.stringify(dataDir)}); define('TRAINING_DIR', ${JSON.st
 define('ACCOUNT_API_URL','${self}/account-api-mysql/api.php');
 define('JADWAL_API_URL','${self}/jadwal-api-mysql/api.php');
 define('DW_API_URL','${self}/dw-api-mysql/api.php');
+define('XENDIT_MOCK', true);
 `];
 };
 for (const [key, [dir, prefix, db]] of Object.entries(LEGACY)) {
@@ -96,7 +98,7 @@ const start = (cmd, argv, opts) => { const p = spawn(cmd, argv, { stdio: 'ignore
 start(PHP, ['-S', `127.0.0.1:${OLD_PORT}`, '-t', oldRoot], { cwd: oldRoot });
 start(PHP, ['-S', `127.0.0.1:${LARAVEL_PORT}`, '-t', path.join(API_ROOT, 'public'),
   path.join(API_ROOT, 'vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php')],
-  { cwd: path.join(API_ROOT, 'public'), env: { ...process.env, LAKSAMANA_ENV_LABEL: 'lokal' } });
+  { cwd: path.join(API_ROOT, 'public'), env: { ...process.env, LAKSAMANA_ENV_LABEL: 'lokal', XENDIT_MOCK: 'true' } });
 const cleanup = () => { for (const p of procs) try { p.kill(); } catch {} try { fs.rmSync(scratch, { recursive: true, force: true }); } catch {} };
 process.on('exit', cleanup);
 process.on('SIGINT', () => process.exit(130));

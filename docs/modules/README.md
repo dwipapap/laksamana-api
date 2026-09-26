@@ -25,7 +25,7 @@ source disagree, the source wins; then correct the spec.
 | finance | [finance.md](finance.md) | **done** | full contract, see docs/api/finance.md | 92/92 | 7 + 8 + 5 + 6 |
 | reservasi | [reservasi.md](reservasi.md) | **done** | full contract, see docs/api/reservasi.md | 30/30 | 7 + 6 |
 | stock | [stock.md](stock.md) | **done** (19/19 files) | full contract, see docs/api/stock.md | 214/214 | 70 + 17 + 25 + 25 |
-| ticketing | [ticketing.md](ticketing.md) | pending | pending | — | — |
+| ticketing | [ticketing.md](ticketing.md) | **done** | full contract, see docs/api/ticketing.md (public, Buyer sessions) | 83/83 | 9 + 3 |
 
 Update this table (and the table in CLAUDE.md §5) whenever a module moves.
 

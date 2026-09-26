@@ -37,6 +37,18 @@ return [
 
     'mailers' => [
 
+        // The public ticket shop's own domain account (legacy ticketing SMTP_*):
+        // 465 is TLS from the first byte, anything else starts plain then STARTTLS.
+        'ticketing' => [
+            'transport' => 'smtp',
+            'scheme' => (int) env('TIX_SMTP_PORT', 465) === 465 ? 'smtps' : 'smtp',
+            'host' => env('TIX_SMTP_HOST', ''),
+            'port' => (int) env('TIX_SMTP_PORT', 465),
+            'username' => env('TIX_SMTP_USER'),
+            'password' => env('TIX_SMTP_PASS'),
+            'timeout' => 20,
+        ],
+
         'smtp' => [
             'transport' => 'smtp',
             'scheme' => env('MAIL_SCHEME'),

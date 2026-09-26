@@ -2,6 +2,8 @@
 
 namespace App\Modules\Ticketing\Http\Legacy;
 
+use App\Modules\Ticketing\Services\TicketBuyers;
+use App\Modules\Ticketing\Services\TicketMail;
 use App\Modules\Ticketing\Services\TicketShop;
 use App\Support\Legacy\Envelope;
 use Exception;
@@ -25,8 +27,8 @@ use Throwable;
  *   token, 500 anything else, so Xendit retries); DB and PHP errors are never
  *   told to the public
  *
- * Buyer-account actions (daftar, masuk, keluar, lupaPassword, resetPassword, saya,
- * tiketSaya, ujiEmail) are #40.
+ * Buyer accounts ride in the body (POST `sesi`) or `?sesi=` (GET): no cookies, the
+ * page may live on another domain.
  */
 class TicketingLegacyController
 {
@@ -36,7 +38,11 @@ class TicketingLegacyController
         'X-Frame-Options' => 'DENY',
     ];
 
-    public function __construct(private readonly TicketShop $shop) {}
+    public function __construct(
+        private readonly TicketShop $shop,
+        private readonly TicketBuyers $buyers,
+        private readonly TicketMail $mail,
+    ) {}
 
     public function __invoke(Request $request): Response
     {
@@ -111,6 +117,14 @@ class TicketingLegacyController
                 'webhook' => Envelope::okData($this->shop->webhook($body, $hdr)),
                 'simbayar' => Envelope::okData($this->shop->simulatePayment(self::cleanId($B('ref')), self::cleanId($B('token')))),
                 'order' => Envelope::okData($this->shop->orderStatus(self::cleanId($G('ref')), self::cleanId($G('token')))),
+                'daftar' => Envelope::okData($this->buyers->register($body)),
+                'masuk' => Envelope::okData($this->buyers->login($body)),
+                'keluar' => Envelope::okData($this->buyers->logout(self::cleanId($B('sesi')))),
+                'lupaPassword' => Envelope::okData($this->buyers->forgotPassword($B('email'))),
+                'resetPassword' => Envelope::okData($this->buyers->resetPassword($B('token'), $B('password'))),
+                'saya' => Envelope::okData(TicketBuyers::public($this->shop->buyerFromSession(self::cleanId($G('sesi'))))),
+                'tiketSaya' => Envelope::okData($this->buyers->myTickets($this->shop->buyerFromSession(self::cleanId($G('sesi'))))),
+                'ujiEmail' => $this->testMail((string) $G('ke')),
                 default => Envelope::error('Aksi tidak dikenal: '.$action),
             };
         } catch (Throwable $e) {
@@ -152,6 +166,20 @@ class TicketingLegacyController
         }
 
         return Envelope::okData($this->shop->release(self::cleanId($B('hold_token')), is_array($s) ? $s : null));
+    }
+
+    /** SMTP self-test before a real Buyer depends on it; never in production (it would mail as our domain). */
+    private function testMail(string $to): Response
+    {
+        if (TicketShop::env() === 'produksi') {
+            return Envelope::error('Uji email tidak tersedia di produksi.');
+        }
+        if (! filter_var($to, FILTER_VALIDATE_EMAIL)) {
+            return Envelope::error('Isi ?ke= dengan alamat email lengkap, mis. ?ke=nama@gmail.com (dapat: "'.$to.'").');
+        }
+        $this->mail->send($to, 'Uji kirim Laksamana Muda Ticketing', '<p>Kalau email ini sampai, SMTP sudah benar.</p>');
+
+        return Envelope::okData(['terkirim_ke' => $to]);
     }
 
     /** Not JSON: the image itself (cacheable), a redirect to the EMS API, or an empty 404. */

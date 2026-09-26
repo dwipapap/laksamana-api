@@ -118,6 +118,10 @@ _Avoid_: Head, Leader, Manager
 A User whose Tim marks them as a head (the word "Head"), which counts for leader bonuses; unrelated to Kepala Divisi.
 _Avoid_: Head, Kepala Divisi
 
+**Buyer**:
+A member of the public who buys event tickets on the public ticket shop with an email and password. A Buyer is not a User: separate accounts (`tix_users`), their own sessions, no Akses, and never listed on the Roster.
+_Avoid_: Pembeli (in code), Customer account, User, Member
+
 **Pekerja Harian**:
 A daily worker hired per need; not a User, never logs in, identified by phone number, and may work in several Divisi.
 _Avoid_: DW (as a person), Kru, Freelancer, Part-timer
