@@ -4,6 +4,7 @@ namespace App\Modules\Kompas\Services;
 
 use App\Support\Modules;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Support\Str;
 
 /**
  * Kompas → Catatan Void (void_log) and QRIS BRI fund matching (bri_mutasi,
@@ -21,6 +22,12 @@ use Illuminate\Database\ConnectionInterface;
  * Every result is the legacy array with 'ok' (the controller wraps it as
  * {ok:true, data:<result>} or returns the failure array as is).
  * Runtime DDL / column checks (void_pastikan, bri_pastikan…) are not ported.
+ *
+ * Core (#69, DB_KOMPAS_CONNECTION=core): the same statements run on the
+ * kompas_* tables of `core` (see KompasState::t()), rows keyed by
+ * `legacy_id`, the void percentages as the `void` document of
+ * kompas_pengaturan, and `version` counting accepted writes. Mapping:
+ * docs/db/kompas.md.
  */
 class VoidBri
 {
@@ -33,6 +40,71 @@ class VoidBri
     public function db(): ConnectionInterface
     {
         return Modules::db('kompas');
+    }
+
+    /** Physical table for a legacy table name on the current connection. */
+    private static function t(string $table): string
+    {
+        return KompasState::t($table);
+    }
+
+    /** Record id column: the legacy id, or `legacy_id` on core. */
+    private static function idCol(): string
+    {
+        return KompasState::idCol();
+    }
+
+    /**
+     * The legacy id of a row read with `SELECT *`, whichever storage holds it:
+     * it is what every wire shape and the v1 edit/cancel paths speak.
+     */
+    private static function rowId(object $row): string
+    {
+        return (string) (KompasState::onCore() ? $row->legacy_id : $row->id);
+    }
+
+    /** `a`,`b`,`c` — a column list built from the SAME array as the bindings. */
+    private static function cols(array $cols): string
+    {
+        return KompasState::cols($cols);
+    }
+
+    /** ?,?,? — one placeholder per column, so the two lists cannot drift. */
+    private static function ph(int $n): string
+    {
+        return KompasState::ph($n);
+    }
+
+    private static function ulid(): string
+    {
+        return strtolower((string) Str::ulid());
+    }
+
+    /**
+     * A row's `diubah` version (ms), or null when the row is gone — the v1
+     * edit/cancel precondition (VoidBriController).
+     */
+    public function rowVersion(string $table, string $id): ?int
+    {
+        $row = $this->db()->selectOne('SELECT `diubah` FROM `'.self::t($table).'` WHERE `'.self::idCol().'`=?', [$id]);
+
+        return $row ? (int) $row->diubah : null;
+    }
+
+    /**
+     * The core User an actor key names, on core only. The key is what the caller
+     * recorded as `oleh_id`: the legacy account id when a Sesi sent it, the core
+     * ULID when v1 did. '' (or an unknown key) is NULL, never invented.
+     */
+    private function userId(mixed $key): ?string
+    {
+        $k = self::s($key);
+        if ($k === '') {
+            return null;
+        }
+        $u = $this->db()->selectOne('SELECT `id` FROM `user` WHERE `legacy_id` = ? OR `id` = ? LIMIT 1', [$k, $k]);
+
+        return $u ? (string) $u->id : null;
     }
 
     private static function s(mixed $v): string
@@ -91,6 +163,16 @@ class VoidBri
     /** Tax/service percentages (defaults 10 / 5, measured on the POS cancel report). */
     public function voidSetting(): array
     {
+        if (KompasState::onCore()) {
+            $r = $this->db()->selectOne('SELECT `v` FROM `'.self::t('void_setting')."` WHERE `k`='void'");
+            $d = $r ? json_decode((string) $r->v, true) : null;
+            if (! is_array($d)) {
+                return ['tax' => 10.0, 'service' => 5.0, 'diubah' => 0, 'oleh' => ''];
+            }
+
+            return ['tax' => (float) $d['tax_persen'], 'service' => (float) $d['service_persen'],
+                'diubah' => (float) $d['updated_at'], 'oleh' => (string) $d['oleh']];
+        }
         $r = $this->db()->selectOne('SELECT `tax_persen`,`service_persen`,`updated_at`,`updated_by` FROM `void_setting` WHERE `id`=1');
         if (! $r) {
             return ['tax' => 10.0, 'service' => 5.0, 'diubah' => 0, 'oleh' => ''];
@@ -111,6 +193,19 @@ class VoidBri
             if (! is_finite($p) || $p < 0 || $p > 100) {
                 return ['ok' => false, 'error' => 'Persen harus antara 0 dan 100.'];
             }
+        }
+        if (KompasState::onCore()) {
+            // The legacy columns are DECIMAL(6,3): keep the same value the old
+            // row would have stored, as the `void` settings document.
+            $now = self::ms();
+            $doc = KompasState::enc(['tax_persen' => round($tax, 3), 'service_persen' => round($svc, 3),
+                'updated_at' => $now, 'oleh' => self::cut($oleh, 120)]);
+            $this->db()->insert('INSERT INTO `'.self::t('void_setting').'` (`id`,`legacy_id`,`k`,`v`,`created_at`,`updated_at`,`version`)
+                VALUES (?,1,\'void\',?,?,?,1)
+                ON DUPLICATE KEY UPDATE `version`=`version`+(`v`<>VALUES(`v`)), `v`=VALUES(`v`), `updated_at`=VALUES(`updated_at`)',
+                [self::ulid(), $doc, $now, $now]);
+
+            return ['ok' => true, 'saved' => true, 'setting' => $this->voidSetting()];
         }
         $this->db()->insert('INSERT INTO `void_setting` (`id`,`tax_persen`,`service_persen`,`updated_at`,`updated_by`) VALUES (1,?,?,?,?)
             ON DUPLICATE KEY UPDATE `tax_persen`=VALUES(`tax_persen`), `service_persen`=VALUES(`service_persen`),
@@ -201,6 +296,21 @@ class VoidBri
 
     private function insertVoid(string $id, array $nil, string $item, array $rn, string $oleh, string $olehId, int $now): void
     {
+        if (KompasState::onCore()) {
+            // Columns and bindings come from ONE array: `user_id` can never drift
+            // out of step with the values again.
+            $cols = ['tgl' => $nil['tgl'], 'bill' => mb_substr($nil['bill'], 0, 60), 'item' => mb_substr($item, 0, 200),
+                'penginput' => mb_substr($nil['penginput'], 0, 120), 'salah' => mb_substr($nil['salah'], 0, 120),
+                'alasan' => $nil['alasan'], 'nominal' => $rn['nominal'], 'subtotal' => $rn['subtotal'],
+                'service' => $rn['service'], 'tax' => $rn['tax'], 'oleh' => self::cut($oleh, 120),
+                'oleh_id' => self::cut($olehId, 60), 'user_id' => $this->userId($olehId), 'dibuat' => $now,
+                'diubah' => $now, 'diubah_oleh' => self::cut($oleh, 120), 'created_at' => $now, 'updated_at' => $now,
+                'version' => 1];
+            $this->db()->insert('INSERT INTO `'.self::t('void_log').'` (`id`,`legacy_id`,'.self::cols(array_keys($cols)).')'
+                .' VALUES (?,?,'.self::ph(count($cols)).')', [self::ulid(), $id, ...array_values($cols)]);
+
+            return;
+        }
         $this->db()->insert('INSERT INTO `void_log` (`id`,`tgl`,`bill`,`item`,`penginput`,`salah`,`alasan`,`nominal`,
             `subtotal`,`service`,`tax`,`oleh`,`oleh_id`,`dibuat`,`diubah`,`diubah_oleh`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
             [$id, $nil['tgl'], mb_substr($nil['bill'], 0, 60), mb_substr($item, 0, 200), mb_substr($nil['penginput'], 0, 120),
@@ -235,16 +345,23 @@ class VoidBri
 
         $now = self::ms();
         $id = trim(self::s($d['id'] ?? ''));
-        $lama = $id !== '' ? $this->db()->selectOne('SELECT * FROM `void_log` WHERE `id`=?', [$id]) : null;
+        $lama = $id !== '' ? $this->db()->selectOne('SELECT * FROM `'.self::t('void_log').'` WHERE `'.self::idCol().'`=?', [$id]) : null;
         if ($lama) {
             if ((float) $lama->batal_at > 0) {
                 return ['ok' => false, 'error' => 'Catatan ini sudah dibatalkan dan tidak bisa diubah lagi.'];
             }
+            $vals = [$nil['tgl'], mb_substr($nil['bill'], 0, 60), mb_substr($nil['item'], 0, 200), mb_substr($nil['penginput'], 0, 120),
+                mb_substr($nil['salah'], 0, 120), $nil['alasan'], $rn['nominal'], $rn['subtotal'], $rn['service'], $rn['tax'],
+                $now, self::cut($oleh, 120)];
+            if (KompasState::onCore()) {
+                $this->db()->update('UPDATE `'.self::t('void_log').'` SET `tgl`=?,`bill`=?,`item`=?,`penginput`=?,`salah`=?,`alasan`=?,
+                    `nominal`=?,`subtotal`=?,`service`=?,`tax`=?,`diubah`=?,`diubah_oleh`=?,`updated_at`=?,`version`=`version`+1
+                    WHERE `'.self::idCol().'`=?', [...$vals, $now, $id]);
+
+                return ['ok' => true, 'saved' => true, 'id' => $id, 'baru' => false];
+            }
             $this->db()->update('UPDATE `void_log` SET `tgl`=?,`bill`=?,`item`=?,`penginput`=?,`salah`=?,`alasan`=?,
-                `nominal`=?,`subtotal`=?,`service`=?,`tax`=?,`diubah`=?,`diubah_oleh`=? WHERE `id`=?',
-                [$nil['tgl'], mb_substr($nil['bill'], 0, 60), mb_substr($nil['item'], 0, 200), mb_substr($nil['penginput'], 0, 120),
-                    mb_substr($nil['salah'], 0, 120), $nil['alasan'], $rn['nominal'], $rn['subtotal'], $rn['service'], $rn['tax'],
-                    $now, self::cut($oleh, 120), $id]);
+                `nominal`=?,`subtotal`=?,`service`=?,`tax`=?,`diubah`=?,`diubah_oleh`=? WHERE `id`=?', [...$vals, $id]);
 
             return ['ok' => true, 'saved' => true, 'id' => $id, 'baru' => false];
         }
@@ -341,12 +458,19 @@ class VoidBri
         if ($alasan === '') {
             return ['ok' => false, 'error' => 'Alasan pembatalan wajib diisi.'];
         }
-        $row = $this->db()->selectOne('SELECT `batal_at` FROM `void_log` WHERE `id`=?', [$id]);
+        $row = $this->db()->selectOne('SELECT `batal_at` FROM `'.self::t('void_log').'` WHERE `'.self::idCol().'`=?', [$id]);
         if (! $row) {
             return ['ok' => false, 'error' => 'Catatan tidak ditemukan.'];
         }
         if ((float) $row->batal_at > 0) {
             return ['ok' => false, 'error' => 'Catatan ini sudah dibatalkan.'];
+        }
+        if (KompasState::onCore()) {
+            $now = self::ms();
+            $this->db()->update('UPDATE `'.self::t('void_log').'` SET `batal_at`=?,`batal_oleh`=?,`batal_alasan`=?,`updated_at`=?,`version`=`version`+1
+                WHERE `'.self::idCol().'`=?', [$now, self::cut($oleh, 120), mb_substr($alasan, 0, 255), $now, $id]);
+
+            return ['ok' => true, 'saved' => true];
         }
         $this->db()->update('UPDATE `void_log` SET `batal_at`=?,`batal_oleh`=?,`batal_alasan`=? WHERE `id`=?',
             [self::ms(), self::cut($oleh, 120), mb_substr($alasan, 0, 255), $id]);
@@ -358,11 +482,11 @@ class VoidBri
     public function voidList(mixed $dari, mixed $sampai): array
     {
         [$where, $args] = self::range($dari, $sampai);
-        $total = (int) $this->db()->selectOne('SELECT COUNT(*) AS c FROM `void_log`'.$where, $args)->c;
+        $total = (int) $this->db()->selectOne('SELECT COUNT(*) AS c FROM `'.self::t('void_log').'`'.$where, $args)->c;
         $baris = [];
-        foreach ($this->db()->select('SELECT * FROM `void_log`'.$where.' ORDER BY `tgl` DESC, `dibuat` DESC LIMIT '.self::VOID_MAX, $args) as $r) {
+        foreach ($this->db()->select('SELECT * FROM `'.self::t('void_log').'`'.$where.' ORDER BY `tgl` DESC, `dibuat` DESC LIMIT '.self::VOID_MAX, $args) as $r) {
             $baris[] = [
-                'id' => (string) $r->id, 'tgl' => (string) $r->tgl, 'bill' => (string) $r->bill, 'item' => (string) $r->item,
+                'id' => self::rowId($r), 'tgl' => (string) $r->tgl, 'bill' => (string) $r->bill, 'item' => (string) $r->item,
                 'penginput' => (string) ($r->penginput ?? ''), 'salah' => (string) ($r->salah ?? ''),
                 'alasan' => (string) $r->alasan, 'nominal' => (float) $r->nominal,
                 'subtotal' => (float) $r->subtotal, 'service' => (float) $r->service, 'tax' => (float) $r->tax,
@@ -460,19 +584,35 @@ class VoidBri
         // counted BEFORE writing, or "new rows" would always be 0
         $ada = [];
         foreach ($siap as $s) {
-            if ($this->db()->selectOne('SELECT `sidik` FROM `bri_mutasi` WHERE `sidik`=?', [$s['sidik']])) {
+            if ($this->db()->selectOne('SELECT `sidik` FROM `'.self::t('bri_mutasi').'` WHERE `sidik`=?', [$s['sidik']])) {
                 $ada[$s['sidik']] = true;
             }
         }
         $this->db()->transaction(function () use ($siap, $oleh, $olehId, $now) {
+            $uid = KompasState::onCore() ? $this->userId($olehId) : null;
             foreach ($siap as $i => $s) {
+                $vals = [$s['sidik'], $s['tgl'], $s['jam'], $s['nominal'], $s['ket'], $s['settle'], $s['booking'],
+                    self::cut($oleh, 120), self::cut($olehId, 60), $now, $now, self::cut($oleh, 120)];
+                if (KompasState::onCore()) {
+                    $cols = ['sidik' => $s['sidik'], 'tgl' => $s['tgl'], 'jam' => $s['jam'], 'nominal' => $s['nominal'],
+                        'ket' => $s['ket'], 'settle' => $s['settle'], 'booking' => $s['booking'], 'oleh' => self::cut($oleh, 120),
+                        'oleh_id' => self::cut($olehId, 60), 'user_id' => $uid, 'dibuat' => $now, 'diubah' => $now,
+                        'diubah_oleh' => self::cut($oleh, 120), 'created_at' => $now, 'updated_at' => $now, 'version' => 1];
+                    $this->db()->insert('INSERT INTO `'.self::t('bri_mutasi').'` (`id`,`legacy_id`,'.self::cols(array_keys($cols)).')'
+                        .' VALUES (?,?,'.self::ph(count($cols)).')'
+                        ." ON DUPLICATE KEY UPDATE `version`=`version`+1, `ket` = IF(VALUES(`ket`)='', `ket`, VALUES(`ket`)),"
+                        .' `settle` = COALESCE(VALUES(`settle`), `settle`), `booking` = COALESCE(VALUES(`booking`), `booking`),'
+                        .' `diubah` = VALUES(`diubah`), `diubah_oleh` = VALUES(`diubah_oleh`), `updated_at` = VALUES(`updated_at`)',
+                        [self::ulid(), 'b'.dechex($now).dechex($i).substr(bin2hex(random_bytes(4)), 0, 8), ...array_values($cols)]);
+
+                    continue;
+                }
                 $this->db()->insert("INSERT INTO `bri_mutasi` (`id`,`sidik`,`tgl`,`jam`,`nominal`,`ket`,`settle`,`booking`,
                     `oleh`,`oleh_id`,`dibuat`,`diubah`,`diubah_oleh`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                     ON DUPLICATE KEY UPDATE `ket` = IF(VALUES(`ket`)='', `ket`, VALUES(`ket`)),
                       `settle` = COALESCE(VALUES(`settle`), `settle`), `booking` = COALESCE(VALUES(`booking`), `booking`),
                       `diubah` = VALUES(`diubah`), `diubah_oleh` = VALUES(`diubah_oleh`)",
-                    ['b'.dechex($now).dechex($i).substr(bin2hex(random_bytes(4)), 0, 8), $s['sidik'], $s['tgl'], $s['jam'], $s['nominal'],
-                        $s['ket'], $s['settle'], $s['booking'], self::cut($oleh, 120), self::cut($olehId, 60), $now, $now, self::cut($oleh, 120)]);
+                    ['b'.dechex($now).dechex($i).substr(bin2hex(random_bytes(4)), 0, 8), ...$vals]);
             }
         });
         $baru = count(array_filter($siap, fn ($s) => empty($ada[$s['sidik']])));
@@ -507,17 +647,30 @@ class VoidBri
         $k = 0;
         do {
             $sidik = 'm|'.self::sidik($tgl, $jam, $nom, $k);
-            $bentrok = (bool) $this->db()->selectOne('SELECT `id` FROM `bri_mutasi` WHERE `sidik`=?', [$sidik]);
+            $bentrok = (bool) $this->db()->selectOne('SELECT `'.self::idCol().'` FROM `'.self::t('bri_mutasi').'` WHERE `sidik`=?', [$sidik]);
             $k++;
         } while ($bentrok && $k < 200);
         if ($bentrok) {
             return ['ok' => false, 'error' => 'Terlalu banyak baris manual yang sama persis pada jam itu.'];
         }
         $id = 'b'.dechex($now).'m'.substr(bin2hex(random_bytes(4)), 0, 8);
+        $vals = [$sidik, $tgl, $jam, (int) round($nom), mb_substr($ket, 0, 255), mb_substr($ket, 0, 255), self::cut($oleh, 120), $now,
+            self::cut($oleh, 120), self::cut($olehId, 60), $now, $now, self::cut($oleh, 120)];
+        if (KompasState::onCore()) {
+            $cols = ['sidik' => $sidik, 'tgl' => $tgl, 'jam' => $jam, 'nominal' => (int) round($nom),
+                'ket' => mb_substr($ket, 0, 255), 'sumber' => 'manual', 'cara' => 'bukan',
+                'catatan' => mb_substr($ket, 0, 255), 'cocok_oleh' => self::cut($oleh, 120), 'cocok_at' => $now,
+                'oleh' => self::cut($oleh, 120), 'oleh_id' => self::cut($olehId, 60), 'user_id' => $this->userId($olehId),
+                'dibuat' => $now, 'diubah' => $now, 'diubah_oleh' => self::cut($oleh, 120), 'created_at' => $now,
+                'updated_at' => $now, 'version' => 1];
+            $this->db()->insert('INSERT INTO `'.self::t('bri_mutasi').'` (`id`,`legacy_id`,'.self::cols(array_keys($cols)).')'
+                .' VALUES (?,?,'.self::ph(count($cols)).')', [self::ulid(), $id, ...array_values($cols)]);
+
+            return ['ok' => true, 'saved' => true, 'id' => $id];
+        }
         $this->db()->insert("INSERT INTO `bri_mutasi` (`id`,`sidik`,`tgl`,`jam`,`nominal`,`ket`,`sumber`,`cara`,`catatan`,`cocok_oleh`,`cocok_at`,
             `oleh`,`oleh_id`,`dibuat`,`diubah`,`diubah_oleh`) VALUES (?,?,?,?,?,?,'manual','bukan',?,?,?,?,?,?,?,?)",
-            [$id, $sidik, $tgl, $jam, (int) round($nom), mb_substr($ket, 0, 255), mb_substr($ket, 0, 255), self::cut($oleh, 120), $now,
-                self::cut($oleh, 120), self::cut($olehId, 60), $now, $now, self::cut($oleh, 120)]);
+            [$id, ...$vals]);
 
         return ['ok' => true, 'saved' => true, 'id' => $id];
     }
@@ -534,7 +687,7 @@ class VoidBri
         if ($cara === '') {
             return 'Keputusan tidak dikenal (harus cocok / bukan / lepas).';
         }
-        $row = $this->db()->selectOne('SELECT `batal_at` FROM `bri_mutasi` WHERE `id`=?', [$id]);
+        $row = $this->db()->selectOne('SELECT `batal_at` FROM `'.self::t('bri_mutasi').'` WHERE `'.self::idCol().'`=?', [$id]);
         if (! $row) {
             return 'Baris mutasi tidak ditemukan.';
         }
@@ -554,7 +707,7 @@ class VoidBri
                 return 'Reservasi & cicilan DP-nya wajib disebut.';
             }
             // one DP can be held by only ONE live mutation, or it is counted twice
-            $bentrok = $this->db()->selectOne("SELECT `id`,`tgl`,`nominal` FROM `bri_mutasi` WHERE `dp_id`=? AND `cara`='cocok' AND `batal_at`=0 AND `id`<>? LIMIT 1", [$dpId, $id]);
+            $bentrok = $this->db()->selectOne('SELECT `'.self::idCol().'`,`tgl`,`nominal` FROM `'.self::t('bri_mutasi')."` WHERE `dp_id`=? AND `cara`='cocok' AND `batal_at`=0 AND `".self::idCol().'`<>? LIMIT 1', [$dpId, $id]);
             if ($bentrok) {
                 return 'DP itu sudah dicocokkan ke mutasi '.(string) $bentrok->tgl.' sebesar Rp'.number_format((float) $bentrok->nominal, 0, ',', '.').'. Lepas dulu pencocokan di sana.';
             }
@@ -567,6 +720,13 @@ class VoidBri
                 return 'Sebutkan dulu uang ini masuk dari mana.';
             }
             $catatan = mb_substr($catatan, 0, 255);
+        }
+        if (KompasState::onCore()) {
+            $this->db()->update('UPDATE `'.self::t('bri_mutasi').'` SET `res_id`=?,`dp_id`=?,`res_nama`=?,`res_tgl`=?,`cara`=?,`catatan`=?,`cocok_oleh`=?,`cocok_at`=?,`diubah`=?,`diubah_oleh`=?,`updated_at`=?,`version`=`version`+1
+                WHERE `'.self::idCol().'`=?',
+                [$resId, $dpId, $nama, $resTgl, $cara === 'lepas' ? '' : $cara, $catatan, self::cut($oleh, 120), $now, $now, self::cut($oleh, 120), $now, $id]);
+
+            return '';
         }
         $this->db()->update('UPDATE `bri_mutasi` SET `res_id`=?,`dp_id`=?,`res_nama`=?,`res_tgl`=?,`cara`=?,`catatan`=?,`cocok_oleh`=?,`cocok_at`=?,`diubah`=?,`diubah_oleh`=? WHERE `id`=?',
             [$resId, $dpId, $nama, $resTgl, $cara === 'lepas' ? '' : $cara, $catatan, self::cut($oleh, 120), $now, $now, self::cut($oleh, 120), $id]);
@@ -621,12 +781,19 @@ class VoidBri
         if ($alasan === '') {
             return ['ok' => false, 'error' => 'Alasan pembatalan wajib diisi.'];
         }
-        $row = $this->db()->selectOne('SELECT `batal_at` FROM `bri_mutasi` WHERE `id`=?', [$id]);
+        $row = $this->db()->selectOne('SELECT `batal_at` FROM `'.self::t('bri_mutasi').'` WHERE `'.self::idCol().'`=?', [$id]);
         if (! $row) {
             return ['ok' => false, 'error' => 'Baris mutasi tidak ditemukan.'];
         }
         if ((float) $row->batal_at > 0) {
             return ['ok' => false, 'error' => 'Baris ini sudah dibatalkan.'];
+        }
+        if (KompasState::onCore()) {
+            $now = self::ms();
+            $this->db()->update('UPDATE `'.self::t('bri_mutasi').'` SET `batal_at`=?,`batal_oleh`=?,`batal_alasan`=?,`updated_at`=?,`version`=`version`+1
+                WHERE `'.self::idCol().'`=?', [$now, self::cut($oleh, 120), mb_substr($alasan, 0, 255), $now, $id]);
+
+            return ['ok' => true, 'saved' => true];
         }
         $this->db()->update('UPDATE `bri_mutasi` SET `batal_at`=?,`batal_oleh`=?,`batal_alasan`=? WHERE `id`=?',
             [self::ms(), self::cut($oleh, 120), mb_substr($alasan, 0, 255), $id]);
@@ -643,7 +810,7 @@ class VoidBri
             return ['ok' => false, 'error' => 'dpId kosong'];
         }
         if (! empty($d['pulih'])) {
-            $this->db()->delete('DELETE FROM `bri_dp_abai` WHERE `dp_id`=?', [$dpId]);
+            $this->db()->delete('DELETE FROM `'.self::t('bri_dp_abai').'` WHERE `dp_id`=?', [$dpId]);
 
             return ['ok' => true, 'saved' => true, 'pulih' => true];
         }
@@ -651,10 +818,25 @@ class VoidBri
         if ($alasan === '') {
             return ['ok' => false, 'error' => 'Sebutkan dulu kenapa baris ini tidak valid.'];
         }
+        $vals = [mb_substr($dpId, 0, 60), self::cut($d['resId'] ?? '', 60), self::cut($d['nama'] ?? '', 160), self::dateOrNull($d['tgl'] ?? ''),
+            (int) round((float) (is_array($d['nominal'] ?? 0) ? 1 : ($d['nominal'] ?? 0))), mb_substr($alasan, 0, 255), self::cut($oleh, 120), self::ms()];
+        if (KompasState::onCore()) {
+            $now = self::ms();
+            $cols = ['legacy_id' => mb_substr($dpId, 0, 60), 'dp_id' => mb_substr($dpId, 0, 60), 'res_id' => self::cut($d['resId'] ?? '', 60),
+                'nama' => self::cut($d['nama'] ?? '', 160), 'tgl' => self::dateOrNull($d['tgl'] ?? ''),
+                'nominal' => (int) round((float) (is_array($d['nominal'] ?? 0) ? 1 : ($d['nominal'] ?? 0))),
+                'alasan' => mb_substr($alasan, 0, 255), 'oleh' => self::cut($oleh, 120), 'abai_at' => $now,
+                'created_at' => $now, 'updated_at' => $now, 'version' => 1];
+            $this->db()->insert('INSERT INTO `'.self::t('bri_dp_abai').'` (`id`,'.self::cols(array_keys($cols)).')'
+                .' VALUES (?,'.self::ph(count($cols)).')'
+                .' ON DUPLICATE KEY UPDATE `version`=`version`+1, `alasan`=VALUES(`alasan`),`oleh`=VALUES(`oleh`),'
+                .'`abai_at`=VALUES(`abai_at`),`updated_at`=VALUES(`updated_at`)',
+                [self::ulid(), ...array_values($cols)]);
+
+            return ['ok' => true, 'saved' => true];
+        }
         $this->db()->insert('INSERT INTO `bri_dp_abai` (`dp_id`,`res_id`,`nama`,`tgl`,`nominal`,`alasan`,`oleh`,`abai_at`) VALUES (?,?,?,?,?,?,?,?)
-            ON DUPLICATE KEY UPDATE `alasan`=VALUES(`alasan`),`oleh`=VALUES(`oleh`),`abai_at`=VALUES(`abai_at`)',
-            [mb_substr($dpId, 0, 60), self::cut($d['resId'] ?? '', 60), self::cut($d['nama'] ?? '', 160), self::dateOrNull($d['tgl'] ?? ''),
-                (int) round((float) (is_array($d['nominal'] ?? 0) ? 1 : ($d['nominal'] ?? 0))), mb_substr($alasan, 0, 255), self::cut($oleh, 120), self::ms()]);
+            ON DUPLICATE KEY UPDATE `alasan`=VALUES(`alasan`),`oleh`=VALUES(`oleh`),`abai_at`=VALUES(`abai_at`)', $vals);
 
         return ['ok' => true, 'saved' => true];
     }
@@ -670,17 +852,17 @@ class VoidBri
             'dpId' => (string) $r->dp_id, 'resId' => (string) $r->res_id, 'nama' => (string) $r->nama,
             'tgl' => $r->tgl === null ? '' : (string) $r->tgl, 'nominal' => (float) $r->nominal,
             'alasan' => (string) $r->alasan, 'oleh' => (string) $r->oleh, 'at' => (float) $r->abai_at,
-        ], $this->db()->select('SELECT * FROM `bri_dp_abai`'.$where, $args));
+        ], $this->db()->select('SELECT * FROM `'.self::t('bri_dp_abai').'`'.$where, $args));
     }
 
     /** bri_list — oldest first, at most BRI_MAX (`total` counted before the limit), with the ignored DPs. */
     public function briList(mixed $dari, mixed $sampai): array
     {
         [$where, $args] = self::range($dari, $sampai);
-        $total = (int) $this->db()->selectOne('SELECT COUNT(*) AS c FROM `bri_mutasi`'.$where, $args)->c;
+        $total = (int) $this->db()->selectOne('SELECT COUNT(*) AS c FROM `'.self::t('bri_mutasi').'`'.$where, $args)->c;
         $n = fn ($v) => $v === null ? '' : (string) $v;
         $baris = array_map(fn ($r) => [
-            'id' => (string) $r->id, 'tgl' => (string) $r->tgl, 'jam' => (string) $r->jam, 'nominal' => (float) $r->nominal,
+            'id' => self::rowId($r), 'tgl' => (string) $r->tgl, 'jam' => (string) $r->jam, 'nominal' => (float) $r->nominal,
             'ket' => (string) $r->ket, 'settle' => $n($r->settle), 'booking' => $n($r->booking),
             'resId' => (string) $r->res_id, 'dpId' => (string) $r->dp_id, 'resNama' => (string) $r->res_nama, 'resTgl' => $n($r->res_tgl),
             'cara' => (string) $r->cara, 'catatan' => (string) $r->catatan, 'sumber' => (string) ($r->sumber ?? 'unggah'),
@@ -688,7 +870,7 @@ class VoidBri
             'oleh' => (string) $r->oleh, 'olehId' => (string) $r->oleh_id, 'dibuat' => (float) $r->dibuat, 'diubah' => (float) $r->diubah,
             'diubahOleh' => (string) $r->diubah_oleh, 'batalAt' => (float) $r->batal_at, 'batalOleh' => (string) $r->batal_oleh,
             'batalAlasan' => (string) $r->batal_alasan,
-        ], $this->db()->select('SELECT * FROM `bri_mutasi`'.$where.' ORDER BY `tgl` ASC, `jam` ASC, `dibuat` ASC LIMIT '.self::BRI_MAX, $args));
+        ], $this->db()->select('SELECT * FROM `'.self::t('bri_mutasi').'`'.$where.' ORDER BY `tgl` ASC, `jam` ASC, `dibuat` ASC LIMIT '.self::BRI_MAX, $args));
 
         return ['baris' => $baris, 'total' => $total, 'maks' => self::BRI_MAX, 'abai' => $this->ignoredList($dari, $sampai)];
     }

@@ -11,6 +11,7 @@ use App\Modules\Finance\Services\KasKecil;
 use App\Modules\Hlife\Services\HlifeState;
 use App\Modules\Hr\Services\HrState;
 use App\Modules\Jadwal\Services\JadwalService;
+use App\Modules\Kompas\Services\KompasState;
 use App\Modules\Konten\Services\KontenSchema;
 use App\Modules\Marketing\Services\MarketingSchema;
 use App\Modules\Ticketing\Services\TicketSchema;
@@ -90,6 +91,9 @@ abstract class TestCase extends BaseTestCase
         }
         if (TicketSchema::onCore()) {
             Artisan::call('core:import', ['module' => 'ticketing']);
+        }
+        if (KompasState::onCore()) {
+            Artisan::call('core:import', ['module' => 'kompas']);
         }
     }
 

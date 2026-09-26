@@ -16,6 +16,7 @@ use App\Core\Imports\HlifeImporter;
 use App\Core\Imports\HrImporter;
 use App\Core\Imports\ImporterRegistry;
 use App\Core\Imports\JadwalImporter;
+use App\Core\Imports\KompasImporter;
 use App\Core\Imports\KontenImporter;
 use App\Core\Imports\MarketingImporter;
 use App\Core\Imports\TicketingImporter;
@@ -41,6 +42,8 @@ final class CoreServiceProvider extends ServiceProvider
             // hlife has no user FKs and imports straight from its own legacy database
             $app->make(HlifeImporter::class),
             $app->make(JadwalImporter::class),
+            // kompas_an_akses/an_peran.user_id need the account import first
+            $app->make(KompasImporter::class),
             $app->make(KontenImporter::class),
             $app->make(MarketingImporter::class),
             $app->make(TicketingImporter::class),

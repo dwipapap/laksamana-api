@@ -1,5 +1,8 @@
 <?php
 
+require_once __DIR__.'/helpers.php';
+
+use App\Modules\Kompas\Services\KompasState;
 use App\Modules\Kompas\Services\VoidBri;
 use App\Support\Modules;
 use Illuminate\Testing\TestResponse;
@@ -27,7 +30,7 @@ it('legacy: a void is saved with the SESSION name and a server-computed nominal;
     $id = vbPost(['action' => 'voidSimpan', 'sesi' => $sesi, 'data' => ['tgl' => '2026-09-12', 'bill' => 'B-1', 'item' => 'Kopi',
         'penginput' => 'A', 'salah' => 'B', 'alasan' => 'x', 'subtotal' => 10000, 'service' => 500, 'tax' => 1000, 'nominal' => 1, 'oleh' => 'spoof']])
         ->assertOk()->assertJsonPath('data.baru', true)->json('data.id');
-    $row = Modules::db('kompas')->selectOne('SELECT nominal, oleh FROM void_log WHERE id=?', [$id]);
+    $row = kpRow('void_log', $id, 'nominal, oleh');
     expect((int) $row->nominal)->toBe(11500)->and($row->oleh)->toBe(officeUser('u-novi')['name']);
 
     vbPost(['action' => 'voidBatal', 'sesi' => $sesi, 'id' => $id, 'alasan' => ''])->assertExactJson(['ok' => false, 'error' => 'Alasan pembatalan wajib diisi.']);
@@ -49,7 +52,8 @@ it('legacy: one DP can be matched to only one live mutation; an upload never ove
         ['tgl' => '2026-09-10', 'jam' => '15:46', 'nominal' => 300000, 'ket' => 'A'],
         ['tgl' => '2026-09-10', 'jam' => '15:46', 'nominal' => 300000, 'ket' => 'B']]]])
         ->assertOk()->assertJsonPath('data.baru', 2);
-    $ids = array_column(Modules::db('kompas')->select("SELECT id FROM bri_mutasi WHERE sidik LIKE '2026-09-10|15:46|300000|#%' ORDER BY sidik"), 'id');
+    $ids = array_column(Modules::db('kompas')->select('SELECT `'.KompasState::idCol().'` AS id FROM `'.KompasState::t('bri_mutasi')
+        .'` WHERE sidik LIKE ? ORDER BY sidik', ['2026-09-10|15:46|300000|#%']), 'id');
 
     vbPost(['action' => 'briCocok', 'sesi' => $sesi, 'data' => ['id' => $ids[0], 'cara' => 'cocok', 'resId' => 'r1', 'dpId' => 'dp1']])->assertJsonPath('ok', true);
     vbPost(['action' => 'briCocok', 'sesi' => $sesi, 'data' => ['id' => $ids[1], 'cara' => 'cocok', 'resId' => 'r1', 'dpId' => 'dp1']])
@@ -57,7 +61,7 @@ it('legacy: one DP can be matched to only one live mutation; an upload never ove
 
     vbPost(['action' => 'briUnggah', 'sesi' => $sesi, 'data' => ['baris' => [['tgl' => '2026-09-10', 'jam' => '15.46', 'nominal' => 300000, 'ket' => 'A2']]]])
         ->assertJsonPath('data.lama', 1);
-    expect(Modules::db('kompas')->selectOne('SELECT ket, dp_id, cara FROM bri_mutasi WHERE id=?', [$ids[0]]))
+    expect(kpRow('bri_mutasi', $ids[0], 'ket, dp_id, cara'))
         ->ket->toBe('A2')->dp_id->toBe('dp1')->cara->toBe('cocok');
 });
 
@@ -65,7 +69,7 @@ it('v1: finance records and edits a void with the row version', function () {
     $token = loginAs(officeUser('u-novi'));
     $id = $this->withToken($token)->postJson('/api/v1/kompas/voids', ['tgl' => '2026-09-12', 'bill' => 'B-1', 'item' => 'Kopi', 'penginput' => 'A', 'salah' => 'B', 'alasan' => 'x', 'subtotal' => 1000])
         ->assertCreated()->json('data.id');
-    $v = (int) Modules::db('kompas')->selectOne('SELECT diubah FROM void_log WHERE id=?', [$id])->diubah;
+    $v = (int) kpRow('void_log', $id, 'diubah')->diubah;
     $this->withToken($token)->putJson("/api/v1/kompas/voids/$id", ['alasan' => 'y'])->assertStatus(428);
     $this->withToken($token)->putJson("/api/v1/kompas/voids/$id?version=1", ['alasan' => 'y'])->assertStatus(409);
     $this->withToken($token)->putJson("/api/v1/kompas/voids/$id?version=$v", ['tgl' => '2026-09-12', 'bill' => 'B-1', 'item' => 'Kopi', 'penginput' => 'A', 'salah' => 'B', 'alasan' => 'y', 'subtotal' => 2000])

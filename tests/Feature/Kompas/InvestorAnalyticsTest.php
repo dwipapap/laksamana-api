@@ -1,6 +1,9 @@
 <?php
 
+require_once __DIR__.'/helpers.php';
+
 use App\Modules\Finance\Services\Brankas;
+use App\Modules\Kompas\Services\KompasState;
 use App\Support\Modules;
 use Illuminate\Testing\TestResponse;
 
@@ -52,7 +55,7 @@ it('an admin uploads, replaces and deletes a report; the file streams back', fun
     $sesi = legacySesi(officeUser('u-wandi'));
     iaPost(['action' => 'investorLaporUpload', 'sesi' => $sesi, 'bulan' => '2026-08', 'berkas' => ['balance' => ['dataBase64' => iaPdf(), 'fileName' => 'B.pdf'], 'ledger' => ['dataBase64' => base64_encode('nope')]]])
         ->assertJsonPath('ok', true)->assertJsonPath('data.tersimpan', ['balance'])->assertJsonPath('data.galat', ['ledger: berkasnya bukan PDF']);
-    $first = Modules::db('kompas')->selectOne("SELECT kunci FROM inv_lapor WHERE bulan='2026-08' AND jenis='balance'")->kunci;
+    $first = Modules::db('kompas')->selectOne('SELECT `kunci` FROM `'.KompasState::t('inv_lapor')."` WHERE bulan='2026-08' AND jenis='balance'")->kunci;
     iaPost(['action' => 'investorLaporUpload', 'sesi' => $sesi, 'bulan' => '2026-08', 'berkas' => ['balance' => ['dataBase64' => iaPdf()]]])->assertJsonPath('ok', true);
     expect(is_file(storage_path('framework/testing/kompas-db/lapor/'.$first)))->toBeFalse(); // old file removed after the new one
 
