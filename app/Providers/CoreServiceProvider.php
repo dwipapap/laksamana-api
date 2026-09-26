@@ -10,6 +10,7 @@ use App\Core\Imports\AccountImporter;
 use App\Core\Imports\AkademiImporter;
 use App\Core\Imports\BdImporter;
 use App\Core\Imports\DummyImporter;
+use App\Core\Imports\HrImporter;
 use App\Core\Imports\ImporterRegistry;
 use App\Core\Imports\JadwalImporter;
 use App\Core\Imports\KontenImporter;
@@ -28,6 +29,7 @@ final class CoreServiceProvider extends ServiceProvider
             $app->make(AccountImporter::class),
             // bd_people.user_id needs the account import first (--list is alphabetical, so it is)
             $app->make(BdImporter::class),
+            $app->make(HrImporter::class),
             $app->make(JadwalImporter::class),
             $app->make(KontenImporter::class),
             $app->make(MarketingImporter::class),

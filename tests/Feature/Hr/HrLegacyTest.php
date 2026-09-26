@@ -1,5 +1,6 @@
 <?php
 
+use App\Modules\Hr\Services\HrState;
 use App\Support\Modules;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Testing\TestResponse;
@@ -11,7 +12,13 @@ function hrPost(mixed $body): TestResponse
 
 function hrRev(): int
 {
-    return (int) Modules::db('hr')->selectOne('SELECT rev FROM meta WHERE id=1')->rev;
+    return (int) app(HrState::class)->meta()->rev;
+}
+
+/** One row of a legacy hr table by its legacy id, on whichever connection hr uses. */
+function hrRow(string $table, string $id, string $cols = '*'): ?stdClass
+{
+    return Modules::db('hr')->selectOne("SELECT $cols FROM `".HrState::t($table).'` WHERE `'.HrState::idCol().'` = ?', [$id]);
 }
 
 it('serves getAll with nested maps, rev fields, and attendance from extra:attendance when its tables are missing', function () {
@@ -22,7 +29,7 @@ it('serves getAll with nested maps, rev fields, and attendance from extra:attend
     // {} maps stay objects on the wire
     expect($this->get('/hr-api-mysql/api.php?action=getAll')->getContent())->toContain('"settings":{');
     $this->get('/hr-api-mysql/api.php?action=stats')->assertOk()->assertJsonPath('data.attendance_months', 0);
-});
+})->skip(fn () => HrState::onCore(), 'legacy storage without attendance tables; core: HrOnCoreTest');
 
 it('answers errors with real HTTP status codes', function () {
     $this->get('/hr-api-mysql/api.php')->assertStatus(400)->assertExactJson(['ok' => false, 'error' => 'action tidak dikenal']);
@@ -32,7 +39,7 @@ it('answers errors with real HTTP status codes', function () {
 });
 
 it('refuses a stale rev with a 200 conflict naming the last saver', function () {
-    $m = Modules::db('hr')->selectOne('SELECT rev, saved_by FROM meta WHERE id=1');
+    $m = app(HrState::class)->meta();
     hrPost(['action' => 'saveAll', 'baseRev' => 1, 'data' => ['employees' => []]])
         ->assertOk()->assertJsonPath('ok', false)->assertJsonPath('error', 'conflict')
         ->assertJsonPath('rev', (int) $m->rev)->assertJsonPath('savedBy', $m->saved_by);
@@ -50,13 +57,13 @@ it('saves the whole document: replace, {} preserved, anonymous suggestion NULL, 
     }')])->assertOk()->assertExactJson(['ok' => true, 'data' => ['rev' => $rev + 1]]);
 
     $db = Modules::db('hr');
-    expect((int) $db->selectOne('SELECT COUNT(*) c FROM employees')->c)->toBe(1)
-        ->and($db->selectOne("SELECT data FROM reviews WHERE id='r1'")->data)->toBe('{"id":"r1","empId":"e1","layers":{}}')
-        ->and($db->selectOne("SELECT emp_id FROM suggestions WHERE id='s1'")->emp_id)->toBeNull()
-        ->and((float) $db->selectOne("SELECT nilai FROM kpi_actuals WHERE item_id='i1'")->nilai)->toBe(7.0)
-        ->and($db->selectOne("SELECT action FROM audit WHERE id='a_1'")->action)->toBe('LOGIN')
-        ->and($db->selectOne("SELECT v FROM settings WHERE k='extra:extraKey'")->v)->toBe('[1]')
-        ->and($db->selectOne('SELECT saved_by FROM meta')->saved_by)->toBe('Tester');
+    expect((int) $db->selectOne('SELECT COUNT(*) c FROM `'.HrState::t('employees').'`')->c)->toBe(1)
+        ->and(hrRow('reviews', 'r1', 'data')->data)->toBe('{"id":"r1","empId":"e1","layers":{}}')
+        ->and(hrRow('suggestions', 's1', 'emp_id')->emp_id)->toBeNull()
+        ->and((float) $db->selectOne('SELECT nilai FROM `'.HrState::t('kpi_actuals')."` WHERE item_id='i1'")->nilai)->toBe(7.0)
+        ->and(hrRow('audit', 'a_1', 'action')->action)->toBe('LOGIN')
+        ->and($db->selectOne('SELECT v FROM `'.HrState::t('settings')."` WHERE k='extra:extraKey'")->v)->toBe('[1]')
+        ->and(app(HrState::class)->meta()->saved_by)->toBe('Tester');
 });
 
 it('never logs the message or payload of a failure (employee PII)', function () {
@@ -77,4 +84,4 @@ it('keeps the attendance history in extra:attendance across a save when its tabl
     $state = json_decode($this->get('/hr-api-mysql/api.php?action=getAll')->getContent())->data;
     hrPost(['action' => 'saveAll', 'baseRev' => $state->_rev, 'data' => $state])->assertOk();
     expect(json_decode($db->selectOne("SELECT v FROM settings WHERE k='extra:attendance'")->v))->toEqual($before);
-});
+})->skip(fn () => HrState::onCore(), 'legacy storage without attendance tables; core: HrOnCoreTest');
