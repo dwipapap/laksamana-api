@@ -31,12 +31,15 @@
  *   "legacyPath": "account-api-mysql",  URL prefix on the Laravel side
  *   "dbEnv": "ACCOUNT", "db": "lakk5493_db_account",
  *   "extraDbs": [{"dbEnv":"JADWAL","db":"lakk5493_db_jadwal"}],   optional (cloned for both sides)
+ *   "legacyDefines": {"XENDIT_MOCK": true},   optional: extra constants in the legacy config.php
+ *   "laravelEnv": {"XENDIT_MOCK": "true"},    optional: extra env for the Laravel side
  *   "setupSql": ["CREATE TABLE ..."],   optional: run on both clones of the module DB before replaying
  *   "extraLegacy": [{"dir":"dw-mysql","legacyPath":"dw-api-mysql","db":"lakk5493_db_dw","root":"acc|old"}],
  *   "ignore": ["data.ts", "data.backend"],   global ignored paths ("*" = any key)
  *   "cases": [
  *     {"name": "...", "file": "api.php", "method": "GET|POST",
  *      "query": {...}, "body": {...}, "ignore": [...],
+ *      "headers": {...}, "rawBody": "...", "rawBodySize": N, "manualRedirect": true,   optional
  *      "each": "SELECT id FROM users"   optional: repeat, substituting "$each" / "$each1","$each2" (split on |) }
  *   ],
  *   "sessions": {"hrd": "SELECT CONCAT(name,'|',pin) FROM users WHERE ..."}
@@ -102,7 +105,8 @@ define('DATA_DIR', ${JSON.stringify(dataDir)}); define('TRAINING_DIR', ${JSON.st
 define('ACCOUNT_API_URL','${acc}');
 define('JADWAL_API_URL','http://127.0.0.1:${ACC_PORT}/jadwal-api-mysql/api.php');
 define('DW_API_URL','http://127.0.0.1:${ACC_PORT}/dw-api-mysql/api.php');
-`;
+${Object.entries(spec.legacyDefines || {}).map(([k, v]) => `define('${k}', ${JSON.stringify(v)});
+`).join('')}`;
 }
 function stageLegacy(dir, urlPrefix, dbName, docroot) {
   const dst = path.join(docroot, urlPrefix);
@@ -133,7 +137,7 @@ start(PHP, ['-S', `127.0.0.1:${OLD_PORT}`, '-t', oldRoot], { cwd: oldRoot });
 start(PHP, ['-S', `127.0.0.1:${ACC_PORT}`, '-t', accRoot], { cwd: accRoot });
 
 // ---- laravel side ----------------------------------------------------------
-const env = { ...process.env, LAKSAMANA_ENV_LABEL: 'lokal', CACHE_STORE: 'array' };
+const env = { ...process.env, LAKSAMANA_ENV_LABEL: 'lokal', CACHE_STORE: 'array', ...(spec.laravelEnv || {}) };
 for (const d of dbs) env[`DB_${d.dbEnv}_DATABASE`] = `${P}_new_${d.db}`;
 const CORE_DB = `${P}_core`;
 
@@ -187,8 +191,13 @@ function diff(a, b, ignore, p = '', out = []) {
   if (p && ignore.some(ig => matches(p.slice(1), ig))) return out;
   if (a === b) return out;
   if (p && Array.isArray(a) && Array.isArray(b) && UNORDERED.some(u => matches(p.slice(1), u))) {
-    a = [...a].sort((x, y) => canon(x) < canon(y) ? -1 : 1);
-    b = [...b].sort((x, y) => canon(x) < canon(y) ? -1 : 1);
+    // sort on each element WITHOUT its ignored (volatile) fields, or random ids decide the order
+    const strip = (v, at) => (v && typeof v === 'object')
+      ? Object.fromEntries(Object.entries(v).filter(([k]) => !ignore.some(ig => matches(`${at}.${k}`, ig))).map(([k, x]) => [k, strip(x, `${at}.${k}`)]))
+      : v;
+    const key = x => canon(strip(x, `${p.slice(1)}.0`));
+    a = [...a].sort((x, y) => key(x) < key(y) ? -1 : 1);
+    b = [...b].sort((x, y) => key(x) < key(y) ? -1 : 1);
   }
   const ta = Array.isArray(a) ? 'array' : typeof a, tb = Array.isArray(b) ? 'array' : typeof b;
   if (ta !== tb || a === null || b === null || ta !== 'object' && ta !== 'array') {
@@ -222,7 +231,9 @@ async function call(port, prefix, c, each, side) {
     .replace(/\$sesi:([A-Za-z0-9_]+)/g, (_, l) => TOKENS[side][l] ?? ''));
   const q = new URLSearchParams(sub(c.query)).toString();
   const url = `http://127.0.0.1:${port}/${prefix}/${c.file || spec.file || 'api.php'}${q ? '?' + q : ''}`;
-  const init = (c.method || 'POST') === 'GET' ? {} : { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(sub(c.body)) };
+  const init = (c.method || 'POST') === 'GET' ? { headers: { ...(c.headers || {}) } }
+    : { method: 'POST', headers: { 'Content-Type': 'text/plain', ...(c.headers || {}) }, body: c.rawBodySize ? "x".repeat(c.rawBodySize) : c.rawBody ?? JSON.stringify(sub(c.body)) };
+  if (c.manualRedirect) init.redirect = 'manual';
   const r = await fetch(url, init);
   const text = await r.text();
   let json; try { json = JSON.parse(text); } catch { json = { __nonJson: text.slice(0, 300) }; }

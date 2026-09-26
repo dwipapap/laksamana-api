@@ -27,6 +27,11 @@ final class RejectModuleWrites
             return ApiResponse::error('module_maintenance', self::LEGACY_MESSAGE, 503);
         }
 
+        // A payment webhook (ticketing) must get a non-2xx, or Xendit treats it as delivered and never retries.
+        if ($request->headers->has('x-callback-token')) {
+            return Envelope::error(self::LEGACY_MESSAGE, 503);
+        }
+
         if (config("laksamana.legacy_policies.{$module}.error_style") === 'status') {
             $response = Envelope::statusError(self::LEGACY_MESSAGE, 503);
             $response->headers->set('Cache-Control', 'no-store');
