@@ -2,7 +2,7 @@
 /*
  * PARITY — old PHP backend vs this Laravel API, same data, same requests.
  *
- *   node tools/parity/parity.mjs <module> [--case <substring>] [--keep]
+ *   node tools/parity/parity.mjs <module> [--case <substring>] [--keep] [--core [--importer <key>]]
  *
  * For each module described in tools/parity/cases/<module>.json it:
  *   1. clones the module's LOCAL database twice (parity_old_<db>, parity_new_<db>)
@@ -14,6 +14,14 @@
  *   3. starts `php artisan serve` with DB_<ENV>_DATABASE=parity_new_<db>;
  *   4. replays every case against both, deep-diffs the JSON (minus `ignore`
  *      paths) and exits non-zero on any difference.
+ *
+ * --core (the cutover gate, ADR-0002/0004): additionally creates and migrates a
+ * scratch core database (parity_core), runs `core:import <importer>` from the
+ * parity_new_* clones into it, and serves Laravel with DB_DATABASE=parity_core.
+ * The importer defaults to the module key; when it IS the module key, the
+ * module's connection is switched to core (DB_<MODULE>_CONNECTION=core) so its
+ * compat routes answer from core. Any other importer (`--importer dummy`, the
+ * C1 proof) exercises the create/migrate/import/serve pipeline only.
  *
  * LOCAL ONLY: refuses to run unless MYSQL_HOST is 127.0.0.1/localhost.
  *
@@ -58,9 +66,11 @@ if (!['127.0.0.1', 'localhost'].includes(HOST)) { console.error('REFUSING: non-l
 
 const args = process.argv.slice(2);
 const mod = args[0];
-if (!mod) { console.error('usage: parity.mjs <module> [--case x] [--keep]'); process.exit(2); }
+if (!mod) { console.error('usage: parity.mjs <module> [--case x] [--keep] [--core [--importer key]]'); process.exit(2); }
 const only = args.includes('--case') ? args[args.indexOf('--case') + 1] : null;
 const keep = args.includes('--keep');
+const core = args.includes('--core');
+const importer = args.includes('--importer') ? args[args.indexOf('--importer') + 1] : mod;
 const spec = JSON.parse(fs.readFileSync(path.join(HERE, 'cases', `${mod}.json`), 'utf8'));
 
 const sql = (q, db) => execFileSync(MYSQL, ['-uroot', `-h${HOST}`, '-N', '-B', ...(db ? [db] : []), '-e', q], { encoding: 'utf8' });
@@ -125,22 +135,36 @@ start(PHP, ['-S', `127.0.0.1:${ACC_PORT}`, '-t', accRoot], { cwd: accRoot });
 // ---- laravel side ----------------------------------------------------------
 const env = { ...process.env, LAKSAMANA_ENV_LABEL: 'lokal', CACHE_STORE: 'array' };
 for (const d of dbs) env[`DB_${d.dbEnv}_DATABASE`] = `${P}_new_${d.db}`;
-const newData = path.join(scratch, 'data-new');
-for (const [k] of Object.entries({ AKADEMI: 1, EVENT: 1, KOMPAS: 1, KONTEN: 1, MARKETING: 1, RESERVASI: 1, STOCK: 1 })) {
-  env[`${k}_DATA_DIR`] = path.join(newData, k.toLowerCase()); fs.mkdirSync(env[`${k}_DATA_DIR`], { recursive: true });
-}
-start(PHP, ['-S', `127.0.0.1:${NEW_PORT}`, '-t', path.join(API_ROOT, 'public'), path.join(API_ROOT, 'vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php')],
-  { cwd: path.join(API_ROOT, 'public'), env });
+const CORE_DB = `${P}_core`;
 
 const cleanup = () => {
   for (const p of procs) try { p.kill(); } catch {}
   if (!keep) {
     try { fs.rmSync(scratch, { recursive: true, force: true }); } catch {}
     for (const d of dbs) try { sql(`DROP DATABASE IF EXISTS \`${P}_old_${d.db}\`; DROP DATABASE IF EXISTS \`${P}_new_${d.db}\`;`); } catch {}
+    if (core) try { sql(`DROP DATABASE IF EXISTS \`${CORE_DB}\`;`); } catch {}
   }
 };
 process.on('exit', cleanup);
 process.on('SIGINT', () => process.exit(130));
+
+if (core) {
+  sql(`DROP DATABASE IF EXISTS \`${CORE_DB}\`; CREATE DATABASE \`${CORE_DB}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
+  env.DB_DATABASE = CORE_DB;
+  const artisan = argv => {
+    try { execFileSync(PHP, ['artisan', ...argv], { cwd: API_ROOT, env, stdio: 'inherit' }); }
+    catch { console.error(`core mode: php artisan ${argv.join(' ')} failed`); process.exit(2); }
+  };
+  artisan(['migrate', '--database=core', '--force']);
+  artisan(['core:import', importer]);
+  if (importer === mod) env[`DB_${mod.toUpperCase()}_CONNECTION`] = 'core';
+}
+const newData = path.join(scratch, 'data-new');
+for (const [k] of Object.entries({ AKADEMI: 1, EVENT: 1, KOMPAS: 1, KONTEN: 1, MARKETING: 1, RESERVASI: 1, STOCK: 1 })) {
+  env[`${k}_DATA_DIR`] = path.join(newData, k.toLowerCase()); fs.mkdirSync(env[`${k}_DATA_DIR`], { recursive: true });
+}
+start(PHP, ['-S', `127.0.0.1:${NEW_PORT}`, '-t', path.join(API_ROOT, 'public'), path.join(API_ROOT, 'vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php')],
+  { cwd: path.join(API_ROOT, 'public'), env });
 
 async function waitUp(url) {
   for (let i = 0; i < 60; i++) {
