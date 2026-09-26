@@ -119,6 +119,23 @@ the DB-free Unit suite (`php artisan test --testsuite=Unit`), and `route:list`.
 Feature tests need the restored dumps (§0), so CI skips them explicitly until
 the anonymised set from #9 can be restored in CI.
 
+### Worktrees — one per issue, verified
+
+```bash
+node tools/agent-worktree.mjs <issue> <slug>    # -> ../wt-<issue>-<slug>, from origin/main
+node tools/agent-worktree.mjs --check <path>    # re-verify an existing worktree
+```
+
+Never symlink or junction a whole `vendor/` into a worktree. Composer bakes
+`$baseDir = dirname($vendorDir)` into `vendor/composer/autoload_*.php`, so a linked
+vendor makes PHP load **this** checkout's `app/**` and `tests/**`: `php -l` passes
+and your edits look ignored by `artisan`, Pest and `tools/parity`, with no warning
+(`core:import --list` not showing your importer is the tell). The script copies
+`vendor/autoload.php` + `vendor/composer/` for real, links only the package
+directories, and proves with a PHP reflection probe that `App\…` resolves inside
+the new worktree. Worktree names come from the **issue**, never an agent label, so
+two agents cannot end up sharing a checkout. Details: `docs/agents/worktrees.md`.
+
 ## 5. Status
 
 | module | legacy compat | v1 | parity |
