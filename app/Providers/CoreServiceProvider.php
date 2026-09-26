@@ -7,6 +7,7 @@ namespace App\Providers;
 use App\Console\Commands\CoreImportCommand;
 use App\Core\Imports\AccountImporter;
 use App\Core\Imports\DummyImporter;
+use App\Core\Imports\DwImporter;
 use App\Core\Imports\ImporterRegistry;
 use App\Core\Imports\JadwalImporter;
 use App\Core\Imports\MarketingImporter;
@@ -22,6 +23,7 @@ final class CoreServiceProvider extends ServiceProvider
             $app->make(AccountImporter::class),
             $app->make(JadwalImporter::class),
             $app->make(MarketingImporter::class),
+            $app->make(DwImporter::class),
         ));
     }
 

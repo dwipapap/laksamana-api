@@ -3,6 +3,7 @@
 namespace Tests;
 
 use App\Auth\AccountRepository;
+use App\Modules\Dw\Services\DwService;
 use App\Modules\Jadwal\Services\JadwalService;
 use App\Modules\Marketing\Services\MarketingSchema;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -52,6 +53,9 @@ abstract class TestCase extends BaseTestCase
         }
         if (MarketingSchema::onCore()) {
             Artisan::call('core:import', ['module' => 'marketing']);
+        }
+        if (DwService::onCore()) {
+            Artisan::call('core:import', ['module' => 'dw']);
         }
     }
 
