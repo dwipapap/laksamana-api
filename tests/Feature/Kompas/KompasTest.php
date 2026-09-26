@@ -1,7 +1,8 @@
 <?php
 
+require_once __DIR__.'/helpers.php';
+
 use App\Modules\Kompas\Services\KompasState;
-use App\Support\Modules;
 use Illuminate\Testing\TestResponse;
 
 /* u-novi holds finance; u-aurel holds marketing (not event, not finance); u-adit none of them. */
@@ -9,11 +10,6 @@ use Illuminate\Testing\TestResponse;
 function kpPost(array $body): TestResponse
 {
     return test()->call('POST', '/kompas-api-mysql/api.php', [], [], [], ['CONTENT_TYPE' => 'text/plain'], json_encode($body));
-}
-
-function kpBlob(): array
-{
-    return json_decode(Modules::db('kompas')->selectOne('SELECT data FROM app_state WHERE id=1')->data, true);
 }
 
 it('kp_num reads formatted money like the app', function () {
@@ -24,7 +20,7 @@ it('kp_num reads formatted money like the app', function () {
 });
 
 it('getAll carries the blob version at the top level, and a stale saveAll is refused', function () {
-    $ts = (int) Modules::db('kompas')->selectOne('SELECT updated_at FROM app_state')->updated_at;
+    $ts = kpTs();
     $this->get('/kompas-api-mysql/api.php')->assertOk()->assertJsonPath('ts', $ts)->assertJsonPath('ok', true);
     kpPost(['action' => 'saveAll', 'baseTs' => $ts - 1, 'data' => ['daily' => []]])
         ->assertOk()->assertJsonPath('ok', false)->assertJsonPath('konflik', true)->assertJsonPath('ts', $ts);
@@ -80,8 +76,8 @@ it('v1: a narrow target write records the session user and returns the new versi
     $token = loginAs(officeUser('u-novi'));
     $res = $this->withToken($token)->putJson('/api/v1/kompas/targets', ['companyMonthlyTarget' => '2.000.000.000', 'by' => 'spoof'])
         ->assertOk()->assertJsonPath('data.saved', true);
-    expect($res->json('meta.version'))->toBe((int) Modules::db('kompas')->selectOne('SELECT updated_at FROM app_state')->updated_at)
-        ->and(Modules::db('kompas')->selectOne('SELECT updated_by FROM app_state')->updated_by)->toBe(officeUser('u-novi')['name'])
+    expect($res->json('meta.version'))->toBe(kpTs())
+        ->and(kpBy())->toBe(officeUser('u-novi')['name'])
         ->and(kpBlob()['settings']['companyMonthlyTarget'])->toBe(2000000000);
     $this->withToken($token)->putJson('/api/v1/kompas/rekap?version=1', ['hari' => []])->assertStatus(409);
 });
@@ -111,5 +107,5 @@ it('v1: granular parts are versioned by their own content, so edits to other par
     $this->withToken($token)->putJson('/api/v1/kompas/days/2026-09-10?version='.$day->json('meta.version'), ['rows' => []])->assertStatus(409);
     $this->withToken($token)->putJson('/api/v1/kompas/reports/2026-09-10', ['value' => []])->assertStatus(428);
     $this->withToken($token)->getJson('/api/v1/kompas/reports/bad-date')->assertStatus(422);
-    expect(Modules::db('kompas')->selectOne('SELECT updated_by FROM app_state')->updated_by)->toBe(officeUser('u-novi')['name']);
+    expect(kpBy())->toBe(officeUser('u-novi')['name']);
 });

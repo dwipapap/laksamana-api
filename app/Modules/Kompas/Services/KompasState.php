@@ -5,6 +5,7 @@ namespace App\Modules\Kompas\Services;
 use App\Support\Modules;
 use App\Support\NamedLock;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Support\Str;
 use RuntimeException;
 use stdClass;
 use Throwable;
@@ -29,6 +30,12 @@ use Throwable;
  *
  * Money rule: kp_num() mirrors the app's num(): strip everything but digits
  * and '-', so "3.855.000" is 3855000, not 3.
+ *
+ * Core (#69, DB_KOMPAS_CONNECTION=core): the same statements run on the
+ * kompas_* tables of `core` (t()), rows keyed by `legacy_id` (idCol()), the
+ * legacy blob author in `oleh` (byCol(), ADR-0003 gives `updated_by` to the
+ * ULID FK) and `version` counting accepted writes. The wire shapes are
+ * identical. Mapping: docs/db/kompas.md.
  */
 class KompasState
 {
@@ -45,6 +52,54 @@ class KompasState
     public function db(): ConnectionInterface
     {
         return Modules::db('kompas');
+    }
+
+    /** Kompas cut over (#69): every statement runs on the kompas_* tables of core. */
+    public static function onCore(): bool
+    {
+        return Modules::connectionName('kompas') === 'core';
+    }
+
+    /**
+     * Physical table for a legacy table name on the current connection. The
+     * module's settings documents (`void_setting`) live in kompas_pengaturan.
+     */
+    public static function t(string $table): string
+    {
+        if (! self::onCore()) {
+            return $table;
+        }
+
+        return $table === 'void_setting' ? 'kompas_pengaturan' : 'kompas_'.$table;
+    }
+
+    /** Record id column: the legacy id, or `legacy_id` on core. */
+    public static function idCol(): string
+    {
+        return self::onCore() ? 'legacy_id' : 'id';
+    }
+
+    /** `a`,`b`,`c` — a column list built from the SAME array as the bindings. */
+    public static function cols(array $cols): string
+    {
+        return '`'.implode('`,`', $cols).'`';
+    }
+
+    /** ?,?,? — one placeholder per column, so the two lists cannot drift. */
+    public static function ph(int $n): string
+    {
+        return implode(',', array_fill(0, $n, '?'));
+    }
+
+    /** Legacy `updated_by` NAME column (a string, not the ADR-0003 actor FK). */
+    public static function byCol(): string
+    {
+        return self::onCore() ? 'oleh' : 'updated_by';
+    }
+
+    private static function ulid(): string
+    {
+        return strtolower((string) Str::ulid());
     }
 
     public static function enc(mixed $v): string
@@ -89,7 +144,7 @@ class KompasState
     public function read(): mixed
     {
         try {
-            $row = $this->db()->selectOne('SELECT `data` FROM `app_state` WHERE `id`=1');
+            $row = $this->db()->selectOne('SELECT `data` FROM `'.self::t('app_state').'` WHERE `'.self::idCol().'`=1');
         } catch (Throwable) {
             return new stdClass;
         }
@@ -105,7 +160,7 @@ class KompasState
     public function assoc(): array
     {
         try {
-            $row = $this->db()->selectOne('SELECT `data` FROM `app_state` WHERE `id`=1');
+            $row = $this->db()->selectOne('SELECT `data` FROM `'.self::t('app_state').'` WHERE `'.self::idCol().'`=1');
         } catch (Throwable) {
             return [];
         }
@@ -121,7 +176,7 @@ class KompasState
     public function ts(): int
     {
         try {
-            $row = $this->db()->selectOne('SELECT `updated_at` FROM `app_state` WHERE `id`=1');
+            $row = $this->db()->selectOne('SELECT `updated_at` FROM `'.self::t('app_state').'` WHERE `'.self::idCol().'`=1');
         } catch (Throwable) {
             return 0;
         }
@@ -131,6 +186,15 @@ class KompasState
 
     private function write(array|object $state, string $by, int $ts): void
     {
+        if (self::onCore()) {
+            $this->db()->insert('INSERT INTO `'.self::t('app_state').'` (`id`,`legacy_id`,`data`,`created_at`,`updated_at`,`oleh`,`version`)
+                VALUES (?,1,?,?,?,?,1)
+                ON DUPLICATE KEY UPDATE `version`=`version`+1, `data`=VALUES(`data`),
+                  `updated_at`=VALUES(`updated_at`), `oleh`=VALUES(`oleh`)',
+                [self::ulid(), self::enc($state), $ts, $ts, $by]);
+
+            return;
+        }
         $this->db()->insert('INSERT INTO `app_state` (`id`,`data`,`updated_at`,`updated_by`) VALUES (1,?,?,?)
             ON DUPLICATE KEY UPDATE `data`=VALUES(`data`), `updated_at`=VALUES(`updated_at`), `updated_by`=VALUES(`updated_by`)',
             [self::enc($state), $ts, $by]);
@@ -149,10 +213,11 @@ class KompasState
             }
             // read INSIDE the lock, or two saves could both pass the check
             if ($baseTs !== null && $baseTs > 0) {
-                $r = $this->db()->selectOne('SELECT `updated_at`,`updated_by` FROM `app_state` WHERE `id`=1');
+                $by = self::byCol();
+                $r = $this->db()->selectOne('SELECT `updated_at`,`'.$by.'` FROM `'.self::t('app_state').'` WHERE `'.self::idCol().'`=1');
                 $tsKini = $r ? (int) $r->updated_at : 0;
                 if ($tsKini > 0 && $baseTs !== $tsKini) {
-                    return ['saved' => false, 'konflik' => true, 'ts' => $tsKini, 'by' => $r ? (string) $r->updated_by : ''];
+                    return ['saved' => false, 'konflik' => true, 'ts' => $tsKini, 'by' => $r ? (string) $r->$by : ''];
                 }
             }
             $ub = is_array($state) && isset($state['_savedBy']) ? self::s($state['_savedBy'])
@@ -785,7 +850,7 @@ class KompasState
     {
         $out = ['backend' => 'laravel', ...$this->identity(), 'bytes' => 0, 'updated_at' => 0, 'ada' => false];
         try {
-            $row = $this->db()->selectOne('SELECT LENGTH(`data`) n, `updated_at` FROM `app_state` WHERE `id`=1');
+            $row = $this->db()->selectOne('SELECT LENGTH(`data`) n, `updated_at` FROM `'.self::t('app_state').'` WHERE `'.self::idCol().'`=1');
             if ($row) {
                 $out['bytes'] = (int) $row->n;
                 $out['updated_at'] = (int) $row->updated_at;

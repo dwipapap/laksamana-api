@@ -8,6 +8,7 @@ use App\Modules\Finance\Services\Brankas;
 use App\Modules\Marketing\Services\MarketingState;
 use App\Support\Modules;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Support\Str;
 use RuntimeException;
 use stdClass;
 use Throwable;
@@ -28,6 +29,12 @@ use Throwable;
  * Monthly PDF reports live on disk in <KOMPAS_DATA_DIR>/lapor (lp_<hex>.pdf),
  * one row per (bulan, jenis) in `inv_lapor`; the old file is removed only
  * AFTER the new one is written. Runtime DDL is not ported.
+ *
+ * Core (#69, DB_KOMPAS_CONNECTION=core): the same statements run on the
+ * kompas_* tables of `core` (see KompasState::t()), `inv_lapor` and `an_akses`
+ * keyed by their own natural key (legacy_id), and the Analytics access matrix
+ * resolving a `#<legacy user id>` kunci to a real `user_id` FK. Mapping:
+ * docs/db/kompas.md.
  */
 class InvestorAnalytics
 {
@@ -38,6 +45,47 @@ class InvestorAnalytics
     public function db(): ConnectionInterface
     {
         return Modules::db('kompas');
+    }
+
+    /** Physical table for a legacy table name on the current connection. */
+    private static function t(string $table): string
+    {
+        return KompasState::t($table);
+    }
+
+    /** Record id column: the legacy id, or `legacy_id` on core. */
+    private static function idCol(): string
+    {
+        return KompasState::idCol();
+    }
+
+    /** `a`,`b`,`c` — a column list built from the SAME array as the bindings. */
+    private static function cols(array $cols): string
+    {
+        return KompasState::cols($cols);
+    }
+
+    /** ?,?,? — one placeholder per column, so the two lists cannot drift. */
+    private static function ph(int $n): string
+    {
+        return KompasState::ph($n);
+    }
+
+    private static function ulid(): string
+    {
+        return strtolower((string) Str::ulid());
+    }
+
+    /**
+     * The legacy Office User id an analytics `kunci` names: a per-actor key is
+     * `#<legacy user id>` (deploy/analytics), a role key ('staf') or a
+     * `@<name>` key names nobody. '' never matches a User.
+     */
+    private static function keyUser(mixed $kunci): string
+    {
+        $k = self::s($kunci);
+
+        return str_starts_with($k, '#') ? substr($k, 1) : '';
     }
 
     private static function s(mixed $v): string
@@ -312,7 +360,7 @@ class InvestorAnalytics
     public function reports(): stdClass
     {
         $out = [];
-        foreach ($this->db()->select('SELECT `bulan`,`jenis`,`nama`,`ukuran`,`at`,`oleh` FROM `inv_lapor` ORDER BY `bulan` DESC, `jenis`') as $r) {
+        foreach ($this->db()->select('SELECT `bulan`,`jenis`,`nama`,`ukuran`,`at`,`oleh` FROM `'.self::t('inv_lapor').'` ORDER BY `bulan` DESC, `jenis`') as $r) {
             $out[(string) $r->bulan][(string) $r->jenis] = ['nama' => (string) $r->nama, 'ukuran' => (int) $r->ukuran, 'at' => (int) $r->at, 'oleh' => (string) $r->oleh];
         }
 
@@ -350,10 +398,25 @@ class InvestorAnalytics
         if (@file_put_contents(self::path($kunci), $bin) === false) {
             return ['ok' => false, 'error' => 'gagal menulis berkas (cek izin folder)'];
         }
-        $lama = $this->db()->selectOne('SELECT `kunci` FROM `inv_lapor` WHERE `bulan`=? AND `jenis`=?', [$bulan, $jenis])?->kunci;
-        $this->db()->insert('INSERT INTO `inv_lapor` (`bulan`,`jenis`,`kunci`,`nama`,`ukuran`,`at`,`oleh`) VALUES (?,?,?,?,?,?,?)
-            ON DUPLICATE KEY UPDATE `kunci`=VALUES(`kunci`), `nama`=VALUES(`nama`), `ukuran`=VALUES(`ukuran`), `at`=VALUES(`at`), `oleh`=VALUES(`oleh`)',
-            [$bulan, $jenis, $kunci, mb_substr(self::s($payload['fileName'] ?? $kunci), 0, 190), strlen($bin), (int) (microtime(true) * 1000), mb_substr($oleh, 0, 80)]);
+        $lama = $this->db()->selectOne('SELECT `kunci` FROM `'.self::t('inv_lapor').'` WHERE `bulan`=? AND `jenis`=?', [$bulan, $jenis])?->kunci;
+        if (KompasState::onCore()) {
+            // The legacy id is a MySQL counter that never leaves the database:
+            // the module's own key is (bulan, jenis), which is the legacy_id.
+            $at = (int) (microtime(true) * 1000);
+            $cols = ['legacy_id' => "$bulan|$jenis", 'bulan' => $bulan, 'jenis' => $jenis, 'kunci' => $kunci,
+                'nama' => mb_substr(self::s($payload['fileName'] ?? $kunci), 0, 190), 'ukuran' => strlen($bin),
+                'at' => $at, 'oleh' => mb_substr($oleh, 0, 80), 'created_at' => $at, 'updated_at' => $at, 'version' => 1];
+            $this->db()->insert('INSERT INTO `'.self::t('inv_lapor').'` (`id`,'.self::cols(array_keys($cols)).')'
+                .' VALUES (?,'.self::ph(count($cols)).')'
+                .' ON DUPLICATE KEY UPDATE `version`=`version`+1, `kunci`=VALUES(`kunci`), `nama`=VALUES(`nama`), `ukuran`=VALUES(`ukuran`),'
+                .' `at`=VALUES(`at`), `oleh`=VALUES(`oleh`), `updated_at`=VALUES(`updated_at`)',
+                [self::ulid(), ...array_values($cols)]);
+        } else {
+            $this->db()->insert('INSERT INTO `inv_lapor` (`bulan`,`jenis`,`kunci`,`nama`,`ukuran`,`at`,`oleh`) VALUES (?,?,?,?,?,?,?)
+                ON DUPLICATE KEY UPDATE `kunci`=VALUES(`kunci`), `nama`=VALUES(`nama`), `ukuran`=VALUES(`ukuran`), `at`=VALUES(`at`), `oleh`=VALUES(`oleh`)',
+                [$bulan, $jenis, $kunci, mb_substr(self::s($payload['fileName'] ?? $kunci), 0, 190), strlen($bin),
+                    (int) (microtime(true) * 1000), mb_substr($oleh, 0, 80)]);
+        }
         if ($lama && $lama !== $kunci) {
             @unlink(self::path($lama));
         }
@@ -364,7 +427,7 @@ class InvestorAnalytics
     /** @return array{path:string,nama:string}|string the file, or the legacy 404 message */
     public function reportFile(mixed $bulan, mixed $jenis): array|string
     {
-        $r = $this->db()->selectOne('SELECT `kunci`,`nama` FROM `inv_lapor` WHERE `bulan`=? AND `jenis`=?', [self::s($bulan), self::s($jenis)]);
+        $r = $this->db()->selectOne('SELECT `kunci`,`nama` FROM `'.self::t('inv_lapor').'` WHERE `bulan`=? AND `jenis`=?', [self::s($bulan), self::s($jenis)]);
         if (! $r) {
             return 'laporan tidak ada';
         }
@@ -375,8 +438,8 @@ class InvestorAnalytics
 
     public function deleteReport(mixed $bulan, mixed $jenis): void
     {
-        $k = $this->db()->selectOne('SELECT `kunci` FROM `inv_lapor` WHERE `bulan`=? AND `jenis`=?', [self::s($bulan), self::s($jenis)])?->kunci;
-        $this->db()->delete('DELETE FROM `inv_lapor` WHERE `bulan`=? AND `jenis`=?', [self::s($bulan), self::s($jenis)]);
+        $k = $this->db()->selectOne('SELECT `kunci` FROM `'.self::t('inv_lapor').'` WHERE `bulan`=? AND `jenis`=?', [self::s($bulan), self::s($jenis)])?->kunci;
+        $this->db()->delete('DELETE FROM `'.self::t('inv_lapor').'` WHERE `bulan`=? AND `jenis`=?', [self::s($bulan), self::s($jenis)]);
         if ($k) {
             @unlink(self::path($k));
         }
@@ -389,7 +452,7 @@ class InvestorAnalytics
     {
         $data = null;
         $ts = 0;
-        $row = $this->db()->selectOne('SELECT `data`,`updated_at` FROM `an_state` WHERE `id`=1');
+        $row = $this->db()->selectOne('SELECT `data`,`updated_at` FROM `'.self::t('an_state').'` WHERE `'.self::idCol().'`=1');
         if ($row && isset($row->data) && $row->data !== '') {
             $d = json_decode((string) $row->data, true);
             if (is_array($d)) {
@@ -399,11 +462,11 @@ class InvestorAnalytics
         }
         $data ??= ['laporan' => new stdClass, 'setting' => new stdClass];
         $akses = [];
-        foreach ($this->db()->select('SELECT `kunci`,`halaman`,`tingkat` FROM `an_akses`') as $r) {
+        foreach ($this->db()->select('SELECT `kunci`,`halaman`,`tingkat` FROM `'.self::t('an_akses').'`') as $r) {
             $akses[(string) $r->kunci][(string) $r->halaman] = (int) $r->tingkat;
         }
         $peran = [];
-        foreach ($this->db()->select('SELECT `kunci`,`peran` FROM `an_peran`') as $r) {
+        foreach ($this->db()->select('SELECT `kunci`,`peran` FROM `'.self::t('an_peran').'`') as $r) {
             $peran[(string) $r->kunci] = (string) $r->peran;
         }
 
@@ -415,9 +478,18 @@ class InvestorAnalytics
         if (! is_array($data)) {
             return ['ok' => false, 'error' => 'data bukan objek'];
         }
+        $now = $ts ?? (int) (microtime(true) * 1000);
+        if (KompasState::onCore()) {
+            $this->db()->insert('INSERT INTO `'.self::t('an_state').'` (`id`,`legacy_id`,`data`,`created_at`,`updated_at`,`oleh`,`version`)
+                VALUES (?,1,?,?,?,?,1)
+                ON DUPLICATE KEY UPDATE `version`=`version`+1, `data`=VALUES(`data`), `updated_at`=VALUES(`updated_at`), `oleh`=VALUES(`oleh`)',
+                [self::ulid(), json_encode($data, JSON_UNESCAPED_UNICODE), $now, $now, mb_substr(self::s($oleh), 0, 80)]);
+
+            return ['ok' => true, 'saved' => true];
+        }
         $this->db()->insert('INSERT INTO `an_state` (`id`,`data`,`updated_at`,`updated_by`) VALUES (1,?,?,?)
             ON DUPLICATE KEY UPDATE `data`=VALUES(`data`), `updated_at`=VALUES(`updated_at`), `updated_by`=VALUES(`updated_by`)',
-            [json_encode($data, JSON_UNESCAPED_UNICODE), $ts ?? (int) (microtime(true) * 1000), mb_substr(self::s($oleh), 0, 80)]);
+            [json_encode($data, JSON_UNESCAPED_UNICODE), $now, mb_substr(self::s($oleh), 0, 80)]);
 
         return ['ok' => true, 'saved' => true];
     }
@@ -429,14 +501,26 @@ class InvestorAnalytics
             return ['ok' => false, 'error' => 'akses bukan objek'];
         }
         $this->db()->transaction(function () use ($peta) {
-            $this->db()->delete('DELETE FROM `an_akses`');
+            $now = (int) (microtime(true) * 1000);
+            $this->db()->delete('DELETE FROM `'.self::t('an_akses').'`');
             foreach ($peta as $kunci => $baris) {
                 if (! is_array($baris)) {
                     continue;
                 }
                 foreach ($baris as $hal => $tk) {
-                    $this->db()->insert('INSERT INTO `an_akses` (`kunci`,`halaman`,`tingkat`) VALUES (?,?,?)',
-                        [mb_substr((string) $kunci, 0, 80), mb_substr((string) $hal, 0, 40), max(0, min(2, (int) $tk))]);
+                    $k = mb_substr((string) $kunci, 0, 80);
+                    $h = mb_substr((string) $hal, 0, 40);
+                    $t = max(0, min(2, (int) $tk));
+                    if (KompasState::onCore()) {
+                        // columns: id, legacy_id, kunci, halaman, tingkat, user_id(SELECT),
+                        // created_at, updated_at — bindings in exactly that order
+                        $this->db()->insert('INSERT INTO `'.self::t('an_akses').'` (`id`,`legacy_id`,`kunci`,`halaman`,`tingkat`,`user_id`,`created_at`,`updated_at`)
+                            VALUES (?,?,?,?,?,(SELECT u.`id` FROM `user` u WHERE u.`legacy_id` = ?),?,?)',
+                            [self::ulid(), "$k|$h", $k, $h, $t, self::keyUser($kunci), $now, $now]);
+
+                        continue;
+                    }
+                    $this->db()->insert('INSERT INTO `an_akses` (`kunci`,`halaman`,`tingkat`) VALUES (?,?,?)', [$k, $h, $t]);
                 }
             }
         });
@@ -451,9 +535,20 @@ class InvestorAnalytics
             return ['ok' => false, 'error' => 'peran bukan objek'];
         }
         $this->db()->transaction(function () use ($peta) {
-            $this->db()->delete('DELETE FROM `an_peran`');
+            $now = (int) (microtime(true) * 1000);
+            $this->db()->delete('DELETE FROM `'.self::t('an_peran').'`');
             foreach ($peta as $kunci => $p) {
-                $this->db()->insert('INSERT INTO `an_peran` (`kunci`,`peran`) VALUES (?,?)', [mb_substr((string) $kunci, 0, 80), mb_substr(self::s($p), 0, 20)]);
+                $k = mb_substr((string) $kunci, 0, 80);
+                if (KompasState::onCore()) {
+                    // columns: id, legacy_id, kunci, peran, user_id(SELECT), created_at,
+                    // updated_at — bindings in exactly that order
+                    $this->db()->insert('INSERT INTO `'.self::t('an_peran').'` (`id`,`legacy_id`,`kunci`,`peran`,`user_id`,`created_at`,`updated_at`)
+                        VALUES (?,?,?,?,(SELECT u.`id` FROM `user` u WHERE u.`legacy_id` = ?),?,?)',
+                        [self::ulid(), $k, $k, mb_substr(self::s($p), 0, 20), self::keyUser($kunci), $now, $now]);
+
+                    continue;
+                }
+                $this->db()->insert('INSERT INTO `an_peran` (`kunci`,`peran`) VALUES (?,?)', [$k, mb_substr(self::s($p), 0, 20)]);
             }
         });
 
