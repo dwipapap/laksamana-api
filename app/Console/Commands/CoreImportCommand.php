@@ -24,7 +24,7 @@ final class CoreImportCommand extends Command
         }
 
         $importer = $importers->get($module);
-        foreach ([$importer->legacyConnection(), $importer->targetConnection()] as $connection) {
+        foreach ([...$importer->legacyConnections(), $importer->targetConnection()] as $connection) {
             if (! $this->isLocalConnection($connection)) {
                 $this->components->error("Refusing core:import: {$connection} must use a local host.");
 
@@ -34,7 +34,7 @@ final class CoreImportCommand extends Command
 
         $rows = $importer->import();
         $this->components->info(
-            "Imported {$rows} rows from {$importer->legacyConnection()} into {$importer->targetConnection()}."
+            "Imported {$rows} rows from ".implode(', ', $importer->legacyConnections())." into {$importer->targetConnection()}."
         );
 
         return self::SUCCESS;

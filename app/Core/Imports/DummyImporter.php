@@ -16,9 +16,9 @@ final class DummyImporter implements Importer
         return 'dummy';
     }
 
-    public function legacyConnection(): string
+    public function legacyConnections(): array
     {
-        return 'legacy_account';
+        return ['legacy_account'];
     }
 
     public function targetConnection(): string
@@ -28,7 +28,7 @@ final class DummyImporter implements Importer
 
     public function import(): int
     {
-        $users = DB::connection($this->legacyConnection())
+        $users = DB::connection('legacy_account')
             ->table('users')
             ->orderBy('id')
             ->get(['id', 'name', 'username', 'created_at', 'updated_at']);

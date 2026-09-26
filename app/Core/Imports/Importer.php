@@ -8,7 +8,8 @@ interface Importer
 {
     public function module(): string;
 
-    public function legacyConnection(): string;
+    /** @return list<string> every legacy connection the import reads (all must be local) */
+    public function legacyConnections(): array;
 
     public function targetConnection(): string;
 
