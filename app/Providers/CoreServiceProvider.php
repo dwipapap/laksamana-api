@@ -8,6 +8,7 @@ use App\Console\Commands\CoreImportCommand;
 use App\Core\Imports\AccountImporter;
 use App\Core\Imports\DummyImporter;
 use App\Core\Imports\ImporterRegistry;
+use App\Core\Imports\JadwalImporter;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
 
@@ -18,6 +19,7 @@ final class CoreServiceProvider extends ServiceProvider
         $this->app->singleton(ImporterRegistry::class, fn (Application $app) => new ImporterRegistry(
             $app->make(DummyImporter::class),
             $app->make(AccountImporter::class),
+            $app->make(JadwalImporter::class),
         ));
     }
 
