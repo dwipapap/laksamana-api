@@ -53,7 +53,7 @@ class StockCatalog
     public function vendors(): stdClass
     {
         $out = [];
-        foreach (StockSupport::db()->select('SELECT `nama`, `data` FROM `vendors` ORDER BY `nama`') as $r) {
+        foreach (StockSupport::db()->select(StockSupport::q('SELECT `nama`, `data` FROM {vendors} ORDER BY `nama`')) as $r) {
             $v = json_decode((string) $r->data);
             if (! is_object($v)) {
                 $v = (object) ['whatsapp' => ''];
@@ -79,7 +79,7 @@ class StockCatalog
         }
         $db = StockSupport::db();
         if ($perluJadwalJemput === null || $tutupHari === null || $penerima === null || $bank === null || $norek === null) {
-            $row = $db->selectOne('SELECT `data` FROM `vendors` WHERE `nama` = ?', [$namaLama !== '' ? $namaLama : $nama]);
+            $row = $db->selectOne(StockSupport::q('SELECT `data` FROM {vendors} WHERE `nama` = ?'), [$namaLama !== '' ? $namaLama : $nama]);
             $pjLama = false;
             $thLama = [];
             $peLama = $bkLama = $noLama = '';
@@ -120,10 +120,10 @@ class StockCatalog
             $namaLama = trim(StockSupport::str($namaLama));
             if ($namaLama !== '' && $namaLama !== $nama) {
                 // products pointing at the old vendor are left alone on purpose (free text)
-                $db->delete('DELETE FROM `vendors` WHERE `nama` = ?', [$namaLama]);
+                $db->delete(StockSupport::q('DELETE FROM {vendors} WHERE `nama` = ?'), [$namaLama]);
             }
-            $db->statement('INSERT INTO `vendors` (`nama`,`whatsapp`,`data`) VALUES (?,?,?)
-                ON DUPLICATE KEY UPDATE `whatsapp`=VALUES(`whatsapp`), `data`=VALUES(`data`)',
+            $db->statement(StockSupport::q('INSERT INTO {vendors} (`nama`,`whatsapp`,`data`) VALUES (?,?,?)
+                ON DUPLICATE KEY UPDATE `whatsapp`=VALUES(`whatsapp`), `data`=VALUES(`data`)'),
                 [$nama, StockSupport::str($telp), StockSupport::enc($rec)]);
             $db->commit();
 
@@ -136,7 +136,7 @@ class StockCatalog
 
     public function deleteVendor(mixed $nama): array
     {
-        return ['status' => 'success', 'deleted' => StockSupport::db()->delete('DELETE FROM `vendors` WHERE `nama` = ?', [StockSupport::str($nama)])];
+        return ['status' => 'success', 'deleted' => StockSupport::db()->delete(StockSupport::q('DELETE FROM {vendors} WHERE `nama` = ?'), [StockSupport::str($nama)])];
     }
 
     // ─────────────────────────────── products ──
@@ -206,7 +206,7 @@ class StockCatalog
     public function products(): stdClass
     {
         $out = [];
-        foreach (StockSupport::db()->select('SELECT `nama`, `data` FROM `products` ORDER BY `nama`') as $r) {
+        foreach (StockSupport::db()->select(StockSupport::q('SELECT `nama`, `data` FROM {products} ORDER BY `nama`')) as $r) {
             $out[$r->nama] = self::normaliseProduct(json_decode((string) $r->data));
         }
 
@@ -281,7 +281,7 @@ class StockCatalog
         if ($satuan === null || $kategori === null || $area === null || $caraBeli === null || $sumber === null
             || $packIsi === null || $packSatuan === null || $diOutlet === null || $satuanDasar === null
             || $isi === null || $aktif === null) {
-            $row = $db->selectOne('SELECT `data` FROM `products` WHERE `nama` = ?', [$namaLama !== '' ? $namaLama : $nama]);
+            $row = $db->selectOne(StockSupport::q('SELECT `data` FROM {products} WHERE `nama` = ?'), [$namaLama !== '' ? $namaLama : $nama]);
             $lama = $row ? json_decode((string) $row->data) : null;
             if (is_object($lama)) {
                 if (isset($lama->satuan) && is_array($lama->satuan)) {
@@ -413,10 +413,10 @@ class StockCatalog
         try {
             $namaLama = trim(StockSupport::str($namaLama));
             if ($namaLama !== '' && $namaLama !== $nama) {
-                $db->delete('DELETE FROM `products` WHERE `nama` = ?', [$namaLama]);
+                $db->delete(StockSupport::q('DELETE FROM {products} WHERE `nama` = ?'), [$namaLama]);
             }
-            $db->statement('INSERT INTO `products` (`nama`,`utama`,`data`) VALUES (?,?,?)
-                ON DUPLICATE KEY UPDATE `utama`=VALUES(`utama`), `data`=VALUES(`data`)',
+            $db->statement(StockSupport::q('INSERT INTO {products} (`nama`,`utama`,`data`) VALUES (?,?,?)
+                ON DUPLICATE KEY UPDATE `utama`=VALUES(`utama`), `data`=VALUES(`data`)'),
                 [$nama, StockSupport::str($utama), StockSupport::enc($rec)]);
             $db->commit();
         } catch (Throwable $e) {
@@ -448,7 +448,7 @@ class StockCatalog
 
     public function deleteProduct(mixed $nama): array
     {
-        return ['status' => 'success', 'deleted' => StockSupport::db()->delete('DELETE FROM `products` WHERE `nama` = ?', [StockSupport::str($nama)])];
+        return ['status' => 'success', 'deleted' => StockSupport::db()->delete(StockSupport::q('DELETE FROM {products} WHERE `nama` = ?'), [StockSupport::str($nama)])];
     }
 
     // ─────────────────────────────── imports ──
@@ -457,7 +457,7 @@ class StockCatalog
     private function existing(string $table): array
     {
         $ada = [];
-        foreach (StockSupport::db()->select("SELECT `nama` FROM `$table`") as $r) {
+        foreach (StockSupport::db()->select(StockSupport::q("SELECT `nama` FROM {{$table}}")) as $r) {
             $ada[mb_strtolower(trim((string) $r->nama))] = true;
         }
 

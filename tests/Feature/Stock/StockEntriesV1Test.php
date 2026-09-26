@@ -1,5 +1,6 @@
 <?php
 
+use App\Modules\Stock\Services\StockSupport;
 use App\Support\Modules;
 
 /*
@@ -30,7 +31,7 @@ it('creates, reads, patches (keeping the photo) and deletes a waste record with 
         ->assertStatus(409)->assertJsonPath('error.code', 'version_conflict');
     $this->flushHeaders();
     $this->withToken($token)->withHeader('If-Match', $p->json('meta.version'))->deleteJson("/api/v1/stock/waste/$id")->assertOk();
-    expect(Modules::db('stock')->selectOne('SELECT id FROM waste WHERE id = ?', [$id]))->toBeNull();
+    expect(Modules::db('stock')->selectOne(StockSupport::q('SELECT {id} AS `id` FROM {waste} WHERE {id} = ?'), [$id]))->toBeNull();
 });
 
 it('edits a handover without the legacy 500', function () {
@@ -44,7 +45,7 @@ it('edits a handover without the legacy 500', function () {
 
 it('scopes lists and single reads to the caller\'s team when the switch is on', function () {
     config(['laksamana.stock_batas_per_tim' => true]);
-    Modules::db('stock')->insert("INSERT INTO usage_events (id,tanggal,jenis,tim,waktu,data) VALUES
+    Modules::db('stock')->insert(StockSupport::q('INSERT INTO {usage_events} ({id},')."tanggal,jenis,tim,waktu,data) VALUES
         ('USE-T1','2031-02-01','Event','Kitchen','','{}'), ('USE-T2','2031-02-01','Event','Bar','','{}')");
     $token = loginAs(officeUser('u-adit'));
     $ids = array_column($this->withToken($token)->getJson('/api/v1/stock/usage?from=2031-02-01')->assertOk()->json('data'), 'id');
@@ -78,7 +79,7 @@ it('lets Purchasing edit a manual CK movement but never an order-sync row', func
         ->patchJson('/api/v1/stock/ck/movements/'.$c->json('data.id'), ['qtyInput' => 2])->assertOk()->assertJsonPath('data.qty', 2400);
     $this->flushHeaders();
 
-    $ref = $this->withToken($token)->getJson('/api/v1/stock/ck/movements/'.Modules::db('stock')->selectOne('SELECT id FROM ck_stock WHERE ref IS NOT NULL LIMIT 1')->id)->assertOk();
+    $ref = $this->withToken($token)->getJson('/api/v1/stock/ck/movements/'.Modules::db('stock')->selectOne(StockSupport::q('SELECT {id} AS `id` FROM {ck_stock} WHERE ref IS NOT NULL LIMIT 1'))->id)->assertOk();
     $this->withToken($token)->withHeader('If-Match', $ref->json('meta.version'))->deleteJson('/api/v1/stock/ck/movements/'.$ref->json('data.id'))
         ->assertStatus(422)->assertJsonPath('error.message', 'mutasi dari pengajuan hanya hilang bila check-in dibatalkan');
 });
@@ -86,7 +87,7 @@ it('lets Purchasing edit a manual CK movement but never an order-sync row', func
 it('logs with the acting user as aktor', function () {
     $this->withToken(loginAs(officeUser('u-andry')))->postJson('/api/v1/stock/logs', ['entries' => [['modul' => 'purchasing', 'aksi' => 'tes_v1', 'aktor' => 'Palsu']]])
         ->assertCreated()->assertJsonPath('data.recorded', 1);
-    expect(Modules::db('stock')->selectOne("SELECT aktor FROM activity_log WHERE aksi = 'tes_v1'")->aktor)->toBe(officeUser('u-andry')['name']);
+    expect(Modules::db('stock')->selectOne(StockSupport::q("SELECT aktor FROM {activity_log} WHERE aksi = 'tes_v1'"))->aktor)->toBe(officeUser('u-andry')['name']);
 });
 
 it('refuses the log to non-admins', function () {

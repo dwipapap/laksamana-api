@@ -60,12 +60,12 @@ class StockOrders
     /** @return list<stdClass> */
     public function all(): array
     {
-        return array_map([self::class, 'fromRow'], StockSupport::rows(StockSupport::db()->select('SELECT * FROM `orders` ORDER BY `row_index`')));
+        return array_map([self::class, 'fromRow'], StockSupport::rows(StockSupport::db()->select(StockSupport::q('SELECT {*orders} FROM {orders} ORDER BY `row_index`'))));
     }
 
     public function find(int $rowIndex): ?stdClass
     {
-        $r = StockSupport::db()->selectOne('SELECT * FROM `orders` WHERE `row_index` = ?', [$rowIndex]);
+        $r = StockSupport::db()->selectOne(StockSupport::q('SELECT {*orders} FROM {orders} WHERE `row_index` = ?'), [$rowIndex]);
 
         return $r ? self::fromRow((array) $r) : null;
     }
@@ -88,14 +88,14 @@ class StockOrders
     /** pur_orders_batches(): joinable batches (nothing arrived yet), per team and arrival date. */
     public function batches(string $tim = '', string $tgl = ''): array
     {
-        $sql = "SELECT `batch_id`, `batch_name`, `tgl_datang`, `tim`,
+        $sql = StockSupport::q("SELECT `batch_id`, `batch_name`, `tgl_datang`, `tim`,
                        MIN(`pic`)   AS pic,
                        MIN(`waktu`) AS waktu,
                        COUNT(*)     AS jml_item,
                        SUM(CASE WHEN `kedatangan` = 'Datang' THEN 1 ELSE 0 END) AS jml_datang,
                        SUM(CASE WHEN `status` = 'Aktif' THEN 1 ELSE 0 END)      AS jml_aktif
-                FROM `orders`
-                WHERE `batch_id` <> ''";
+                FROM {orders}
+                WHERE `batch_id` <> ''");
         $par = [];
         if ($tim !== '') {
             $sql .= ' AND `tim` = ?';
@@ -141,14 +141,14 @@ class StockOrders
         $db = StockSupport::db();
         $db->beginTransaction();
         try {
-            $maxRow = (int) $db->selectOne('SELECT COALESCE(MAX(`row_index`), 1) AS m FROM `orders` FOR UPDATE')->m;
-            $jml = (int) $db->selectOne('SELECT COUNT(*) AS c FROM `orders`')->c;
+            $maxRow = (int) $db->selectOne(StockSupport::q('SELECT COALESCE(MAX(`row_index`), 1) AS m FROM {orders} FOR UPDATE'))->m;
+            $jml = (int) $db->selectOne(StockSupport::q('SELECT COUNT(*) AS c FROM {orders}'))->c;
 
             $adaBaris = [];
             $gabung = false;
             $b0 = null;
             if ($batchId !== '') {
-                $baris = StockSupport::rows($db->select('SELECT * FROM `orders` WHERE `batch_id` = ? FOR UPDATE', [$batchId]));
+                $baris = StockSupport::rows($db->select(StockSupport::q('SELECT {*orders} FROM {orders} WHERE `batch_id` = ? ORDER BY `nomor_order` FOR UPDATE'), [$batchId]));
                 if (! $baris) {
                     $db->rollBack();
 
@@ -197,7 +197,7 @@ class StockOrders
                         $noteLama = isset($rec->note) && $rec->note !== '-' ? StockSupport::str($rec->note) : '';
                         $rec->note = $noteLama === '' ? $noteBaru : ($noteLama.' | '.$noteBaru);
                     }
-                    $db->update("UPDATE `orders` SET `qty` = ?, `data` = ?, `status` = 'Aktif' WHERE `nomor_order` = ?",
+                    $db->update(StockSupport::q("UPDATE {orders} SET `qty` = ?, `data` = ?, `status` = 'Aktif' WHERE `nomor_order` = ?"),
                         [$qtyBaru, StockSupport::enc($rec), $lama['nomor_order']]);
                     $adaBaris[$kunci]['qty'] = $qtyBaru;
                     $adaBaris[$kunci]['data'] = StockSupport::enc($rec);
@@ -226,9 +226,9 @@ class StockOrders
                     'batchName' => $batchName,
                     'tim' => $tim,
                 ];
-                $db->insert('INSERT INTO `orders`
+                $db->insert(StockSupport::q('INSERT INTO {orders}
                     (`nomor_order`,`row_index`,`waktu`,`item`,`qty`,`unit`,`tgl_datang`,`pic`,`status`,`kedatangan`,`batch_id`,`batch_name`,`tim`,`data`)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'),
                     [$nomor, $row, $waktu, $item, $rec->qty, $rec->unit, $tgl, $rec->pic, 'Aktif', '',
                         $batchId, $batchName, $tim, StockSupport::enc($rec)]);
                 $dibuat[] = $rec;
@@ -277,14 +277,14 @@ class StockOrders
                     continue;
                 }
                 $row = isset($o->rowIndex) && is_numeric($o->rowIndex) ? (int) $o->rowIndex : ++$rowFallback;
-                $db->statement('INSERT INTO `orders`
+                $db->statement(StockSupport::q('INSERT INTO {orders}
                     (`nomor_order`,`row_index`,`waktu`,`item`,`qty`,`unit`,`tgl_datang`,`pic`,`status`,`kedatangan`,`data`)
                     VALUES (?,?,?,?,?,?,?,?,?,?,?)
                     ON DUPLICATE KEY UPDATE
                       `row_index`=VALUES(`row_index`), `waktu`=VALUES(`waktu`), `item`=VALUES(`item`),
                       `qty`=VALUES(`qty`), `unit`=VALUES(`unit`), `tgl_datang`=VALUES(`tgl_datang`),
                       `pic`=VALUES(`pic`), `status`=VALUES(`status`), `kedatangan`=VALUES(`kedatangan`),
-                      `data`=VALUES(`data`)', [
+                      `data`=VALUES(`data`)'), [
                     $nomor, $row,
                     StockSupport::str($o->timestamp ?? ''), StockSupport::str($o->item ?? ''),
                     isset($o->qty) ? (float) $o->qty : 0, StockSupport::str($o->unit ?? ''),
@@ -316,7 +316,7 @@ class StockOrders
         $db = StockSupport::db();
         if ($ids) {
             $ph = implode(',', array_fill(0, count($ids), '?'));
-            $n = $db->update("UPDATE `orders` SET `status` = ? WHERE `nomor_order` IN ($ph)",
+            $n = $db->update('UPDATE `'.StockSupport::table('orders')."` SET `status` = ? WHERE `nomor_order` IN ($ph)",
                 array_merge([$status], array_map(fn ($x) => StockSupport::str($x), $ids)));
         } elseif ($rows) {
             $rows = array_values(array_filter(array_map(fn ($x) => is_array($x) ? (int) (bool) $x : (int) $x, $rows), fn ($x) => $x > 0));
@@ -324,12 +324,12 @@ class StockOrders
                 return ['status' => 'error', 'message' => 'rows kosong'];
             }
             $ph = implode(',', array_fill(0, count($rows), '?'));
-            $n = $db->update("UPDATE `orders` SET `status` = ? WHERE `row_index` IN ($ph)", array_merge([$status], $rows));
+            $n = $db->update('UPDATE `'.StockSupport::table('orders')."` SET `status` = ? WHERE `row_index` IN ($ph)", array_merge([$status], $rows));
         } else {
             return ['status' => 'error', 'message' => 'tidak ada order yang ditunjuk'];
         }
         // keep `data` in step with the column (legacy rewrites every valid row)
-        $db->update("UPDATE `orders` SET `data` = JSON_SET(`data`, '$.status', `status`) WHERE JSON_VALID(`data`)");
+        $db->update(StockSupport::q("UPDATE {orders} SET `data` = JSON_SET(`data`, '$.status', `status`) WHERE JSON_VALID(`data`)"));
 
         return ['status' => 'success', 'updated' => $n];
     }
@@ -379,14 +379,14 @@ class StockOrders
                         $tt = '';
                     }
                     $ct = mb_substr(trim(StockSupport::str($u->catatanTerima ?? '')), 0, 300);
-                    $n += $db->update("UPDATE `orders`
+                    $n += $db->update('UPDATE `'.StockSupport::table('orders')."`
                          SET `kedatangan` = ?,
                              `data` = JSON_SET(IF(JSON_VALID(`data`), `data`, '{}'),
                                         '$.kedatangan', ?, '$.catatan', ?,
                                         '$.tglTerima', ?, '$.catatanTerima', ?)
                        WHERE `row_index` = ?", [$kdt, $kdt, $cat, $tt, $ct, $row]);
                 } else {
-                    $n += $db->update("UPDATE `orders`
+                    $n += $db->update('UPDATE `'.StockSupport::table('orders')."`
                          SET `kedatangan` = ?,
                              `data` = JSON_SET(IF(JSON_VALID(`data`), `data`, '{}'),
                                         '$.kedatangan', ?, '$.catatan', ?)
@@ -428,7 +428,7 @@ class StockOrders
 
                     return ['status' => 'error', 'message' => 'format tanggal jemput harus YYYY-MM-DD'];
                 }
-                $n += $db->update("UPDATE `orders`
+                $n += $db->update('UPDATE `'.StockSupport::table('orders')."`
                       SET `data` = JSON_SET(IF(JSON_VALID(`data`), `data`, '{}'), '$.tglJemput', ?)
                     WHERE `row_index` = ?", [$tgl, $row]);
             }
@@ -452,7 +452,7 @@ class StockOrders
             return ['status' => 'error', 'message' => 'newQty bukan angka'];
         }
         $qty = (float) $newQty;
-        $n = StockSupport::db()->update("UPDATE `orders`
+        $n = StockSupport::db()->update('UPDATE `'.StockSupport::table('orders')."`
                SET `qty` = ?,
                    `data` = JSON_SET(IF(JSON_VALID(`data`), `data`, '{}'), '$.qty', ?)
              WHERE `row_index` = ?", [$qty, $qty, $row]);
@@ -468,7 +468,7 @@ class StockOrders
             return ['status' => 'error', 'message' => 'rowIndex tidak sah'];
         }
 
-        return ['status' => 'success', 'deleted' => StockSupport::db()->delete('DELETE FROM `orders` WHERE `row_index` = ?', [$row])];
+        return ['status' => 'success', 'deleted' => StockSupport::db()->delete(StockSupport::q('DELETE FROM {orders} WHERE `row_index` = ?'), [$row])];
     }
 
     /** pur_stats(). */
@@ -477,9 +477,9 @@ class StockOrders
         $db = StockSupport::db();
         $out = [];
         foreach (['orders', 'vendors', 'products', 'users'] as $t) {
-            $out[$t] = (int) $db->selectOne("SELECT COUNT(*) AS c FROM `$t`")->c;
+            $out[$t] = (int) $db->selectOne(StockSupport::q("SELECT COUNT(*) AS c FROM {{$t}}"))->c;
         }
-        $out['orders_aktif'] = (int) $db->selectOne("SELECT COUNT(*) AS c FROM `orders` WHERE `status` = 'Aktif'")->c;
+        $out['orders_aktif'] = (int) $db->selectOne(StockSupport::q("SELECT COUNT(*) AS c FROM {orders} WHERE `status` = 'Aktif'"))->c;
         $out['env'] = Modules::envLabel();
         $out['db'] = Modules::databaseName('stock');
 

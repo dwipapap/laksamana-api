@@ -19,7 +19,7 @@ class StockCk
     public function products(): array
     {
         $out = [];
-        foreach (StockSupport::db()->select('SELECT `nama`,`data` FROM `products` ORDER BY `nama`') as $r) {
+        foreach (StockSupport::db()->select(StockSupport::q('SELECT `nama`,`data` FROM {products} ORDER BY `nama`')) as $r) {
             $d = json_decode((string) $r->data);
             if (! is_object($d)) {
                 continue;
@@ -76,9 +76,9 @@ class StockCk
         $db = StockSupport::db();
         $ph = implode(',', array_fill(0, count($rows), '?'));
         $n = 0;
-        foreach ($db->select("SELECT `nomor_order`,`row_index`,`item`,`qty`,`unit`,`tgl_datang`,
+        foreach ($db->select('SELECT `nomor_order`,`row_index`,`item`,`qty`,`unit`,`tgl_datang`,
                                      `kedatangan`,`tim`,`pic`,`batch_name`
-                                FROM `orders` WHERE `row_index` IN ($ph)", $rows) as $o) {
+                                FROM `'.StockSupport::table('orders')."` WHERE `row_index` IN ($ph)", $rows) as $o) {
             if (strtolower(trim((string) ($o->batch_name ?? ''))) !== 'central kitchen') {
                 continue; // only the Central Kitchen tab touches CK stock
             }
@@ -92,7 +92,7 @@ class StockCk
                 continue;
             }
             if ((string) $o->kedatangan !== 'Datang') {
-                $n += $db->delete("DELETE FROM `ck_stock` WHERE `ref` = ? AND `arah` = 'keluar'", [$ref]);
+                $n += $db->delete(StockSupport::q("DELETE FROM {ck_stock} WHERE `ref` = ? AND `arah` = 'keluar'"), [$ref]);
 
                 continue;
             }
@@ -101,13 +101,13 @@ class StockCk
             $qty = self::keDasar($qtyInput, $unit, $p->packIsi, $p->packSatuan);
             $rec = (object) ['catatan' => 'Pengajuan '.$ref, 'packIsi' => $p->packIsi, 'packSatuan' => $p->packSatuan];
             $db->statement(
-                "INSERT INTO `ck_stock`
-                   (`id`,`tanggal`,`item`,`arah`,`qty`,`qty_input`,`unit_input`,`sebab`,`ref`,`tim`,`pic`,`waktu`,`data`)
+                StockSupport::q("INSERT INTO {ck_stock}
+                   ({id},`tanggal`,`item`,`arah`,`qty`,`qty_input`,`unit_input`,`sebab`,`ref`,`tim`,`pic`,`waktu`,`data`)
                  VALUES (?,?,?,'keluar',?,?,?,'pengajuan',?,?,?,?,?)
                  ON DUPLICATE KEY UPDATE
                    `tanggal`=VALUES(`tanggal`), `item`=VALUES(`item`), `qty`=VALUES(`qty`),
                    `qty_input`=VALUES(`qty_input`), `unit_input`=VALUES(`unit_input`),
-                   `tim`=VALUES(`tim`), `pic`=VALUES(`pic`), `data`=VALUES(`data`)", [
+                   `tim`=VALUES(`tim`), `pic`=VALUES(`pic`), `data`=VALUES(`data`)"), [
                     StockSupport::uid('CKO'),
                     (string) $o->tgl_datang ?: StockSupport::now('Y-m-d'),
                     $namaMaster, $qty, $qtyInput, $unit, $ref,
@@ -131,11 +131,11 @@ class StockCk
     {
         $produk = $this->products();
         $agg = [];
-        foreach (StockSupport::db()->select("SELECT `item`,
+        foreach (StockSupport::db()->select(StockSupport::q("SELECT `item`,
                  SUM(CASE WHEN `arah`='masuk'  THEN `qty` ELSE 0 END) AS masuk,
                  SUM(CASE WHEN `arah`='keluar' THEN `qty` ELSE 0 END) AS keluar,
                  MAX(`tanggal`) AS terakhir
-            FROM `ck_stock` GROUP BY `item`") as $r) {
+            FROM {ck_stock} GROUP BY `item`")) as $r) {
             $agg[$r->item] = $r;
         }
 
@@ -179,12 +179,12 @@ class StockCk
     /** pur_ck_mutasi_ambil(): newest first, optional ?dari=&ke= on tanggal. */
     public function movements(string $dari = '', string $ke = '', ?string $id = null): array
     {
-        $sql = 'SELECT `id`,`tanggal`,`item`,`arah`,`qty`,`qty_input`,`unit_input`,
+        $sql = StockSupport::q('SELECT {id} AS `id`,`tanggal`,`item`,`arah`,`qty`,`qty_input`,`unit_input`,
                        `sebab`,`status`,`ref`,`tim`,`pic`,`waktu`,`data`
-                  FROM `ck_stock` WHERE 1=1';
+                  FROM {ck_stock} WHERE 1=1');
         $par = [];
         if ($id !== null) {
-            $sql .= ' AND `id` = ?';
+            $sql .= StockSupport::q(' AND {id} = ?');
             $par[] = $id;
         }
         StockSupport::dateFilter($sql, $par, $dari, $ke);
@@ -263,21 +263,21 @@ class StockCk
         $db = StockSupport::db();
 
         if ($id !== '' && ($verified || StockSupport::exists('ck_stock', $id))) {
-            if ((string) $db->selectOne('SELECT `ref` FROM `ck_stock` WHERE `id`=?', [$id])?->ref !== '') {
+            if ((string) $db->selectOne(StockSupport::q('SELECT `ref` FROM {ck_stock} WHERE {id}=?'), [$id])?->ref !== '') {
                 return ['status' => 'error', 'message' => 'mutasi dari pengajuan hanya berubah lewat check-in'];
             }
-            $db->update('UPDATE `ck_stock` SET `tanggal`=?,`item`=?,`arah`=?,`qty`=?,`qty_input`=?,
-                             `unit_input`=?,`sebab`=?,`tim`=?,`pic`=?,`data`=? WHERE `id`=?',
+            $db->update(StockSupport::q('UPDATE {ck_stock} SET `tanggal`=?,`item`=?,`arah`=?,`qty`=?,`qty_input`=?,
+                             `unit_input`=?,`sebab`=?,`tim`=?,`pic`=?,`data`=? WHERE {id}=?'),
                 [$tanggal, $item, $arah, $qty, $qtyInput, $unitInput, $sebab, $tim, $pic, $dataJson, $id]);
 
             return ['status' => 'success', 'id' => $id];
         }
 
         $id = StockSupport::uid('CK');
-        $db->insert('INSERT INTO `ck_stock`
-                       (`id`,`tanggal`,`item`,`arah`,`qty`,`qty_input`,`unit_input`,
+        $db->insert(StockSupport::q('INSERT INTO {ck_stock}
+                       ({id},`tanggal`,`item`,`arah`,`qty`,`qty_input`,`unit_input`,
                         `sebab`,`ref`,`tim`,`pic`,`waktu`,`data`)
-                     VALUES (?,?,?,?,?,?,?,?,NULL,?,?,?,?)',
+                     VALUES (?,?,?,?,?,?,?,?,NULL,?,?,?,?)'),
             [$id, $tanggal, $item, $arah, $qty, $qtyInput, $unitInput, $sebab, $tim, $pic, $waktu, $dataJson]);
 
         return ['status' => 'success', 'id' => $id];
@@ -290,7 +290,7 @@ class StockCk
         if ($id === '') {
             return ['status' => 'error', 'message' => 'id kosong'];
         }
-        $row = StockSupport::db()->selectOne('SELECT `ref` FROM `ck_stock` WHERE `id`=?', [$id]);
+        $row = StockSupport::db()->selectOne(StockSupport::q('SELECT `ref` FROM {ck_stock} WHERE {id}=?'), [$id]);
         if (! $row) {
             return ['status' => 'error', 'message' => 'mutasi tidak ditemukan'];
         }
@@ -298,7 +298,7 @@ class StockCk
             return ['status' => 'error', 'message' => 'mutasi dari pengajuan hanya hilang bila check-in dibatalkan'];
         }
 
-        return ['status' => 'success', 'deleted' => StockSupport::db()->delete('DELETE FROM `ck_stock` WHERE `id`=?', [$id])];
+        return ['status' => 'success', 'deleted' => StockSupport::db()->delete(StockSupport::q('DELETE FROM {ck_stock} WHERE {id}=?'), [$id])];
     }
 
     /**
@@ -330,10 +330,10 @@ class StockCk
         $rec = (object) ['catatan' => trim(StockSupport::str($b->catatan ?? '')), 'packIsi' => $p->packIsi, 'packSatuan' => $p->packSatuan];
 
         $id = StockSupport::uid('CKK');
-        StockSupport::db()->insert("INSERT INTO `ck_stock`
-                       (`id`,`tanggal`,`item`,`arah`,`qty`,`qty_input`,`unit_input`,
+        StockSupport::db()->insert(StockSupport::q("INSERT INTO {ck_stock}
+                       ({id},`tanggal`,`item`,`arah`,`qty`,`qty_input`,`unit_input`,
                         `sebab`,`status`,`ref`,`tim`,`pic`,`waktu`,`data`)
-                     VALUES (?,?,?,'masuk',?,?,?,'kiriman','',NULL,?,?,?,?)", [
+                     VALUES (?,?,?,'masuk',?,?,?,'kiriman','',NULL,?,?,?,?)"), [
             $id,
             trim(StockSupport::str($b->tanggal ?? '')) ?: StockSupport::now('Y-m-d'),
             $item, $qty, $qtyInput, $unitInput,

@@ -1,5 +1,6 @@
 <?php
 
+use App\Modules\Stock\Services\StockSupport;
 use App\Modules\Stock\Services\StockTeamScope;
 use App\Support\Modules;
 use Illuminate\Testing\TestResponse;
@@ -31,7 +32,7 @@ it('uses real HTTP codes: 400 bad JSON / unknown action, 405 method', function (
 
 it('serves products and vendors as maps keyed by name, normalised', function () {
     $p = $this->get('/stock-api-mysql/items.php?t=1')->assertOk()->json('products');
-    $n = (int) stDb()->selectOne('SELECT COUNT(*) c FROM products')->c;
+    $n = (int) stDb()->selectOne(StockSupport::q('SELECT COUNT(*) c FROM {products}'))->c;
     expect(count($p))->toBe($n);
     foreach (array_slice($p, 0, 20) as $row) {
         expect($row)->toHaveKeys(['utama', 'cadangan', 'satuan', 'kategori', 'area', 'aktif', 'isi', 'sumber', 'packIsi', 'diOutlet']);
@@ -46,26 +47,26 @@ it('keeps preserve-if-null on addProduct and follows a rename into HPP', functio
         ->assertOk()->assertExactJson(['status' => 'success', 'hppBaru' => true]);
     stPost('items.php', ['action' => 'addProduct', 'productName' => 'Tes Tepung', 'primaryVendor' => 'B'])->assertOk();
 
-    $d = json_decode(stDb()->selectOne("SELECT data FROM products WHERE nama='Tes Tepung'")->data);
+    $d = json_decode(stDb()->selectOne(StockSupport::q("SELECT data FROM {products} WHERE nama='Tes Tepung'"))->data);
     expect($d->utama)->toBe('B')->and($d->satuan)->toBe(['Kg', 'Gram'])->and($d->area)->toBe(['Bar'])
         ->and((array) $d->isi)->toBe(['Kg' => 1000])->and($d->kategori)->toBe('DRY');
 
     $res = stPost('items.php', ['action' => 'addProduct', 'productName' => 'Tes Tepung 2', 'primaryVendor' => 'B', 'oldProductName' => 'Tes Tepung'])->assertOk();
     expect($res->json('hpp.bahan'))->toBe(1)
-        ->and(stDb()->selectOne("SELECT nama FROM products WHERE nama='Tes Tepung'"))->toBeNull()
-        ->and(stDb()->selectOne("SELECT nama FROM hpp_bahan WHERE nama='Tes Tepung 2'"))->not->toBeNull();
+        ->and(stDb()->selectOne(StockSupport::q("SELECT nama FROM {products} WHERE nama='Tes Tepung'")))->toBeNull()
+        ->and(stDb()->selectOne(StockSupport::q("SELECT nama FROM {hpp_bahan} WHERE nama='Tes Tepung 2'")))->not->toBeNull();
 });
 
 it('forces Pack units on a Central Kitchen product', function () {
     stPost('items.php', ['action' => 'addProduct', 'productName' => 'Tes CK', 'units' => ['Botol'], 'sumber' => 'ck', 'packIsi' => 500, 'packSatuan' => 'Gram'])->assertOk();
-    $d = json_decode(stDb()->selectOne("SELECT data FROM products WHERE nama='Tes CK'")->data);
+    $d = json_decode(stDb()->selectOne(StockSupport::q("SELECT data FROM {products} WHERE nama='Tes CK'"))->data);
     expect($d->satuan)->toBe(['Pack', 'Gram'])->and($d->sumber)->toBe('ck');
 });
 
 it('keeps vendor bank details when a save does not send them', function () {
     stPost('vendors.php', ['action' => 'addVendor', 'vendorName' => 'Tes V', 'vendorPhone' => '1', 'norek' => ' 99 ', 'tutupHari' => '6,0,0,9'])->assertExactJson(['status' => 'success']);
     stPost('vendors.php', ['action' => 'addVendor', 'vendorName' => 'Tes V', 'vendorPhone' => '2'])->assertOk();
-    $d = json_decode(stDb()->selectOne("SELECT data FROM vendors WHERE nama='Tes V'")->data);
+    $d = json_decode(stDb()->selectOne(StockSupport::q("SELECT data FROM {vendors} WHERE nama='Tes V'"))->data);
     expect($d->norek)->toBe('99')->and($d->tutupHari)->toBe([0, 6])->and($d->whatsapp)->toBe('2');
 });
 
@@ -80,7 +81,7 @@ it('creates a batch, then joins it summing the same item and unit', function () 
     stPost('orders.php', ['action' => 'batchOrder', 'batchId' => $batch, 'orders' => [
         ['item' => 'tes lemon', 'qty' => 1.5, 'unit' => 'Kg', 'note' => 'lagi', 'tglDatang' => '2031-09-09'],
     ]])->assertJsonPath('merged', 1)->assertJsonPath('created', 0);
-    $row = stDb()->selectOne('SELECT qty, tgl_datang, data FROM orders WHERE batch_id = ?', [$batch]);
+    $row = stDb()->selectOne(StockSupport::q('SELECT qty, tgl_datang, data FROM {orders} WHERE batch_id = ?'), [$batch]);
     expect((float) $row->qty)->toBe(3.5)->and($row->tgl_datang)->toBe('2031-01-02')
         ->and(json_decode($row->data)->note)->toBe('lagi');
 
@@ -96,28 +97,28 @@ it('stamps order numbers and times in WIB', function () {
 });
 
 it('archives by order number, syncs data.status, and refuses a bad jemput date for the whole batch', function () {
-    $o = stDb()->selectOne("SELECT nomor_order, row_index FROM orders WHERE status = 'Aktif' LIMIT 1");
+    $o = stDb()->selectOne(StockSupport::q("SELECT nomor_order, row_index FROM {orders} WHERE status = 'Aktif' LIMIT 1"));
     stPost('orders.php', ['action' => 'archive', 'orderIds' => [$o->nomor_order]])->assertExactJson(['status' => 'success', 'updated' => 1]);
-    expect(json_decode(stDb()->selectOne('SELECT data FROM orders WHERE nomor_order = ?', [$o->nomor_order])->data)->status)->toBe('Arsip');
+    expect(json_decode(stDb()->selectOne(StockSupport::q('SELECT data FROM {orders} WHERE nomor_order = ?'), [$o->nomor_order])->data)->status)->toBe('Arsip');
 
     stPost('orders.php', ['action' => 'updateTglJemput', 'updates' => [
         ['rowIndex' => $o->row_index, 'tglJemput' => '2031-01-09'], ['rowIndex' => $o->row_index, 'tglJemput' => '9/1'],
     ]])->assertExactJson(['status' => 'error', 'message' => 'format tanggal jemput harus YYYY-MM-DD']);
-    expect(json_decode(stDb()->selectOne('SELECT data FROM orders WHERE nomor_order = ?', [$o->nomor_order])->data)->tglJemput ?? null)->not->toBe('2031-01-09');
+    expect(json_decode(stDb()->selectOne(StockSupport::q('SELECT data FROM {orders} WHERE nomor_order = ?'), [$o->nomor_order])->data)->tglJemput ?? null)->not->toBe('2031-01-09');
 });
 
 it('syncs Central Kitchen stock on arrival and removes it on cancel (idempotent)', function () {
-    $ck = stDb()->selectOne("SELECT o.row_index, o.nomor_order FROM orders o JOIN products p ON p.nama = o.item
-        WHERE o.batch_name = 'Central Kitchen' AND p.data LIKE '%\"sumber\":\"ck\"%' LIMIT 1");
-    stDb()->delete("DELETE FROM ck_stock WHERE ref = ? AND arah = 'keluar'", [$ck->nomor_order]);
+    $ck = stDb()->selectOne(StockSupport::q("SELECT o.row_index, o.nomor_order FROM {orders} o JOIN {products} p ON p.nama = o.item
+        WHERE o.batch_name = 'Central Kitchen' AND p.data LIKE '%\"sumber\":\"ck\"%' LIMIT 1"));
+    stDb()->delete(StockSupport::q("DELETE FROM {ck_stock} WHERE ref = ? AND arah = 'keluar'"), [$ck->nomor_order]);
 
     stPost('orders.php', ['action' => 'updateKedatangan', 'updates' => [['rowIndex' => $ck->row_index, 'kedatangan' => 'Datang', 'catatanAktual' => '']]])
         ->assertJsonPath('ck.disinkron', 1);
     stPost('orders.php', ['action' => 'updateKedatangan', 'updates' => [['rowIndex' => $ck->row_index, 'kedatangan' => 'Datang', 'catatanAktual' => '']]]);
-    expect((int) stDb()->selectOne("SELECT COUNT(*) c FROM ck_stock WHERE ref = ? AND arah = 'keluar'", [$ck->nomor_order])->c)->toBe(1);
+    expect((int) stDb()->selectOne(StockSupport::q("SELECT COUNT(*) c FROM {ck_stock} WHERE ref = ? AND arah = 'keluar'"), [$ck->nomor_order])->c)->toBe(1);
 
     stPost('orders.php', ['action' => 'updateKedatangan', 'updates' => [['rowIndex' => $ck->row_index, 'kedatangan' => '']]]);
-    expect((int) stDb()->selectOne("SELECT COUNT(*) c FROM ck_stock WHERE ref = ? AND arah = 'keluar'", [$ck->nomor_order])->c)->toBe(0);
+    expect((int) stDb()->selectOne(StockSupport::q("SELECT COUNT(*) c FROM {ck_stock} WHERE ref = ? AND arah = 'keluar'"), [$ck->nomor_order])->c)->toBe(0);
 });
 
 it('rewrites the stock snapshot but refuses an empty one', function () {
@@ -138,7 +139,7 @@ it('keeps sql_mode to the server, so a non-strict production truncates like lega
     stDb()->statement("SET SESSION sql_mode = 'NO_ENGINE_SUBSTITUTION'");
     stPost('orders.php', ['action' => 'batchOrder', 'tim' => str_repeat('T', 30), 'orders' => [['item' => 'Tim Panjang', 'qty' => 1, 'unit' => 'Kg']]])
         ->assertJsonPath('status', 'success');
-    expect(stDb()->selectOne("SELECT tim FROM orders WHERE item = 'Tim Panjang'")->tim)->toBe(str_repeat('T', 20));
+    expect(stDb()->selectOne(StockSupport::q("SELECT tim FROM {orders} WHERE item = 'Tim Panjang'"))->tim)->toBe(str_repeat('T', 20));
 });
 
 it('scopes teams from the Office session when the switch is on', function () {

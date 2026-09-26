@@ -28,7 +28,7 @@ class StockUsers
     public function all(string $table): array
     {
         $out = [];
-        foreach (StockSupport::db()->select("SELECT `id`,`nama`,`pin`,`role`,`keterangan` FROM `$table` ORDER BY `nama`") as $r) {
+        foreach (StockSupport::db()->select(StockSupport::q("SELECT {id} AS `id`,`nama`,`pin`,`role`,`keterangan` FROM {{$table}} ORDER BY `nama`")) as $r) {
             $out[] = (object) [
                 'id' => (string) $r->id, 'name' => (string) $r->nama, 'pin' => (string) $r->pin,
                 'role' => (string) $r->role, 'keterangan' => (string) $r->keterangan,
@@ -41,7 +41,7 @@ class StockUsers
     /** @return array{record:array,pin:string,version:string}|null */
     public function find(string $table, string $id, bool $lock = false): ?array
     {
-        $r = StockSupport::db()->selectOne("SELECT * FROM `$table` WHERE `id` = ?".($lock ? ' FOR UPDATE' : ''), [$id]);
+        $r = StockSupport::db()->selectOne(StockSupport::q("SELECT {*{$table}} FROM {{$table}} WHERE {id} = ?").($lock ? ' FOR UPDATE' : ''), [$id]);
         if (! $r) {
             return null;
         }
@@ -53,7 +53,7 @@ class StockUsers
     public function list(string $table): array
     {
         $out = [];
-        foreach (StockSupport::db()->select("SELECT * FROM `$table` ORDER BY `nama`") as $r) {
+        foreach (StockSupport::db()->select(StockSupport::q("SELECT {*{$table}} FROM {{$table}} ORDER BY `nama`")) as $r) {
             $one = $this->fromRow($r);
             $out[] = ['record' => $one['record'], 'version' => $one['version']];
         }
@@ -82,7 +82,7 @@ class StockUsers
             return ['status' => 'error', 'message' => 'tidak bisa menghapus admin terakhir'];
         }
 
-        return ['status' => 'success', 'deleted' => StockSupport::db()->delete("DELETE FROM `$table` WHERE `id` = ?", [$id])];
+        return ['status' => 'success', 'deleted' => StockSupport::db()->delete(StockSupport::q("DELETE FROM {{$table}} WHERE {id} = ?"), [$id])];
     }
 
     /** compat ordering-users.php saveUser; a missing id is generated from pin+name+time. */
@@ -166,7 +166,7 @@ class StockUsers
             if ($this->lastAdmin($table, $id)) {
                 throw new StockConflict('last_admin');
             }
-            StockSupport::db()->delete("DELETE FROM `$table` WHERE `id` = ?", [$id]);
+            StockSupport::db()->delete(StockSupport::q("DELETE FROM {{$table}} WHERE {id} = ?"), [$id]);
         });
     }
 
@@ -188,9 +188,9 @@ class StockUsers
 
     private function write(string $table, stdClass $user): void
     {
-        StockSupport::db()->insert("INSERT INTO `$table` (`id`,`nama`,`pin`,`role`,`keterangan`,`data`)
+        StockSupport::db()->insert(StockSupport::q("INSERT INTO {{$table}} ({id},`nama`,`pin`,`role`,`keterangan`,`data`)
             VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE `nama`=VALUES(`nama`), `pin`=VALUES(`pin`),
-            `role`=VALUES(`role`), `keterangan`=VALUES(`keterangan`), `data`=VALUES(`data`)", [
+            `role`=VALUES(`role`), `keterangan`=VALUES(`keterangan`), `data`=VALUES(`data`)"), [
             $user->id, $user->name, $user->pin, $user->role, $user->keterangan, StockSupport::enc($user),
         ]);
     }
@@ -200,8 +200,8 @@ class StockUsers
         if ($table !== 'users') {
             return false;
         }
-        $role = StockSupport::db()->selectOne('SELECT `role` FROM `users` WHERE `id` = ?', [$id])?->role;
-        $count = (int) StockSupport::db()->selectOne("SELECT COUNT(*) c FROM `users` WHERE `role`='admin'")->c;
+        $role = StockSupport::db()->selectOne(StockSupport::q('SELECT `role` FROM {users} WHERE {id} = ?'), [$id])?->role;
+        $count = (int) StockSupport::db()->selectOne(StockSupport::q("SELECT COUNT(*) c FROM {users} WHERE `role`='admin'"))->c;
 
         return $role === 'admin' && $count <= 1;
     }

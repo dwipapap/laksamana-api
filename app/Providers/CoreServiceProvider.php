@@ -20,6 +20,7 @@ use App\Core\Imports\KompasImporter;
 use App\Core\Imports\KontenImporter;
 use App\Core\Imports\MarketingImporter;
 use App\Core\Imports\ReservasiImporter;
+use App\Core\Imports\StockImporter;
 use App\Core\Imports\TicketingImporter;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
@@ -48,6 +49,8 @@ final class CoreServiceProvider extends ServiceProvider
             $app->make(KontenImporter::class),
             $app->make(MarketingImporter::class),
             $app->make(ReservasiImporter::class),
+            // stock has no user FKs and imports straight from its own legacy database
+            $app->make(StockImporter::class),
             $app->make(TicketingImporter::class),
         ));
     }
