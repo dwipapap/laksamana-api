@@ -102,12 +102,17 @@ Each agent picks its own so parallel runs cannot clash:
 
 Pest migrates its test database itself (`RefreshDatabase`), and
 `tools/parity/parity.mjs` creates and drops its own scratch databases, so no
-pre-setup is needed for a throwaway run.
+pre-setup is needed for a throwaway run. The test database is rebuilt only when
+the migration files differ from the hash stamped in its `test_schema_stamp`
+table, so give each worktree its own `DB_DATABASE`: two checkouts with different
+migrations sharing one test database would rebuild it (~90 s) on every run.
 
 ## Etiquette (MySQL is shared)
 
-Check how many PHP processes are already running before a full suite
-(`tasklist | grep -c php` on Windows; more than about six means wait), run one
-full suite at a time, and treat deadlocks or `QueryException`s that only appear
-under load as contention — rerun alone before debugging. After a parity run with
+Run only the touched module's test folder, never the full suite (CLAUDE.md §4,
+pass criteria). Check how many PHP processes are already running first
+(`tasklist | grep -c php` on Windows; more than about six means wait), never run
+two test runs at once — every run transacts all legacy databases — and treat
+deadlocks or `QueryException`s that only appear under load as contention: rerun
+alone before debugging. After a parity run with
 `--keep`, drop the leftover `parity_<tag>_*` databases.

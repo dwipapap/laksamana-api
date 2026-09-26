@@ -189,23 +189,16 @@ importer writes only to `core` and reads only local databases.
   `bigint updated_at/created_at`, `longtext data`), one unique key per
   `legacy_id`/`k`, and six `ON DELETE SET NULL` FKs to `user`.
 
-## Test bootstrap: the import runs per test, on purpose
+## Test bootstrap
 
-`tests/TestCase.php` imports every cut-over Modul in
-`afterRefreshingDatabase()`, which Laravel calls from `setUp()` **after**
-`refreshTestDatabase()` has begun the per-test transaction
-(`RefreshDatabase::refreshTestDatabase()` → `beginDatabaseTransaction()`, then
-`afterRefreshingDatabase()`). The import's rows are therefore written inside
-that test's transaction and rolled back with it, and the next test needs its
-own import: that is exactly why the hook runs per test and why memoising it
-(`once()`, or a `static`) would leave every test after the first looking at an
-empty core.
+`tests/TestCase.php` imports every cut-over Modul (`importCoreModules()`) once per
+test process, from `migrateDatabases()`: after the schema is ready and **before**
+the first per-test transaction begins, so the imported rows are committed and
+every test starts from them (#144). The hook must not move back into
+`afterRefreshingDatabase()`: that runs inside each test's transaction, so it would
+re-import per test (~2.5 s each for reservasi's 2 962 rows / 2.6 MB).
 
-Reservasi's legacy state is the heaviest in the repo (2 962 rows / 2.6 MB,
-measured 3.37 s for a standalone `php artisan core:import reservasi`, ~2.5 s
-per test in-suite: `php artisan test tests/Feature/Reservasi` with
-`DB_RESERVASI_CONNECTION=core` took 127.22 s for 13 tests, ~90 s of which is
-the suite's `migrate:fresh`). A full suite on core is therefore expensive and
-cannot run in one command on this box (~293 s cap); the on-core coverage is
-run in chunks and the chunk list is reported with the gate, rather than
-weakening the hook for one Modul.
+`migrate:fresh` runs only when the migration files change (their hash is stamped
+in `test_schema_stamp`); otherwise the core tables are emptied. With both,
+`DB_RESERVASI_CONNECTION=core php artisan test tests/Feature/Reservasi` takes
+~6 s instead of 127 s.

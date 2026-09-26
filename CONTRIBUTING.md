@@ -29,6 +29,6 @@ Rules:
   `08…` shape, division/office/HRD Tim words) and fakes the rest. If you
   port a module whose code branches on a **new** word or column, extend
   `tools/anonymise.mjs` (the `SEMANTIC` set and the column rules) and
-  regenerate — and keep the full suite green on the new set.
+  regenerate — and keep that module's tests green on the new set.
 - Free-text notes (`catatan`, `alasan`, brief text) are left as staff wrote
   them; treat the set as test data, not as publishable content.

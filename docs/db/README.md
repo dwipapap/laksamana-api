@@ -62,6 +62,11 @@ Importers read a named legacy connection and write only to `core`. The command
 refuses to run unless both database hosts are local. Repeating an import must
 update changed rows without creating a second row for the same `legacy_id`.
 
+For the tests, add the Modul to `importCoreModules()` in `tests/TestCase.php`
+(behind its `onCore()` switch, after any Modul its FKs point at). It runs once per
+test process, committed before the first test's transaction; never import from
+`afterRefreshingDatabase()`, which runs inside every test's transaction (#144).
+
 ## Parity against `core`
 
 Before a Modul cuts over, its parity cases must be green with Laravel reading
