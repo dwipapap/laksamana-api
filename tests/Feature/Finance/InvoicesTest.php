@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__.'/helpers.php';
+
 use App\Support\Modules;
 use Illuminate\Testing\TestResponse;
 
@@ -31,9 +33,9 @@ it('legacy: issuing numbers once per month pool; tolak needs a note; batal keeps
 
 it('legacy: a signatory on an issued document cannot be deleted; renaming keeps the image', function () {
     invPost('invPenandaHapus', ['penandaId' => 'pen6a87ce77dehvuk'])->assertJsonPath('ok', false);
-    $len = strlen(Modules::db('finance')->selectOne("SELECT ttd FROM inv_penanda WHERE id='pen6a87fb6c82l54u'")->ttd);
+    $len = strlen(Modules::db('finance')->selectOne(finSql("SELECT ttd FROM inv_penanda WHERE id='pen6a87fb6c82l54u'"))->ttd);
     invPost('invPenandaSimpan', ['data' => ['id' => 'pen6a87fb6c82l54u', 'nama' => 'Howandi', 'jabatan' => 'Direktur']])->assertOk();
-    expect(strlen(Modules::db('finance')->selectOne("SELECT ttd FROM inv_penanda WHERE id='pen6a87fb6c82l54u'")->ttd))->toBe($len);
+    expect(strlen(Modules::db('finance')->selectOne(finSql("SELECT ttd FROM inv_penanda WHERE id='pen6a87fb6c82l54u'"))->ttd))->toBe($len);
 });
 
 it('v1: a reservasi user requests a kwitansi as themselves and reads its status', function () {

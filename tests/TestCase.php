@@ -7,6 +7,7 @@ use App\Modules\Absensi\Services\AbsensiService;
 use App\Modules\Akademi\Services\AkademiSchema;
 use App\Modules\Bd\Services\BdState;
 use App\Modules\Event\Services\EventState;
+use App\Modules\Finance\Services\KasKecil;
 use App\Modules\Hlife\Services\HlifeState;
 use App\Modules\Hr\Services\HrState;
 use App\Modules\Jadwal\Services\JadwalService;
@@ -79,6 +80,10 @@ abstract class TestCase extends BaseTestCase
         }
         if (HlifeState::onCore()) {
             Artisan::call('core:import', ['module' => 'hlife']);
+        }
+        // finance (#67) reads accounts for the '#<user id>' role keys
+        if (KasKecil::onCore()) {
+            Artisan::call('core:import', ['module' => 'finance']);
         }
         if (EventState::onCore()) {
             Artisan::call('core:import', ['module' => 'event']);

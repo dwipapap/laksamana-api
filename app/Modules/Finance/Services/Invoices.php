@@ -64,13 +64,40 @@ class Invoices
         return $j === 'INV_DP' || $j === 'INV_LUNAS';
     }
 
+    // ───────────────────────────── core (#67) ──
+    // `SELECT *` on legacy (unchanged); on core the explicit column list with the
+    // legacy id AS id, because the core table also carries a ULID id and the tech
+    // columns the wire must not see.
+
+    private static function reqSelect(): string
+    {
+        return KasKecil::onCore()
+            ? 'SELECT '.KasKecil::idSelect().',`res_id`,`no_invoice`,`status`,`ringkas`,`minta_oleh`,`minta_at`,`catatan`,`putus_oleh`,`putus_at`,`penanda`,`jenis` FROM `'.KasKecil::t('inv_kwitansi').'`'
+            : 'SELECT * FROM `inv_kwitansi`';
+    }
+
+    private static function signatorySelect(): string
+    {
+        return KasKecil::onCore()
+            ? 'SELECT '.KasKecil::idSelect().',`nama`,`jabatan`,`ttd`,`urut`,`aktif` FROM `'.KasKecil::t('inv_penanda').'`'
+            : 'SELECT * FROM `inv_penanda`';
+    }
+
+    /** One request in its public shape, by the legacy id (v1 show / decision). */
+    public function find(string $id): ?array
+    {
+        $row = $this->db()->selectOne(self::reqSelect().' WHERE `'.KasKecil::idCol().'`=?', [$id]);
+
+        return $row ? self::row($row) : null;
+    }
+
     // ───────────────────────────── settings & signatories ──
 
     public function settings(): array
     {
         $out = ['ttd' => '', 'cap' => '', 'penandaNama' => '', 'penandaJabatan' => '', 'prefix' => 'INV', 'penandaDefault' => '',
             'prefixInvoice' => 'INV', 'penandaDefaultInvoice' => ''];
-        foreach ($this->db()->select('SELECT `k`,`v` FROM `inv_setting`') as $r) {
+        foreach ($this->db()->select('SELECT `k`,`v` FROM `'.KasKecil::t('inv_setting').'`') as $r) {
             $out[$r->k] = $r->v ?? '';
         }
 
@@ -85,7 +112,11 @@ class Invoices
         }
         foreach (self::SETTING_KEYS as $k) {
             if (array_key_exists($k, $in)) {
-                $this->db()->insert('INSERT INTO `inv_setting` (`k`,`v`) VALUES (?,?) ON DUPLICATE KEY UPDATE `v`=VALUES(`v`)', [$k, self::s($in[$k])]);
+                KasKecil::onCore()
+                    ? $this->db()->insert('INSERT INTO `'.KasKecil::t('inv_setting').'` (`id`,`k`,`v`,`created_at`,`updated_at`,`version`) VALUES (?,?,?,?,?,?) '
+                        .'ON DUPLICATE KEY UPDATE `v`=VALUES(`v`), `version`=`version`+1, `updated_at`=VALUES(`updated_at`)',
+                        [KasKecil::ulid(), $k, self::s($in[$k]), self::ms(), self::ms(), 1])
+                    : $this->db()->insert('INSERT INTO `inv_setting` (`k`,`v`) VALUES (?,?) ON DUPLICATE KEY UPDATE `v`=VALUES(`v`)', [$k, self::s($in[$k])]);
             }
         }
 
@@ -97,7 +128,7 @@ class Invoices
         return array_map(fn ($r) => [
             'id' => $r->id, 'nama' => $r->nama, 'jabatan' => $r->jabatan, 'ttd' => $r->ttd ?? '',
             'urut' => (int) $r->urut, 'aktif' => (int) $r->aktif === 1,
-        ], $this->db()->select('SELECT * FROM `inv_penanda`'.($all ? '' : ' WHERE `aktif`=1').' ORDER BY `urut`, `nama`'));
+        ], $this->db()->select(self::signatorySelect().($all ? '' : ' WHERE `aktif`=1').' ORDER BY `urut`, `nama`'));
     }
 
     /** inv_penanda_simpan — `ttd` is written only when sent (renaming must not erase the signature). */
@@ -115,14 +146,22 @@ class Invoices
         $urut = isset($in['urut']) ? (int) $in['urut'] : 0;
         $aktif = array_key_exists('aktif', $in) ? (! empty($in['aktif']) ? 1 : 0) : 1;
 
+        $core = KasKecil::onCore();
+        $t = KasKecil::t('inv_penanda');
+        $idc = KasKecil::idCol();
+        $stamp = $core ? ', `updated_at`=?, `version`=`version`+1' : '';
         if ($id === '') {
-            $this->db()->insert('INSERT INTO `inv_penanda` (`id`,`nama`,`jabatan`,`ttd`,`urut`,`aktif`) VALUES (?,?,?,?,?,?)',
-                [self::uid('pen'), $nama, $jab, isset($in['ttd']) ? self::s($in['ttd']) : '', $urut, $aktif]);
+            $core
+                ? $this->db()->insert('INSERT INTO `'.$t.'` (`id`,`legacy_id`,`nama`,`jabatan`,`ttd`,`urut`,`aktif`,`created_at`,`updated_at`,`version`) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                    [KasKecil::ulid(), self::uid('pen'), $nama, $jab, isset($in['ttd']) ? self::s($in['ttd']) : '', $urut, $aktif, self::ms(), self::ms(), 1])
+                : $this->db()->insert('INSERT INTO `inv_penanda` (`id`,`nama`,`jabatan`,`ttd`,`urut`,`aktif`) VALUES (?,?,?,?,?,?)',
+                    [self::uid('pen'), $nama, $jab, isset($in['ttd']) ? self::s($in['ttd']) : '', $urut, $aktif]);
         } elseif (array_key_exists('ttd', $in)) {
-            $this->db()->update('UPDATE `inv_penanda` SET `nama`=?,`jabatan`=?,`ttd`=?,`urut`=?,`aktif`=? WHERE `id`=?',
-                [$nama, $jab, self::s($in['ttd']), $urut, $aktif, $id]);
+            $this->db()->update('UPDATE `'.$t.'` SET `nama`=?,`jabatan`=?,`ttd`=?,`urut`=?,`aktif`=?'.$stamp.' WHERE `'.$idc.'`=?',
+                $core ? [$nama, $jab, self::s($in['ttd']), $urut, $aktif, self::ms(), $id] : [$nama, $jab, self::s($in['ttd']), $urut, $aktif, $id]);
         } else {
-            $this->db()->update('UPDATE `inv_penanda` SET `nama`=?,`jabatan`=?,`urut`=?,`aktif`=? WHERE `id`=?', [$nama, $jab, $urut, $aktif, $id]);
+            $this->db()->update('UPDATE `'.$t.'` SET `nama`=?,`jabatan`=?,`urut`=?,`aktif`=?'.$stamp.' WHERE `'.$idc.'`=?',
+                $core ? [$nama, $jab, $urut, $aktif, self::ms(), $id] : [$nama, $jab, $urut, $aktif, $id]);
         }
 
         return $this->signatories(true);
@@ -132,11 +171,11 @@ class Invoices
     public function deleteSignatory(mixed $id): array
     {
         $id = self::s($id);
-        $n = (int) $this->db()->selectOne("SELECT COUNT(*) AS c FROM `inv_kwitansi` WHERE `status`='DIBUAT' AND `penanda` LIKE ?", ['%'.$id.'%'])->c;
+        $n = (int) $this->db()->selectOne('SELECT COUNT(*) AS c FROM `'.KasKecil::t('inv_kwitansi')."` WHERE `status`='DIBUAT' AND `penanda` LIKE ?", ['%'.$id.'%'])->c;
         if ($n > 0) {
             throw new RuntimeException('Penanda tangan ini sudah menempel di '.$n.' kwitansi yang terbit, jadi tidak bisa dihapus. Nonaktifkan saja — ia hilang dari daftar pilihan, tapi dokumen lama tetap bertanda tangan.');
         }
-        $this->db()->delete('DELETE FROM `inv_penanda` WHERE `id`=?', [$id]);
+        $this->db()->delete('DELETE FROM `'.KasKecil::t('inv_penanda').'` WHERE `'.KasKecil::idCol().'`=?', [$id]);
 
         return $this->signatories(true);
     }
@@ -168,7 +207,7 @@ class Invoices
 
     private function byResId(string $resId): ?object
     {
-        return $this->db()->selectOne('SELECT * FROM `inv_kwitansi` WHERE `res_id`=?', [$resId]);
+        return $this->db()->selectOne(self::reqSelect().' WHERE `res_id`=?', [$resId]);
     }
 
     /**
@@ -187,18 +226,27 @@ class Invoices
         $ringkas = isset($in['ringkas']) && is_array($in['ringkas']) ? json_encode($in['ringkas'], JSON_UNESCAPED_UNICODE) : null;
 
         $ada = $this->byResId($resId);
+        $core = KasKecil::onCore();
         if ($ada) {
             if ($ada->status === 'DIBUAT') {
                 return self::row($ada);
             }
-            $this->db()->update("UPDATE `inv_kwitansi` SET `status`='MENUNGGU', `ringkas`=COALESCE(?,`ringkas`), `jenis`=?,
+            $core
+                ? $this->db()->update('UPDATE `'.KasKecil::t('inv_kwitansi')."` SET `status`='MENUNGGU', `ringkas`=COALESCE(?,`ringkas`), `jenis`=?,
+                `minta_oleh`=?, `minta_at`=?, `catatan`='', `putus_oleh`='', `putus_at`=0, `updated_at`=?, `version`=`version`+1 WHERE `".KasKecil::idCol().'`=?',
+                    [$ringkas, $jenis, $oleh, self::ms(), self::ms(), $ada->id])
+                : $this->db()->update("UPDATE `inv_kwitansi` SET `status`='MENUNGGU', `ringkas`=COALESCE(?,`ringkas`), `jenis`=?,
                 `minta_oleh`=?, `minta_at`=?, `catatan`='', `putus_oleh`='', `putus_at`=0 WHERE `id`=?",
-                [$ringkas, $jenis, $oleh, self::ms(), $ada->id]);
+                    [$ringkas, $jenis, $oleh, self::ms(), $ada->id]);
 
             return self::row($this->byResId($resId));
         }
-        $this->db()->insert("INSERT INTO `inv_kwitansi` (`id`,`res_id`,`no_invoice`,`status`,`jenis`,`ringkas`,`minta_oleh`,`minta_at`,`catatan`)
-            VALUES (?,?,'','MENUNGGU',?,?,?,?,'')", [self::uid('inv'), $resId, $jenis, $ringkas, $oleh, self::ms()]);
+        $invId = self::uid('inv');
+        $core
+            ? $this->db()->insert('INSERT INTO `'.KasKecil::t('inv_kwitansi')."` (`id`,`legacy_id`,`res_id`,`no_invoice`,`status`,`jenis`,`ringkas`,`minta_oleh`,`minta_at`,`catatan`,`created_at`,`updated_at`,`version`)
+            VALUES (?,?,?,'','MENUNGGU',?,?,?,?,'',?,?,?)", [KasKecil::ulid(), $invId, $resId, $jenis, $ringkas, $oleh, self::ms(), self::ms(), self::ms(), 1])
+            : $this->db()->insert("INSERT INTO `inv_kwitansi` (`id`,`res_id`,`no_invoice`,`status`,`jenis`,`ringkas`,`minta_oleh`,`minta_at`,`catatan`)
+            VALUES (?,?,'','MENUNGGU',?,?,?,?,'')", [$invId, $resId, $jenis, $ringkas, $oleh, self::ms()]);
 
         return self::row($this->byResId($resId));
     }
@@ -211,7 +259,7 @@ class Invoices
             return $out;
         }
         $ids = array_map(fn ($r) => self::s($r), array_slice(array_values($resIds), 0, 400));
-        foreach ($this->db()->select('SELECT * FROM `inv_kwitansi` WHERE `res_id` IN ('.implode(',', array_fill(0, count($ids), '?')).')', $ids) as $r) {
+        foreach ($this->db()->select(self::reqSelect().' WHERE `res_id` IN ('.implode(',', array_fill(0, count($ids), '?')).')', $ids) as $r) {
             $out[$r->res_id] = self::row($r);
         }
 
@@ -220,14 +268,14 @@ class Invoices
 
     public function list(): array
     {
-        return array_map([self::class, 'row'], $this->db()->select('SELECT * FROM `inv_kwitansi` ORDER BY `minta_at` DESC'));
+        return array_map([self::class, 'row'], $this->db()->select(self::reqSelect().' ORDER BY `minta_at` DESC'));
     }
 
     /** inv_antre_jumlah — waiting requests, for the menu badge. */
     public function queueCount(): array
     {
         $out = ['total' => 0, 'perJenis' => []];
-        foreach ($this->db()->select("SELECT `jenis`, COUNT(*) AS c FROM `inv_kwitansi` WHERE `status`='MENUNGGU' GROUP BY `jenis`") as $r) {
+        foreach ($this->db()->select('SELECT `jenis`, COUNT(*) AS c FROM `'.KasKecil::t('inv_kwitansi')."` WHERE `status`='MENUNGGU' GROUP BY `jenis`") as $r) {
             $j = $r->jenis === null || $r->jenis === '' ? 'KWITANSI' : $r->jenis;
             $out['total'] += (int) $r->c;
             $out['perJenis'][$j] = (int) $r->c;
@@ -245,7 +293,7 @@ class Invoices
             : ($set['prefix'] !== '' ? $set['prefix'] : 'INV');
         $awalan = $prefix.'/'.gmdate('Y/m', time() + 7 * 3600).'/';
         $max = 0;
-        foreach ($this->db()->select('SELECT `no_invoice` FROM `inv_kwitansi` WHERE `no_invoice` LIKE ?', [$awalan.'%']) as $r) {
+        foreach ($this->db()->select('SELECT `no_invoice` FROM `'.KasKecil::t('inv_kwitansi').'` WHERE `no_invoice` LIKE ?', [$awalan.'%']) as $r) {
             $max = max($max, (int) substr($r->no_invoice, strlen($awalan)));
         }
 
@@ -268,7 +316,11 @@ class Invoices
         $catatan = isset($in['catatan']) ? trim(self::s($in['catatan'])) : '';
 
         return NamedLock::run('finance', 'inv_nomor', function () use ($in, $id, $aksi, $oleh, $catatan) {
-            $row = $this->db()->selectOne('SELECT * FROM `inv_kwitansi` WHERE `id`=?', [$id]);
+            $core = KasKecil::onCore();
+            $t = KasKecil::t('inv_kwitansi');
+            $idc = KasKecil::idCol();
+            $stamp = $core ? ', `updated_at`=?, `version`=`version`+1' : '';
+            $row = $this->db()->selectOne(self::reqSelect().' WHERE `'.$idc.'`=?', [$id]);
             if (! $row) {
                 throw new RuntimeException('permintaan tidak ditemukan');
             }
@@ -276,22 +328,22 @@ class Invoices
                 $jns = isset($row->jenis) && $row->jenis !== '' ? $row->jenis : 'KWITANSI';
                 $no = $row->no_invoice !== '' ? $row->no_invoice : $this->nextNumber($jns);
                 $pen = json_encode($this->snapshotSignatories(array_key_exists('penanda', $in) ? $in['penanda'] : null, $jns), JSON_UNESCAPED_UNICODE);
-                $this->db()->update("UPDATE `inv_kwitansi` SET `status`='DIBUAT', `no_invoice`=?, `catatan`=?, `penanda`=?, `putus_oleh`=?, `putus_at`=? WHERE `id`=?",
-                    [$no, $catatan, $pen, $oleh, self::ms(), $id]);
+                $this->db()->update("UPDATE `$t` SET `status`='DIBUAT', `no_invoice`=?, `catatan`=?, `penanda`=?, `putus_oleh`=?, `putus_at`=?$stamp WHERE `$idc`=?",
+                    $core ? [$no, $catatan, $pen, $oleh, self::ms(), self::ms(), $id] : [$no, $catatan, $pen, $oleh, self::ms(), $id]);
             } elseif ($aksi === 'tolak') {
                 if ($catatan === '') {
                     throw new RuntimeException('alasan penolakan wajib diisi');
                 }
-                $this->db()->update("UPDATE `inv_kwitansi` SET `status`='DITOLAK', `catatan`=?, `putus_oleh`=?, `putus_at`=? WHERE `id`=?",
-                    [$catatan, $oleh, self::ms(), $id]);
+                $this->db()->update("UPDATE `$t` SET `status`='DITOLAK', `catatan`=?, `putus_oleh`=?, `putus_at`=?$stamp WHERE `$idc`=?",
+                    $core ? [$catatan, $oleh, self::ms(), self::ms(), $id] : [$catatan, $oleh, self::ms(), $id]);
             } elseif ($aksi === 'batal') {
-                $this->db()->update("UPDATE `inv_kwitansi` SET `status`='MENUNGGU', `catatan`='', `putus_oleh`=?, `putus_at`=? WHERE `id`=?",
-                    [$oleh, self::ms(), $id]);
+                $this->db()->update("UPDATE `$t` SET `status`='MENUNGGU', `catatan`='', `putus_oleh`=?, `putus_at`=?$stamp WHERE `$idc`=?",
+                    $core ? [$oleh, self::ms(), self::ms(), $id] : [$oleh, self::ms(), $id]);
             } else {
                 throw new RuntimeException('aksi tidak dikenal: '.$aksi);
             }
 
-            return self::row($this->db()->selectOne('SELECT * FROM `inv_kwitansi` WHERE `id`=?', [$id]));
+            return self::row($this->db()->selectOne(self::reqSelect().' WHERE `'.$idc.'`=?', [$id]));
         });
     }
 

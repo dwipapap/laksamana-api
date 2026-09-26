@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__.'/helpers.php';
+
 use App\Support\Modules;
 use Illuminate\Testing\TestResponse;
 
@@ -12,7 +14,7 @@ function bkPost(string $action, array $body): TestResponse
 
 function bkState(): array
 {
-    return json_decode(Modules::db('finance')->selectOne('SELECT data FROM bk_state WHERE id=1')->data, true);
+    return json_decode(Modules::db('finance')->selectOne(finSql('SELECT data FROM bk_state WHERE id=1'))->data, true);
 }
 
 it('brankasSave keeps only the known keys and bayarSave replaces only bayar', function () {
@@ -27,7 +29,7 @@ it('brankasSave keeps only the known keys and bayarSave replaces only bayar', fu
     bkPost('bayarSave', ['oleh' => 'Kasir', 'bayar' => [['id' => 'b1', 'status' => 'paid']]])->assertOk();
     $s2 = bkState();
     expect($s2['bayar'])->toBe([['id' => 'b1', 'status' => 'paid']])->and($s2['mutasi'])->toBe($before['mutasi'])
-        ->and(Modules::db('finance')->selectOne('SELECT updated_by FROM bk_state')->updated_by)->toBe('Kasir');
+        ->and(Modules::db('finance')->selectOne(finSql('SELECT updated_by FROM bk_state'))->updated_by)->toBe('Kasir');
 
     bkPost('brankasSave', ['oleh' => 'x'])->assertJsonPath('error', 'data brankas kosong');
     bkPost('bayarSave', [])->assertJsonPath('error', 'daftar pembayaran kosong');
@@ -54,7 +56,7 @@ it('adds, edits and deletes a vault record with the blob version, as the session
     $id = $res->json('data.id');
     $v2 = $res->json('meta.version');
     expect($v2)->toBeGreaterThan($v)
-        ->and(Modules::db('finance')->selectOne('SELECT updated_by FROM bk_state')->updated_by)->toBe(officeUser('u-dwipa')['name']);
+        ->and(Modules::db('finance')->selectOne(finSql('SELECT updated_by FROM bk_state'))->updated_by)->toBe(officeUser('u-dwipa')['name']);
 
     $v3 = $this->withToken($token)->patchJson("/api/v1/finance/vault/investor/$id?version=$v2", ['modal' => 7])
         ->assertOk()->assertJsonPath('data.modal', 7)->assertJsonPath('data.nama', 'Inv API')->json('meta.version');
