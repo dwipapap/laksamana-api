@@ -6,6 +6,7 @@ use App\Support\Modules;
 use App\Support\NamedLock;
 use App\Support\RowSync;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Support\Str;
 use RuntimeException;
 use stdClass;
 
@@ -58,8 +59,8 @@ class AkademiState
         $db = $this->db();
         $out = [];
 
-        foreach (AkademiSchema::collections() as $name => $c) {
-            $order = ! empty($c['created']) ? 'created_at DESC, id DESC' : 'id ASC';
+        foreach (AkademiSchema::defs() as $name => $c) {
+            $order = ! empty($c['created']) ? AkademiSchema::createdOrder() : AkademiSchema::idOrder();
             $rows = [];
             foreach ($db->select("SELECT data FROM `{$c['table']}` ORDER BY $order") as $row) {
                 $r = json_decode((string) $row->data, true);
@@ -72,7 +73,9 @@ class AkademiState
 
         // activity: append-only, newest first (capped so the payload stays small)
         $act = [];
-        foreach ($db->select('SELECT data FROM activity ORDER BY ts DESC, id DESC LIMIT 1000') as $row) {
+        $actTable = AkademiSchema::table('activity');
+        $actId = AkademiSchema::idCol();
+        foreach ($db->select("SELECT data FROM `$actTable` ORDER BY ts DESC, `$actId` DESC LIMIT 1000") as $row) {
             $r = json_decode((string) $row->data, true);
             if (is_array($r)) {
                 $act[] = $r;
@@ -82,8 +85,9 @@ class AkademiState
 
         // progress & progProg: ROWS in the DB, NESTED MAPS in the app.
         // Rebuilt here so the frontend never knows the difference.
+        $prTable = AkademiSchema::table('progress');
         $pr = [];
-        foreach ($db->select('SELECT user_id, material_id, data FROM progress') as $row) {
+        foreach ($db->select("SELECT user_id, material_id, data FROM `$prTable`") as $row) {
             $r = json_decode((string) $row->data, true);
             if (! is_array($r)) {
                 continue;
@@ -92,8 +96,9 @@ class AkademiState
         }
         $out['progress'] = $pr !== [] ? $pr : new stdClass;
 
+        $ppTable = AkademiSchema::table('progProg');
         $pp = [];
-        foreach ($db->select('SELECT user_id, program_id, material_id, data FROM prog_prog') as $row) {
+        foreach ($db->select("SELECT user_id, program_id, material_id, data FROM `$ppTable`") as $row) {
             $r = json_decode((string) $row->data, true);
             if (! is_array($r)) {
                 continue;
@@ -103,7 +108,8 @@ class AkademiState
         $out['progProg'] = $pp !== [] ? $pp : new stdClass;
 
         // settings + keys unknown to the backend (stored with an 'extra:' prefix)
-        foreach ($db->select('SELECT k, v FROM settings') as $row) {
+        $setTable = AkademiSchema::table('settings');
+        foreach ($db->select("SELECT k, v FROM `$setTable`") as $row) {
             $v = json_decode((string) $row->v, true);
             if (str_starts_with((string) $row->k, 'extra:')) {
                 $out[substr((string) $row->k, 6)] = $v;
@@ -148,8 +154,10 @@ class AkademiState
 
         $db->transaction(function () use ($db, $state, &$hitung, &$bentrok) {
             $known = ['activity', 'progress', 'progProg', '_rev'];
+            $defs = AkademiSchema::defs();
+            $idCol = AkademiSchema::idCol();
 
-            foreach (AkademiSchema::collections() as $name => $c) {
+            foreach ($defs as $name => $c) {
                 $known[] = $name;
                 if (! array_key_exists($name, $state)) {
                     continue; // not sent -> skip
@@ -164,23 +172,36 @@ class AkademiState
             // resend of the same list never doubles rows.
             if (isset($state['activity']) && is_array($state['activity'])) {
                 $n = 0;
+                $actTable = AkademiSchema::table('activity');
+                $onCore = AkademiSchema::onCore();
                 foreach ($state['activity'] as $a) {
                     if (! is_array($a)) {
                         continue;
                     }
-                    $db->insert('INSERT IGNORE INTO activity (id, ts, user_id, action, data) VALUES (?,?,?,?,?)', [
-                        self::activityId($a),
-                        RowSync::ms($a['ts'] ?? 0),
-                        RowSync::ambil($a, 'userId', 'str'),
-                        RowSync::ambil($a, 'action', 'str'),
-                        RowSync::enc($a),
-                    ]);
+                    if ($onCore) {
+                        $db->insert("INSERT IGNORE INTO `$actTable` (id, legacy_id, ts, user_id, action, data, version) VALUES (?,?,?,?,?,?,1)", [
+                            strtolower((string) Str::ulid()),
+                            self::activityId($a),
+                            RowSync::ms($a['ts'] ?? 0),
+                            RowSync::ambil($a, 'userId', 'str'),
+                            RowSync::ambil($a, 'action', 'str'),
+                            RowSync::enc($a),
+                        ]);
+                    } else {
+                        $db->insert('INSERT IGNORE INTO activity (id, ts, user_id, action, data) VALUES (?,?,?,?,?)', [
+                            self::activityId($a),
+                            RowSync::ms($a['ts'] ?? 0),
+                            RowSync::ambil($a, 'userId', 'str'),
+                            RowSync::ambil($a, 'action', 'str'),
+                            RowSync::enc($a),
+                        ]);
+                    }
                     $n++;
                 }
                 $hitung['activity'] = $n;
                 // keep it from growing without bound
-                $db->statement('DELETE FROM activity WHERE id NOT IN
-                    (SELECT id FROM (SELECT id FROM activity ORDER BY ts DESC, id DESC LIMIT 5000) t)');
+                $db->statement("DELETE FROM `$actTable` WHERE `$idCol` NOT IN
+                    (SELECT `$idCol` FROM (SELECT `$idCol` FROM `$actTable` ORDER BY ts DESC, `$idCol` DESC LIMIT 5000) t)");
             }
 
             // ---- progress: nested map -> rows ----
@@ -196,7 +217,7 @@ class AkademiState
             foreach (AkademiSchema::scalarKeys() as $k) {
                 $known[] = $k;
                 if (array_key_exists($k, $state)) {
-                    RowSync::putSetting($db, $k, $state[$k]);
+                    RowSync::putSetting($db, $k, $state[$k], AkademiSchema::table('settings'), AkademiSchema::onCore());
                 }
             }
 
@@ -205,7 +226,7 @@ class AkademiState
             // sections without their data silently disappearing here.
             foreach ($state as $k => $v) {
                 if (! in_array($k, $known, true)) {
-                    RowSync::putSetting($db, 'extra:'.$k, $v);
+                    RowSync::putSetting($db, 'extra:'.$k, $v, AkademiSchema::table('settings'), AkademiSchema::onCore());
                 }
             }
         });
@@ -242,6 +263,9 @@ class AkademiState
     private function upsertCollection(ConnectionInterface $db, array $def, array $rows, array &$bentrok, string $name): int
     {
         $table = $def['table'];
+        $idCol = $def['id'] ?? 'id';
+        $useUlid = ! empty($def['ulid']);
+        $versioned = ! empty($def['versioned']);
         $cols = $def['cols'];
         $hasCreated = ! empty($def['created']);
 
@@ -255,16 +279,22 @@ class AkademiState
         $verServer = [];
         foreach (array_chunk($sendIds, 500) as $chunk) {
             $ph = implode(',', array_fill(0, count($chunk), '?'));
-            foreach ($db->select("SELECT id, updated_at FROM `$table` WHERE id IN ($ph)", $chunk) as $row) {
+            foreach ($db->select("SELECT `$idCol` AS id, updated_at FROM `$table` WHERE `$idCol` IN ($ph)", $chunk) as $row) {
                 $verServer[$row->id] = (int) $row->updated_at;
             }
         }
 
-        $names = array_merge(['id'], array_keys($cols), ['updated_at']);
+        $names = array_merge([$idCol], array_keys($cols), ['updated_at']);
         if ($hasCreated) {
             $names[] = 'created_at';
         }
         $names[] = 'data';
+        if ($versioned) {
+            $names[] = 'version';
+        }
+        if ($useUlid) {
+            array_unshift($names, 'id');
+        }
 
         // created_at is deliberately never overwritten: a row's birth stays.
         $upd = [];
@@ -272,6 +302,9 @@ class AkademiState
             $upd[] = "`$n` = IF(VALUES(updated_at) >= updated_at, VALUES(`$n`), `$n`)";
         }
         $upd[] = '`updated_at` = IF(VALUES(updated_at) >= updated_at, VALUES(updated_at), updated_at)';
+        if ($versioned) {
+            $upd[] = '`version` = `version` + 1';
+        }
         $sql = "INSERT INTO `$table` (`".implode('`,`', $names).'`) VALUES ('
             .implode(',', array_fill(0, count($names), '?')).') ON DUPLICATE KEY UPDATE '.implode(', ', $upd);
 
@@ -324,6 +357,12 @@ class AkademiState
                 $args[] = RowSync::ms($simpan['createdAt'] ?? 0);
             }
             $args[] = RowSync::enc($simpan);
+            if ($versioned) {
+                $args[] = 1;
+            }
+            if ($useUlid) {
+                array_unshift($args, strtolower((string) Str::ulid()));
+            }
             $db->statement($sql, $args);
         }
 
@@ -331,7 +370,7 @@ class AkademiState
         // payload is deleted, including rows created after the client loaded.
         // An empty payload never empties a table (guard against an
         // accidentally empty state, e.g. the app failed to load then saved).
-        RowSync::deleteMissing($db, $table, 'id', $ids, 'notIn');
+        RowSync::deleteMissing($db, $table, $idCol, $ids, 'notIn');
 
         return count($ids);
     }
@@ -354,6 +393,8 @@ class AkademiState
      */
     public function saveProgress(ConnectionInterface $db, array $map): int
     {
+        $table = AkademiSchema::table('progress');
+        $onCore = AkademiSchema::onCore();
         $n = 0;
         $pairs = [];
         foreach ($map as $uid => $mats) {
@@ -364,26 +405,42 @@ class AkademiState
                 if (! is_array($r)) {
                     continue;
                 }
-                $db->statement('INSERT INTO progress (user_id, material_id, done, score, at_ms, updated_at, data)
-                    VALUES (?,?,?,?,?,?,?)
-                    ON DUPLICATE KEY UPDATE
-                      done       = IF(VALUES(updated_at) >= updated_at, VALUES(done),       done),
-                      score      = IF(VALUES(updated_at) >= updated_at, VALUES(score),      score),
-                      at_ms      = IF(VALUES(updated_at) >= updated_at, VALUES(at_ms),      at_ms),
-                      data       = IF(VALUES(updated_at) >= updated_at, VALUES(data),       data),
-                      updated_at = IF(VALUES(updated_at) >= updated_at, VALUES(updated_at), updated_at)', [
+                $vals = [
                     (string) $uid, (string) $mid,
                     empty($r['done']) ? 0 : 1,
                     isset($r['score']) ? intval($r['score']) : null,
                     RowSync::ms($r['at'] ?? 0),
                     RowSync::ms($r['updatedAt'] ?? ($r['at'] ?? 0)),
                     RowSync::enc($r),
-                ]);
+                ];
+                if ($onCore) {
+                    $db->statement("INSERT INTO `$table` (id, legacy_id, user_id, material_id, done, score, at_ms, updated_at, data, version)
+                        VALUES (?,?,?,?,?,?,?,?,?,1)
+                        ON DUPLICATE KEY UPDATE
+                          done       = IF(VALUES(updated_at) >= updated_at, VALUES(done),       done),
+                          score      = IF(VALUES(updated_at) >= updated_at, VALUES(score),      score),
+                          at_ms      = IF(VALUES(updated_at) >= updated_at, VALUES(at_ms),      at_ms),
+                          data       = IF(VALUES(updated_at) >= updated_at, VALUES(data),       data),
+                          updated_at = IF(VALUES(updated_at) >= updated_at, VALUES(updated_at), updated_at),
+                          `version` = `version` + 1", [
+                        strtolower((string) Str::ulid()),
+                        (string) $uid.'|'.(string) $mid, ...$vals,
+                    ]);
+                } else {
+                    $db->statement('INSERT INTO progress (user_id, material_id, done, score, at_ms, updated_at, data)
+                        VALUES (?,?,?,?,?,?,?)
+                        ON DUPLICATE KEY UPDATE
+                          done       = IF(VALUES(updated_at) >= updated_at, VALUES(done),       done),
+                          score      = IF(VALUES(updated_at) >= updated_at, VALUES(score),      score),
+                          at_ms      = IF(VALUES(updated_at) >= updated_at, VALUES(at_ms),      at_ms),
+                          data       = IF(VALUES(updated_at) >= updated_at, VALUES(data),       data),
+                          updated_at = IF(VALUES(updated_at) >= updated_at, VALUES(updated_at), updated_at)', $vals);
+                }
                 $pairs[] = [(string) $uid, (string) $mid];
                 $n++;
             }
         }
-        $this->deleteMissingProgress($db, 'progress', ['user_id', 'material_id'], $pairs);
+        $this->deleteMissingProgress($db, $table, ['user_id', 'material_id'], $pairs);
 
         return $n;
     }
@@ -391,6 +448,8 @@ class AkademiState
     /** progProg[userId][programId][materialId] -> 1 row per triple. */
     public function saveProgProg(ConnectionInterface $db, array $map): int
     {
+        $table = AkademiSchema::table('progProg');
+        $onCore = AkademiSchema::onCore();
         $n = 0;
         $triples = [];
         foreach ($map as $uid => $progs) {
@@ -405,27 +464,43 @@ class AkademiState
                     if (! is_array($r)) {
                         continue;
                     }
-                    $db->statement('INSERT INTO prog_prog (user_id, program_id, material_id, done, score, at_ms, updated_at, data)
-                        VALUES (?,?,?,?,?,?,?,?)
-                        ON DUPLICATE KEY UPDATE
-                          done       = IF(VALUES(updated_at) >= updated_at, VALUES(done),       done),
-                          score      = IF(VALUES(updated_at) >= updated_at, VALUES(score),      score),
-                          at_ms      = IF(VALUES(updated_at) >= updated_at, VALUES(at_ms),      at_ms),
-                          data       = IF(VALUES(updated_at) >= updated_at, VALUES(data),       data),
-                          updated_at = IF(VALUES(updated_at) >= updated_at, VALUES(updated_at), updated_at)', [
+                    $vals = [
                         (string) $uid, (string) $pid, (string) $mid,
                         empty($r['done']) ? 0 : 1,
                         isset($r['score']) ? intval($r['score']) : null,
                         RowSync::ms($r['at'] ?? 0),
                         RowSync::ms($r['updatedAt'] ?? ($r['at'] ?? 0)),
                         RowSync::enc($r),
-                    ]);
+                    ];
+                    if ($onCore) {
+                        $db->statement("INSERT INTO `$table` (id, legacy_id, user_id, program_id, material_id, done, score, at_ms, updated_at, data, version)
+                            VALUES (?,?,?,?,?,?,?,?,?,?,1)
+                            ON DUPLICATE KEY UPDATE
+                              done       = IF(VALUES(updated_at) >= updated_at, VALUES(done),       done),
+                              score      = IF(VALUES(updated_at) >= updated_at, VALUES(score),      score),
+                              at_ms      = IF(VALUES(updated_at) >= updated_at, VALUES(at_ms),      at_ms),
+                              data       = IF(VALUES(updated_at) >= updated_at, VALUES(data),       data),
+                              updated_at = IF(VALUES(updated_at) >= updated_at, VALUES(updated_at), updated_at),
+                              `version` = `version` + 1", [
+                            strtolower((string) Str::ulid()),
+                            (string) $uid.'|'.(string) $pid.'|'.(string) $mid, ...$vals,
+                        ]);
+                    } else {
+                        $db->statement('INSERT INTO prog_prog (user_id, program_id, material_id, done, score, at_ms, updated_at, data)
+                            VALUES (?,?,?,?,?,?,?,?)
+                            ON DUPLICATE KEY UPDATE
+                              done       = IF(VALUES(updated_at) >= updated_at, VALUES(done),       done),
+                              score      = IF(VALUES(updated_at) >= updated_at, VALUES(score),      score),
+                              at_ms      = IF(VALUES(updated_at) >= updated_at, VALUES(at_ms),      at_ms),
+                              data       = IF(VALUES(updated_at) >= updated_at, VALUES(data),       data),
+                              updated_at = IF(VALUES(updated_at) >= updated_at, VALUES(updated_at), updated_at)', $vals);
+                    }
                     $triples[] = [(string) $uid, (string) $pid, (string) $mid];
                     $n++;
                 }
             }
         }
-        $this->deleteMissingProgress($db, 'prog_prog', ['user_id', 'program_id', 'material_id'], $triples);
+        $this->deleteMissingProgress($db, $table, ['user_id', 'program_id', 'material_id'], $triples);
 
         return $n;
     }
