@@ -141,7 +141,7 @@ class ShopController
         return Legacy::cleanId($r->header('X-Order-Token') ?: ($r->query('token') ?: $r->json('token', '')));
     }
 
-    private function run(\Closure $fn, int $status = 200): JsonResponse
+    protected function run(\Closure $fn, int $status = 200): JsonResponse
     {
         if (strlen((string) request()->getContent()) > 256 * 1024) {
             return ApiResponse::error('payload_too_large', 'Permintaan terlalu besar.', 413);
@@ -154,7 +154,7 @@ class ShopController
     }
 
     /** The shop's own messages are written for the buyer; map them to a status by what they mean. */
-    private static function fail(Exception $e): JsonResponse
+    protected static function fail(Exception $e): JsonResponse
     {
         if ($e instanceof QueryException || $e instanceof \ErrorException) {
             throw $e;
@@ -163,6 +163,8 @@ class ShopController
 
         return match (true) {
             str_starts_with($m, 'Silakan masuk dulu') => ApiResponse::error('buyer_required', $m, 401),
+            $m === 'Email atau password salah.' => ApiResponse::error('invalid_credentials', $m, 401),
+            str_starts_with($m, 'Email ini sudah terdaftar') => ApiResponse::error('already_exists', $m, 409),
             $m === 'Pesanan tidak ditemukan.', $m === 'Tautan tiket tidak sah.', $m === 'Tiket tidak ditemukan.',
             str_starts_with($m, 'Event tidak ditemukan') => self::notFound($m),
             str_starts_with($m, 'Terlalu banyak percobaan') => ApiResponse::error('too_many_attempts', $m, 429),

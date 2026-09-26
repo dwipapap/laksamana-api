@@ -22,7 +22,9 @@
     "INSERT INTO orders (id,event_id,buyer_name,phone,email,total,payment_status,payment_ref,updated_at,created_at,data) VALUES ('ordpar1','e2','Parity Buyer','0811','par@example.test',4,'Pending','LMPAR001',1,1,'{\"id\":\"ordpar1\",\"event_id\":\"e2\",\"buyer_name\":\"Parity Buyer\",\"phone\":\"0811\",\"email\":\"par@example.test\",\"birthdate\":\"\",\"notes\":\"\",\"subtotal\":4,\"fee\":0,\"total\":4,\"payment_status\":\"Pending\",\"payment_ref\":\"LMPAR001\",\"recorded_by\":\"Website\",\"recorded_via\":\"ticketing-web\",\"channel\":\"online\",\"items\":[{\"seat_id\":\"\",\"label\":\"\",\"tier\":\"Reguler\",\"class_id\":\"idt97tumy\",\"kind\":\"general\",\"capacity\":2,\"price\":4}],\"access_token\":\"accpar1\",\"user_id\":\"tu_par1\",\"expires_at\":\"2099-01-01T00:00:00+00:00\",\"created\":\"2026-09-01T00:00:00+00:00\",\"payment\":{\"gateway\":\"simulasi\",\"invoice_id\":\"SIM-LMPAR001\",\"invoice_url\":\"x\",\"expiry_date\":\"\",\"status\":\"PENDING\",\"simulasi\":true}}')",
     "INSERT INTO orders (id,event_id,buyer_name,phone,email,total,payment_status,payment_ref,updated_at,created_at,data) VALUES ('ordpar2','e2','Parity Buyer','0811','par@example.test',1,'Pending','LMPAR002',1,1,'{\"id\":\"ordpar2\",\"event_id\":\"e2\",\"buyer_name\":\"Parity Buyer\",\"phone\":\"0811\",\"email\":\"par@example.test\",\"birthdate\":\"\",\"notes\":\"\",\"subtotal\":1,\"fee\":0,\"total\":1,\"payment_status\":\"Pending\",\"payment_ref\":\"LMPAR002\",\"recorded_by\":\"Website\",\"recorded_via\":\"ticketing-web\",\"channel\":\"online\",\"items\":[{\"seat_id\":\"id0608a7g\",\"label\":\"0608\",\"tier\":\"Reguler+\",\"class_id\":\"idey23b35\",\"kind\":\"seat\",\"capacity\":1,\"price\":1}],\"access_token\":\"accpar2\",\"user_id\":\"tu_par1\",\"expires_at\":\"2099-01-01T00:00:00+00:00\",\"created\":\"2026-09-01T00:00:00+00:00\",\"payment\":{\"gateway\":\"simulasi\",\"invoice_id\":\"SIM-LMPAR002\",\"invoice_url\":\"x\",\"expiry_date\":\"\",\"status\":\"PENDING\",\"simulasi\":true}}')",
     "INSERT INTO seat_holds (id,event_id,seat_id,hold_token,order_id,expires_at,created_at) VALUES ('hold_par2','e2','id0608a7g','tokpar2','ordpar2',4102444800000,0)",
-    "INSERT INTO orders (id,event_id,buyer_name,phone,email,total,payment_status,payment_ref,updated_at,created_at,data) VALUES ('ordpar3','e2','Parity Buyer','0811','par@example.test',2,'Pending','LMPAR003',1,1,'{\"id\":\"ordpar3\",\"event_id\":\"e2\",\"buyer_name\":\"Parity Buyer\",\"phone\":\"0811\",\"email\":\"par@example.test\",\"birthdate\":\"\",\"notes\":\"\",\"subtotal\":2,\"fee\":0,\"total\":2,\"payment_status\":\"Pending\",\"payment_ref\":\"LMPAR003\",\"recorded_by\":\"Website\",\"recorded_via\":\"ticketing-web\",\"channel\":\"online\",\"items\":[{\"seat_id\":\"\",\"label\":\"\",\"tier\":\"Reguler\",\"class_id\":\"idt97tumy\",\"kind\":\"general\",\"capacity\":1,\"price\":2}],\"access_token\":\"accpar3\",\"user_id\":\"tu_par1\",\"expires_at\":\"2099-01-01T00:00:00+00:00\",\"created\":\"2026-09-01T00:00:00+00:00\",\"payment\":{\"gateway\":\"simulasi\",\"invoice_id\":\"SIM-LMPAR003\",\"invoice_url\":\"x\",\"expiry_date\":\"\",\"status\":\"PENDING\",\"simulasi\":true}}')"
+    "INSERT INTO orders (id,event_id,buyer_name,phone,email,total,payment_status,payment_ref,updated_at,created_at,data) VALUES ('ordpar3','e2','Parity Buyer','0811','par@example.test',2,'Pending','LMPAR003',1,1,'{\"id\":\"ordpar3\",\"event_id\":\"e2\",\"buyer_name\":\"Parity Buyer\",\"phone\":\"0811\",\"email\":\"par@example.test\",\"birthdate\":\"\",\"notes\":\"\",\"subtotal\":2,\"fee\":0,\"total\":2,\"payment_status\":\"Pending\",\"payment_ref\":\"LMPAR003\",\"recorded_by\":\"Website\",\"recorded_via\":\"ticketing-web\",\"channel\":\"online\",\"items\":[{\"seat_id\":\"\",\"label\":\"\",\"tier\":\"Reguler\",\"class_id\":\"idt97tumy\",\"kind\":\"general\",\"capacity\":1,\"price\":2}],\"access_token\":\"accpar3\",\"user_id\":\"tu_par1\",\"expires_at\":\"2099-01-01T00:00:00+00:00\",\"created\":\"2026-09-01T00:00:00+00:00\",\"payment\":{\"gateway\":\"simulasi\",\"invoice_id\":\"SIM-LMPAR003\",\"invoice_url\":\"x\",\"expiry_date\":\"\",\"status\":\"PENDING\",\"simulasi\":true}}')",
+    "INSERT INTO tix_sessions (token,user_id,expires_at,created_at) VALUES ('psesi2','tu_par1',4102444800000,0)",
+    "INSERT INTO tix_reset (token,user_id,expires_at,created_at) VALUES ('rstpar1','tu_par1',4102444800000,0)"
   ],
   "ignore": [
     "data.ts",
@@ -44,6 +46,14 @@
       "name": "events (GET default)",
       "method": "GET",
       "query": {}
+    },
+    {
+      "name": "tiketSaya (before any purchase)",
+      "method": "GET",
+      "query": {
+        "action": "tiketSaya",
+        "sesi": "psesi1"
+      }
     },
     {
       "name": "events",
@@ -667,6 +677,227 @@
         "ticket_id": "tk_f037759593d7761f",
         "seat_id": "id0bogbkq"
       }
+    },
+    {
+      "name": "saya: no session",
+      "method": "GET",
+      "query": {
+        "action": "saya"
+      }
+    },
+    {
+      "name": "saya",
+      "method": "GET",
+      "query": {
+        "action": "saya",
+        "sesi": "psesi1"
+      }
+    },
+    {
+      "name": "tiketSaya: no session",
+      "method": "GET",
+      "query": {
+        "action": "tiketSaya"
+      }
+    },
+    {
+      "name": "daftar: missing name",
+      "method": "POST",
+      "body": {
+        "action": "daftar",
+        "email": "baru@example.test",
+        "password": "rahasia123"
+      }
+    },
+    {
+      "name": "daftar: bad email",
+      "method": "POST",
+      "body": {
+        "action": "daftar",
+        "name": "Baru",
+        "email": "baru",
+        "password": "rahasia123"
+      }
+    },
+    {
+      "name": "daftar: short password",
+      "method": "POST",
+      "body": {
+        "action": "daftar",
+        "name": "Baru",
+        "email": "baru@example.test",
+        "password": "pendek"
+      }
+    },
+    {
+      "name": "daftar: taken",
+      "method": "POST",
+      "body": {
+        "action": "daftar",
+        "name": "Lagi",
+        "email": " PAR@example.test ",
+        "password": "rahasia123"
+      }
+    },
+    {
+      "name": "daftar: links old orders by email",
+      "method": "POST",
+      "body": {
+        "action": "daftar",
+        "name": "Wandi",
+        "email": "Wandi@Gmail.com",
+        "phone": " 0811 ",
+        "password": "rahasia123"
+      },
+      "ignore": [
+        "data.user.id",
+        "data.token"
+      ]
+    },
+    {
+      "name": "masuk: wrong password",
+      "method": "POST",
+      "body": {
+        "action": "masuk",
+        "email": "wandi@gmail.com",
+        "password": "salah12345"
+      }
+    },
+    {
+      "name": "masuk: unknown email",
+      "method": "POST",
+      "body": {
+        "action": "masuk",
+        "email": "nobody@example.test",
+        "password": "rahasia123"
+      }
+    },
+    {
+      "name": "masuk",
+      "method": "POST",
+      "body": {
+        "action": "masuk",
+        "email": "WANDI@gmail.com",
+        "password": "rahasia123"
+      },
+      "ignore": [
+        "data.user.id",
+        "data.token"
+      ]
+    },
+    {
+      "name": "keluar",
+      "method": "POST",
+      "body": {
+        "action": "keluar",
+        "sesi": "psesi2"
+      }
+    },
+    {
+      "name": "keluar: no session",
+      "method": "POST",
+      "body": {
+        "action": "keluar"
+      }
+    },
+    {
+      "name": "saya after keluar",
+      "method": "GET",
+      "query": {
+        "action": "saya",
+        "sesi": "psesi2"
+      }
+    },
+    {
+      "name": "lupaPassword: unknown",
+      "method": "POST",
+      "body": {
+        "action": "lupaPassword",
+        "email": "nobody@example.test"
+      }
+    },
+    {
+      "name": "lupaPassword: known",
+      "method": "POST",
+      "body": {
+        "action": "lupaPassword",
+        "email": "par@example.test"
+      }
+    },
+    {
+      "name": "ujiEmail: bad address",
+      "method": "GET",
+      "query": {
+        "action": "ujiEmail",
+        "ke": "nope"
+      }
+    },
+    {
+      "name": "ujiEmail: SMTP not configured",
+      "method": "GET",
+      "query": {
+        "action": "ujiEmail",
+        "ke": "uji@example.test"
+      }
+    },
+    {
+      "name": "resetPassword: short",
+      "method": "POST",
+      "body": {
+        "action": "resetPassword",
+        "token": "rstpar1",
+        "password": "x"
+      }
+    },
+    {
+      "name": "resetPassword: bad token",
+      "method": "POST",
+      "body": {
+        "action": "resetPassword",
+        "token": "nope",
+        "password": "rahasia123"
+      }
+    },
+    {
+      "name": "resetPassword",
+      "method": "POST",
+      "body": {
+        "action": "resetPassword",
+        "token": "rstpar1",
+        "password": "barubaru123"
+      },
+      "ignore": [
+        "data.token"
+      ]
+    },
+    {
+      "name": "resetPassword: link is single-use",
+      "method": "POST",
+      "body": {
+        "action": "resetPassword",
+        "token": "rstpar1",
+        "password": "barubaru123"
+      }
+    },
+    {
+      "name": "saya: old sessions cut by the reset",
+      "method": "GET",
+      "query": {
+        "action": "saya",
+        "sesi": "psesi1"
+      }
+    },
+    {
+      "name": "masuk with the new password",
+      "method": "POST",
+      "body": {
+        "action": "masuk",
+        "email": "par@example.test",
+        "password": "barubaru123"
+      },
+      "ignore": [
+        "data.token"
+      ]
     }
   ]
 }

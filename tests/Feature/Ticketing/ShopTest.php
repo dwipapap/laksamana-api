@@ -1,7 +1,9 @@
 <?php
 
+use App\Modules\Ticketing\Services\ShopMail;
 use App\Support\Modules;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Testing\TestResponse;
 
 /*
@@ -120,4 +122,39 @@ it('maintenance answers a payment webhook with 503 so Xendit retries', function 
     config(['laksamana.modules.ticketing.maintenance' => true]);
     tixPost(['external_id' => 'x', 'status' => 'PAID'], ['HTTP_X_CALLBACK_TOKEN' => 'cbtest'])->assertStatus(503);
     $this->get('/ticketing-api/api.php?action=events')->assertOk()->assertJsonPath('ok', true);
+});
+
+it('v1 Buyers: register, log in, see me and my orders, log out', function () {
+    $this->postJson('/api/v1/tickets/buyers', ['name' => 'Rina', 'email' => 'Rina@Example.test', 'password' => 'pendek'])->assertStatus(422);
+    $reg = $this->postJson('/api/v1/tickets/buyers', ['name' => 'Rina', 'email' => 'Rina@Example.test', 'phone' => '0812', 'password' => 'rahasia123'])
+        ->assertCreated()->assertJsonPath('data.user.email', 'rina@example.test');
+    expect($reg->json('data.token'))->toBeString();
+    $this->postJson('/api/v1/tickets/buyers', ['name' => 'Lagi', 'email' => 'rina@example.test', 'password' => 'rahasia123'])->assertStatus(409);
+    $this->postJson('/api/v1/tickets/sessions', ['email' => 'rina@example.test', 'password' => 'salah1234'])->assertStatus(401)
+        ->assertJsonPath('error.code', 'invalid_credentials');
+    $tok = $this->postJson('/api/v1/tickets/sessions', ['email' => 'RINA@example.test', 'password' => 'rahasia123'])->assertOk()->json('data.token');
+
+    $this->withToken($tok)->getJson('/api/v1/tickets/me')->assertOk()->assertJsonPath('data.name', 'Rina');
+    $this->withToken($tok)->getJson('/api/v1/tickets/me/orders')->assertOk()->assertJsonPath('data', []);
+    $this->withToken($tok)->deleteJson('/api/v1/tickets/sessions')->assertOk();
+    expect(tixDb()->selectOne('SELECT COUNT(*) c FROM tix_sessions WHERE token = ?', [$tok])->c)->toBe(0);
+});
+
+it('mail: the reset link and the paid e-ticket (with its PDF) go out through the ticketing mailer', function () {
+    Mail::fake();
+    config(['laksamana.ticketing.smtp_host' => 'smtp.example.test', 'laksamana.ticketing.smtp_user' => 'tiket@example.test']);
+    tixBuyer();
+    $this->postJson('/api/v1/tickets/password/forgot', ['email' => 'tu_test1@example.test'])->assertOk()->assertJsonPath('data.terkirim', true);
+    Mail::assertSent(ShopMail::class, fn (ShopMail $m) => $m->hasTo('tu_test1@example.test') && str_contains($m->body, '#reset/'));
+    $reset = tixDb()->selectOne("SELECT token FROM tix_reset WHERE user_id = 'tu_test1'")->token;
+    $this->postJson('/api/v1/tickets/password/reset', ['token' => $reset, 'password' => 'barubaru123'])->assertOk();
+    expect(tixDb()->selectOne("SELECT COUNT(*) c FROM tix_sessions WHERE token = 's_tu_test1'")->c)->toBe(0);
+
+    tixPendingOrder('SIM-LMTEST01');
+    tixDb()->update("UPDATE orders SET data = JSON_SET(data, '$.email', 'pembeli@example.test') WHERE id = 'ord_test1'");
+    tixPost(['external_id' => 'ord_test1', 'status' => 'PAID'], ['HTTP_X_CALLBACK_TOKEN' => 'cbtest'])->assertOk();
+    Mail::assertSent(ShopMail::class, fn (ShopMail $m) => $m->hasTo('pembeli@example.test')
+        && count($m->files) === 1 && str_starts_with($m->files[0]['isi'], '%PDF-1.4') && $m->files[0]['nama'] === 'E-Ticket-LMTEST01.pdf');
+    $o = json_decode(tixDb()->selectOne("SELECT data FROM orders WHERE id = 'ord_test1'")->data, true);
+    expect($o['email_eticket']['ok'])->toBeTrue()->and($o['email_eticket']['pdf'])->toBeTrue();
 });
