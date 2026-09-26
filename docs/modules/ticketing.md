@@ -76,3 +76,28 @@ The frontend draws QR codes in JS, and the server puts them into the PDF. Both m
   - byte-identical PDFs when the zlib build matches the recording, and identical inflated page content with any zlib build
 - Legacy `tools/uji-qr.js` proves legacy PHP = frontend JS `qrMatrix()`, so matching the legacy vectors keeps the PDF QR and the on-screen QR the same code.
 - **No action surface:** the legacy API exposes no QR or PDF action. The PDF is only a mail attachment, built in `kirim_eticket()` when an order is paid. The compat actions and v1 that use these services arrive with #39 (orders/e-ticket) and #40 (mail, buyer v1).
+
+## Port notes (#39: public site, holds, checkout, payment)
+
+- **Where it lives:** `App\Modules\Ticketing\Services\TicketShop` ports `lib_ticketing.php` section by section (events, seat map, holds, checkout, upgrade, Xendit, webhook, payment, sweeps, `tix_gagal` throttle, order status).
+  - `Xendit` wraps the two Xendit calls through Laravel's Http client, so tests fake it; `Http::preventStrayRequests()` guards every ticketing test.
+  - `TicketMail` returns the legacy "SMTP not configured" result. The SMTP port itself is #40.
+- **Compat route:** `/ticketing-api/api.php` (`TicketingLegacyController`). It keeps the old front door:
+  - 413 over 256 KB; JSON depth 16
+  - `idBersih`
+  - webhook detected by the `x-callback-token` header
+  - no-store / nosniff / DENY
+  - webhook 401/500
+  - DB and PHP errors hidden behind the generic message
+- **Config:** the old `config.php` constants become `config('laksamana.ticketing.*')`: `XENDIT_SECRET`, `XENDIT_CALLBACK`, `XENDIT_MOCK`, `TIX_ADMIN_FEE`, `TIX_HOLD_MINUTES`, `TIX_BAYAR_MENIT`, `TIX_MAX_PER_PESANAN`, `EVENT_FILES_DIR`, `EVENT_API_URL`, `TIX_SMTP_*`.
+  - The environment (dev vs produksi) and the site URL are still derived from the serving host.
+  - Poster files default to the event Modul's `<EVENT_DATA_DIR>/files`.
+- **Maintenance:** a request carrying `x-callback-token` gets `503`, not the usual 200 envelope, so Xendit retries instead of losing the payment.
+- **Parity:** `tools/parity/cases/ticketing.json` has 58 cases covering every public action, including the full flows:
+  - hold → checkout
+  - simulated payment → e-ticket
+  - webhook paid/expired/idempotent
+  - upgrade
+
+  Result: 58/58 identical. After `--keep`, `seat_holds`, `orders`, `tickets`, `seats`, `ticket_classes` and `tix_gagal` match between old and new. The only exceptions are random ids/tokens and the order of seat items inside one order, which legacy reads without `ORDER BY` through an index on random hold ids. The runner gained `legacyDefines`, `laravelEnv`, per-case `headers`, `rawBody[Size]` and `manualRedirect`.
+- **Not in this cluster:** the Buyer account actions (`daftar`, `masuk`, `keluar`, `lupaPassword`, `resetPassword`, `saya`, `tiketSaya`) and `ujiEmail` still answer `Aksi tidak dikenal` on Laravel until #40.

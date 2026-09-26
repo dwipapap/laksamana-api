@@ -1,0 +1,672 @@
+{
+  "dir": "ticketing-mysql",
+  "legacyPath": "ticketing-api",
+  "dbEnv": "EMS",
+  "db": "lakk5493_db_ems",
+  "legacyDefines": {
+    "XENDIT_MOCK": true,
+    "XENDIT_CALLBACK": "cbpar",
+    "ADMIN_FEE": 5000,
+    "HOLD_MINUTES": 10,
+    "BAYAR_MENIT": 10,
+    "MAX_PER_PESANAN": 10
+  },
+  "laravelEnv": {
+    "XENDIT_MOCK": "true",
+    "XENDIT_CALLBACK": "cbpar"
+  },
+  "setupSql": [
+    "INSERT INTO tix_users (id,email,pass_hash,name,phone,created_at) VALUES ('tu_par1','par@example.test','x','Parity Buyer','0811',0)",
+    "INSERT INTO tix_sessions (token,user_id,expires_at,created_at) VALUES ('psesi1','tu_par1',4102444800000,0)",
+    "UPDATE orders SET data = JSON_SET(data, '$.user_id', 'tu_par1') WHERE id = 'ord_707e1f305c8aa42c'",
+    "INSERT INTO orders (id,event_id,buyer_name,phone,email,total,payment_status,payment_ref,updated_at,created_at,data) VALUES ('ordpar1','e2','Parity Buyer','0811','par@example.test',4,'Pending','LMPAR001',1,1,'{\"id\":\"ordpar1\",\"event_id\":\"e2\",\"buyer_name\":\"Parity Buyer\",\"phone\":\"0811\",\"email\":\"par@example.test\",\"birthdate\":\"\",\"notes\":\"\",\"subtotal\":4,\"fee\":0,\"total\":4,\"payment_status\":\"Pending\",\"payment_ref\":\"LMPAR001\",\"recorded_by\":\"Website\",\"recorded_via\":\"ticketing-web\",\"channel\":\"online\",\"items\":[{\"seat_id\":\"\",\"label\":\"\",\"tier\":\"Reguler\",\"class_id\":\"idt97tumy\",\"kind\":\"general\",\"capacity\":2,\"price\":4}],\"access_token\":\"accpar1\",\"user_id\":\"tu_par1\",\"expires_at\":\"2099-01-01T00:00:00+00:00\",\"created\":\"2026-09-01T00:00:00+00:00\",\"payment\":{\"gateway\":\"simulasi\",\"invoice_id\":\"SIM-LMPAR001\",\"invoice_url\":\"x\",\"expiry_date\":\"\",\"status\":\"PENDING\",\"simulasi\":true}}')",
+    "INSERT INTO orders (id,event_id,buyer_name,phone,email,total,payment_status,payment_ref,updated_at,created_at,data) VALUES ('ordpar2','e2','Parity Buyer','0811','par@example.test',1,'Pending','LMPAR002',1,1,'{\"id\":\"ordpar2\",\"event_id\":\"e2\",\"buyer_name\":\"Parity Buyer\",\"phone\":\"0811\",\"email\":\"par@example.test\",\"birthdate\":\"\",\"notes\":\"\",\"subtotal\":1,\"fee\":0,\"total\":1,\"payment_status\":\"Pending\",\"payment_ref\":\"LMPAR002\",\"recorded_by\":\"Website\",\"recorded_via\":\"ticketing-web\",\"channel\":\"online\",\"items\":[{\"seat_id\":\"id0608a7g\",\"label\":\"0608\",\"tier\":\"Reguler+\",\"class_id\":\"idey23b35\",\"kind\":\"seat\",\"capacity\":1,\"price\":1}],\"access_token\":\"accpar2\",\"user_id\":\"tu_par1\",\"expires_at\":\"2099-01-01T00:00:00+00:00\",\"created\":\"2026-09-01T00:00:00+00:00\",\"payment\":{\"gateway\":\"simulasi\",\"invoice_id\":\"SIM-LMPAR002\",\"invoice_url\":\"x\",\"expiry_date\":\"\",\"status\":\"PENDING\",\"simulasi\":true}}')",
+    "INSERT INTO seat_holds (id,event_id,seat_id,hold_token,order_id,expires_at,created_at) VALUES ('hold_par2','e2','id0608a7g','tokpar2','ordpar2',4102444800000,0)",
+    "INSERT INTO orders (id,event_id,buyer_name,phone,email,total,payment_status,payment_ref,updated_at,created_at,data) VALUES ('ordpar3','e2','Parity Buyer','0811','par@example.test',2,'Pending','LMPAR003',1,1,'{\"id\":\"ordpar3\",\"event_id\":\"e2\",\"buyer_name\":\"Parity Buyer\",\"phone\":\"0811\",\"email\":\"par@example.test\",\"birthdate\":\"\",\"notes\":\"\",\"subtotal\":2,\"fee\":0,\"total\":2,\"payment_status\":\"Pending\",\"payment_ref\":\"LMPAR003\",\"recorded_by\":\"Website\",\"recorded_via\":\"ticketing-web\",\"channel\":\"online\",\"items\":[{\"seat_id\":\"\",\"label\":\"\",\"tier\":\"Reguler\",\"class_id\":\"idt97tumy\",\"kind\":\"general\",\"capacity\":1,\"price\":2}],\"access_token\":\"accpar3\",\"user_id\":\"tu_par1\",\"expires_at\":\"2099-01-01T00:00:00+00:00\",\"created\":\"2026-09-01T00:00:00+00:00\",\"payment\":{\"gateway\":\"simulasi\",\"invoice_id\":\"SIM-LMPAR003\",\"invoice_url\":\"x\",\"expiry_date\":\"\",\"status\":\"PENDING\",\"simulasi\":true}}')"
+  ],
+  "ignore": [
+    "data.ts",
+    "data.backend"
+  ],
+  "cases": [
+    {
+      "name": "ping",
+      "method": "GET",
+      "query": {
+        "action": "ping"
+      },
+      "ignore": [
+        "data.config",
+        "data.poster"
+      ]
+    },
+    {
+      "name": "events (GET default)",
+      "method": "GET",
+      "query": {}
+    },
+    {
+      "name": "events",
+      "method": "GET",
+      "query": {
+        "action": "events"
+      }
+    },
+    {
+      "name": "event e2",
+      "method": "GET",
+      "query": {
+        "action": "event",
+        "id": "e2"
+      }
+    },
+    {
+      "name": "event not on sale",
+      "method": "GET",
+      "query": {
+        "action": "event",
+        "id": "e1"
+      }
+    },
+    {
+      "name": "event bad id",
+      "method": "GET",
+      "query": {
+        "action": "event",
+        "id": "../e2"
+      }
+    },
+    {
+      "name": "denah e2",
+      "method": "GET",
+      "query": {
+        "action": "denah",
+        "id": "e2"
+      }
+    },
+    {
+      "name": "poster e2",
+      "method": "GET",
+      "query": {
+        "action": "poster",
+        "id": "e2"
+      },
+      "manualRedirect": true
+    },
+    {
+      "name": "poster not on sale",
+      "method": "GET",
+      "query": {
+        "action": "poster",
+        "id": "e1"
+      },
+      "manualRedirect": true
+    },
+    {
+      "name": "unknown GET action",
+      "method": "GET",
+      "query": {
+        "action": "nope"
+      }
+    },
+    {
+      "name": "unknown POST action",
+      "method": "POST",
+      "body": {
+        "action": "nope"
+      }
+    },
+    {
+      "name": "POST without action",
+      "method": "POST",
+      "body": {}
+    },
+    {
+      "name": "body too large",
+      "method": "POST",
+      "rawBodySize": 262145
+    },
+    {
+      "name": "hold: no seats",
+      "method": "POST",
+      "body": {
+        "action": "hold",
+        "event_id": "e2",
+        "seats": []
+      }
+    },
+    {
+      "name": "hold: only bad ids",
+      "method": "POST",
+      "body": {
+        "action": "hold",
+        "event_id": "e2",
+        "seats": [
+          "../x",
+          "a b"
+        ]
+      }
+    },
+    {
+      "name": "hold: mixed seats",
+      "method": "POST",
+      "body": {
+        "action": "hold",
+        "event_id": "e2",
+        "hold_token": "ptok1",
+        "seats": [
+          "id02n81bj",
+          "id03pi7nl",
+          "id06hjcvx",
+          "iddei08ee",
+          "id8h87bv4",
+          "id0608a7g",
+          "nosuchseat"
+        ]
+      },
+      "ignore": [
+        "data.expires_at"
+      ]
+    },
+    {
+      "name": "hold: seat held by someone else",
+      "method": "POST",
+      "body": {
+        "action": "hold",
+        "event_id": "e2",
+        "hold_token": "ptok2",
+        "seats": [
+          "id02n81bj",
+          "id0beilnr"
+        ]
+      },
+      "ignore": [
+        "data.expires_at"
+      ]
+    },
+    {
+      "name": "denah e2 as ptok1",
+      "method": "GET",
+      "query": {
+        "action": "denah",
+        "id": "e2",
+        "hold": "ptok1"
+      },
+      "ignore": [
+        "data.*.hold_exp"
+      ]
+    },
+    {
+      "name": "release: no token",
+      "method": "POST",
+      "body": {
+        "action": "release"
+      }
+    },
+    {
+      "name": "release: one seat of ptok2",
+      "method": "POST",
+      "body": {
+        "action": "release",
+        "hold_token": "ptok2",
+        "seats": [
+          "id0beilnr"
+        ]
+      }
+    },
+    {
+      "name": "checkout: missing name",
+      "method": "POST",
+      "body": {
+        "action": "checkout",
+        "event_id": "e2",
+        "hold_token": "ptok1",
+        "email": "a@b.co",
+        "phone": "1",
+        "sesi": "psesi1"
+      }
+    },
+    {
+      "name": "checkout: bad email",
+      "method": "POST",
+      "body": {
+        "action": "checkout",
+        "event_id": "e2",
+        "hold_token": "ptok1",
+        "name": "A",
+        "email": "nope",
+        "phone": "1",
+        "sesi": "psesi1"
+      }
+    },
+    {
+      "name": "checkout: no session",
+      "method": "POST",
+      "body": {
+        "action": "checkout",
+        "event_id": "e2",
+        "hold_token": "ptok1",
+        "name": "A",
+        "email": "a@b.co",
+        "phone": "1"
+      }
+    },
+    {
+      "name": "checkout: event not on sale",
+      "method": "POST",
+      "body": {
+        "action": "checkout",
+        "event_id": "e1",
+        "hold_token": "ptok1",
+        "name": "A",
+        "email": "a@b.co",
+        "phone": "1",
+        "sesi": "psesi1"
+      }
+    },
+    {
+      "name": "checkout: nothing held",
+      "method": "POST",
+      "body": {
+        "action": "checkout",
+        "event_id": "e2",
+        "hold_token": "nothing",
+        "name": "A",
+        "email": "a@b.co",
+        "phone": "1",
+        "sesi": "psesi1"
+      }
+    },
+    {
+      "name": "checkout: seated class as general",
+      "method": "POST",
+      "body": {
+        "action": "checkout",
+        "event_id": "e2",
+        "hold_token": "nothing",
+        "name": "A",
+        "email": "a@b.co",
+        "phone": "1",
+        "sesi": "psesi1",
+        "umum": [
+          {
+            "class_id": "idzsz5tro",
+            "qty": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "checkout: unknown class",
+      "method": "POST",
+      "body": {
+        "action": "checkout",
+        "event_id": "e2",
+        "hold_token": "nothing",
+        "name": "A",
+        "email": "a@b.co",
+        "phone": "1",
+        "sesi": "psesi1",
+        "umum": [
+          {
+            "class_id": "zzz",
+            "qty": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "checkout: too many",
+      "method": "POST",
+      "body": {
+        "action": "checkout",
+        "event_id": "e2",
+        "hold_token": "nothing",
+        "name": "A",
+        "email": "a@b.co",
+        "phone": "1",
+        "sesi": "psesi1",
+        "umum": [
+          {
+            "class_id": "idt97tumy",
+            "qty": 11
+          }
+        ]
+      }
+    },
+    {
+      "name": "checkout: held seats + general",
+      "method": "POST",
+      "body": {
+        "action": "checkout",
+        "event_id": "e2",
+        "hold_token": "ptok1",
+        "name": "Budi",
+        "email": "budi@example.test",
+        "phone": "0812",
+        "sesi": "psesi1",
+        "notes": "meja dekat panggung",
+        "umum": [
+          {
+            "class_id": "idt97tumy",
+            "qty": 2
+          }
+        ]
+      },
+      "ignore": [
+        "data.order_id",
+        "data.ref",
+        "data.access_token",
+        "data.invoice_url"
+      ]
+    },
+    {
+      "name": "denah e2 after checkout",
+      "method": "GET",
+      "query": {
+        "action": "denah",
+        "id": "e2",
+        "hold": "ptok1"
+      },
+      "ignore": [
+        "data.*.hold_exp"
+      ]
+    },
+    {
+      "name": "events after checkout (sisa)",
+      "method": "GET",
+      "query": {
+        "action": "events"
+      }
+    },
+    {
+      "name": "order: unknown ref",
+      "method": "GET",
+      "query": {
+        "action": "order",
+        "ref": "LMNOPE",
+        "token": "x"
+      }
+    },
+    {
+      "name": "order: wrong token",
+      "method": "GET",
+      "query": {
+        "action": "order",
+        "ref": "LMPAR001",
+        "token": "wrong"
+      }
+    },
+    {
+      "name": "order: pending",
+      "method": "GET",
+      "query": {
+        "action": "order",
+        "ref": "LMPAR001",
+        "token": "accpar1"
+      }
+    },
+    {
+      "name": "simbayar: wrong token",
+      "method": "POST",
+      "body": {
+        "action": "simbayar",
+        "ref": "LMPAR001",
+        "token": "wrong"
+      }
+    },
+    {
+      "name": "simbayar: unknown",
+      "method": "POST",
+      "body": {
+        "action": "simbayar",
+        "ref": "LMNOPE",
+        "token": "x"
+      }
+    },
+    {
+      "name": "simbayar: pays",
+      "method": "POST",
+      "body": {
+        "action": "simbayar",
+        "ref": "LMPAR001",
+        "token": "accpar1"
+      }
+    },
+    {
+      "name": "simbayar: already paid",
+      "method": "POST",
+      "body": {
+        "action": "simbayar",
+        "ref": "LMPAR001",
+        "token": "accpar1"
+      }
+    },
+    {
+      "name": "order: paid, with tickets",
+      "method": "GET",
+      "query": {
+        "action": "order",
+        "ref": "LMPAR001",
+        "token": "accpar1"
+      },
+      "ignore": [
+        "data.tickets.*.id",
+        "data.tickets.*.qr_token"
+      ],
+      "unordered": [
+        "data.tickets"
+      ]
+    },
+    {
+      "name": "webhook: wrong token",
+      "method": "POST",
+      "body": {
+        "external_id": "ordpar2",
+        "status": "PAID"
+      },
+      "headers": {
+        "x-callback-token": "wrong"
+      }
+    },
+    {
+      "name": "webhook: no external_id",
+      "method": "POST",
+      "body": {
+        "status": "PAID"
+      },
+      "headers": {
+        "x-callback-token": "cbpar"
+      }
+    },
+    {
+      "name": "webhook: unknown order",
+      "method": "POST",
+      "body": {
+        "external_id": "nope",
+        "status": "PAID"
+      },
+      "headers": {
+        "x-callback-token": "cbpar"
+      }
+    },
+    {
+      "name": "webhook: pending ignored",
+      "method": "POST",
+      "body": {
+        "external_id": "ordpar2",
+        "status": "PENDING"
+      },
+      "headers": {
+        "x-callback-token": "cbpar"
+      }
+    },
+    {
+      "name": "webhook: paid",
+      "method": "POST",
+      "body": {
+        "external_id": "ordpar2",
+        "status": "PAID",
+        "payment_method": "QRIS",
+        "payment_channel": "QRIS",
+        "paid_amount": 1
+      },
+      "headers": {
+        "x-callback-token": "cbpar"
+      }
+    },
+    {
+      "name": "webhook: paid again (idempotent)",
+      "method": "POST",
+      "body": {
+        "external_id": "ordpar2",
+        "status": "PAID"
+      },
+      "headers": {
+        "x-callback-token": "cbpar"
+      }
+    },
+    {
+      "name": "webhook: expired",
+      "method": "POST",
+      "body": {
+        "external_id": "ordpar3",
+        "status": "EXPIRED"
+      },
+      "headers": {
+        "x-callback-token": "cbpar"
+      }
+    },
+    {
+      "name": "webhook: expired after paid",
+      "method": "POST",
+      "body": {
+        "external_id": "ordpar2",
+        "status": "EXPIRED"
+      },
+      "headers": {
+        "x-callback-token": "cbpar"
+      }
+    },
+    {
+      "name": "order: webhook-paid",
+      "method": "GET",
+      "query": {
+        "action": "order",
+        "ref": "LMPAR002",
+        "token": "accpar2"
+      },
+      "ignore": [
+        "data.tickets.*.id",
+        "data.tickets.*.qr_token"
+      ],
+      "unordered": [
+        "data.tickets"
+      ]
+    },
+    {
+      "name": "order: expired",
+      "method": "GET",
+      "query": {
+        "action": "order",
+        "ref": "LMPAR003",
+        "token": "accpar3"
+      }
+    },
+    {
+      "name": "denah e2 after payments",
+      "method": "GET",
+      "query": {
+        "action": "denah",
+        "id": "e2"
+      },
+      "ignore": [
+        "data.*.hold_exp"
+      ]
+    },
+    {
+      "name": "upgrade: no session",
+      "method": "POST",
+      "body": {
+        "action": "upgradeMulai",
+        "ticket_id": "tk_f037759593d7761f",
+        "seat_id": "id02j4o01"
+      }
+    },
+    {
+      "name": "upgrade: missing seat",
+      "method": "POST",
+      "body": {
+        "action": "upgradeMulai",
+        "sesi": "psesi1",
+        "ticket_id": "tk_f037759593d7761f"
+      }
+    },
+    {
+      "name": "upgrade: unknown ticket",
+      "method": "POST",
+      "body": {
+        "action": "upgradeMulai",
+        "sesi": "psesi1",
+        "ticket_id": "nope",
+        "seat_id": "id02j4o01"
+      }
+    },
+    {
+      "name": "upgrade: own seat",
+      "method": "POST",
+      "body": {
+        "action": "upgradeMulai",
+        "sesi": "psesi1",
+        "ticket_id": "tk_f037759593d7761f",
+        "seat_id": "idr7w49d1"
+      }
+    },
+    {
+      "name": "upgrade: table not for sale",
+      "method": "POST",
+      "body": {
+        "action": "upgradeMulai",
+        "sesi": "psesi1",
+        "ticket_id": "tk_f037759593d7761f",
+        "seat_id": "id06hjcvx"
+      }
+    },
+    {
+      "name": "upgrade: downgrade refused",
+      "method": "POST",
+      "body": {
+        "action": "upgradeMulai",
+        "sesi": "psesi1",
+        "ticket_id": "tk_17c63e96d8dad3f8",
+        "seat_id": "id0bogbkq"
+      }
+    },
+    {
+      "name": "upgrade: Reguler+ to VIP",
+      "method": "POST",
+      "body": {
+        "action": "upgradeMulai",
+        "sesi": "psesi1",
+        "ticket_id": "tk_f037759593d7761f",
+        "seat_id": "id02j4o01"
+      },
+      "ignore": [
+        "data.order_id",
+        "data.ref",
+        "data.access_token",
+        "data.invoice_url"
+      ]
+    },
+    {
+      "name": "upgrade: one live upgrade per ticket",
+      "method": "POST",
+      "body": {
+        "action": "upgradeMulai",
+        "sesi": "psesi1",
+        "ticket_id": "tk_f037759593d7761f",
+        "seat_id": "id0bogbkq"
+      }
+    }
+  ]
+}

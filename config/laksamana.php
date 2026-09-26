@@ -29,9 +29,9 @@ $modules = [
     'dw' => ['env' => 'DW',        'database' => 'lakk5493_db_dw',        'legacy' => 'dw-api-mysql'],
     // event+ticketing share the legacy EMS database, but their connection and maintenance switches are independent.
     'event' => ['env' => 'EMS',       'database' => 'lakk5493_db_ems',       'legacy' => 'event-api-mysql',     'data_dir' => '/home/lakk5493/event-db', 'server_sql_mode' => true],
-    'ticketing' => ['env' => 'EMS',       'database' => 'lakk5493_db_ems',       'legacy' => 'ticketing-api'],
+    'ticketing' => ['env' => 'EMS',       'database' => 'lakk5493_db_ems',       'legacy' => 'ticketing-api', 'server_sql_mode' => true],
     'finance' => ['env' => 'FINANCE',   'database' => 'lakk5493_db_finance',   'legacy' => 'finance-api-mysql', 'server_sql_mode' => true],
-    // server_sql_mode (hlife, bd, hr, event, finance, kompas, stock, reservasi): do not force Laravel's strict sql_mode — the legacy PDO used
+    // server_sql_mode (hlife, bd, hr, event, ticketing, finance, kompas, stock, reservasi): do not force Laravel's strict sql_mode — the legacy PDO used
     // the server default, and production (non-strict) stores e.g. hlife dreams year "" as
     // tahun=0. Strict mode would reject writes legacy accepted (see #97 for the other modules).
     'hlife' => ['env' => 'HLIFE',     'database' => 'lakk5493_db_hlife',     'legacy' => 'howandi-life-api-mysql', 'server_sql_mode' => true],
@@ -72,7 +72,7 @@ $legacyPolicies = [
         'read' => ['getAll', 'stats', 'ping', 'eventsHari', 'file'],
     ],
     'ticketing' => [
-        'default' => '',
+        'default' => 'events',
         'read' => ['ping', 'events', 'event', 'poster', 'denah', 'order', 'saya', 'tiketSaya'],
     ],
     'finance' => [
@@ -150,6 +150,26 @@ return [
     // stock: team scoping of usage/waste/serah (legacy BATAS_PER_TIM). Unset = on only when
     // the env label is 'dev' (legacy default); production turns it on deliberately.
     'stock_batas_per_tim' => env('STOCK_BATAS_PER_TIM'),
+
+    // ticketing (public shop): the old config.php constants. Local and dev runs use
+    // XENDIT_MOCK and never reach the real Xendit or SMTP.
+    'ticketing' => [
+        'xendit_secret' => env('XENDIT_SECRET'),
+        'xendit_callback' => env('XENDIT_CALLBACK'),
+        'xendit_mock' => filter_var(env('XENDIT_MOCK', false), FILTER_VALIDATE_BOOL),
+        'admin_fee' => (int) env('TIX_ADMIN_FEE', 5000),
+        'hold_minutes' => (int) env('TIX_HOLD_MINUTES', 10),
+        'bayar_menit' => (int) env('TIX_BAYAR_MENIT', 10),
+        'max_per_pesanan' => (int) env('TIX_MAX_PER_PESANAN', 10),
+        'site_url' => env('TIX_SITE_URL', ''),
+        'event_files_dir' => env('EVENT_FILES_DIR', ''),
+        'event_api_url' => env('EVENT_API_URL', ''),
+        'smtp_host' => env('TIX_SMTP_HOST', ''),
+        'smtp_port' => (int) env('TIX_SMTP_PORT', 465),
+        'smtp_user' => env('TIX_SMTP_USER', ''),
+        'smtp_pass' => env('TIX_SMTP_PASS', ''),
+        'smtp_from_name' => env('TIX_SMTP_FROM_NAME', 'Laksamana Muda'),
+    ],
 
     // howandi-life's own API_TOKEN (checked by its compat controller only). It is
     // embedded in the frontend HTML, so it is not a secret. Empty = open.
