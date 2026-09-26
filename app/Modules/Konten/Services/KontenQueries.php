@@ -17,9 +17,13 @@ class KontenQueries
     {
         $db = Modules::db('konten');
         $out = ['backend' => 'laravel', 'db' => Modules::databaseName('konten')];
-        foreach (KontenSchema::statsTables() as $t) {
-            $out[$t] = (int) $db->selectOne("SELECT COUNT(*) c FROM `$t`")->c;
+        // Keys stay the legacy table names on both connections (parity).
+        foreach (KontenSchema::collections() as $name => $def) {
+            $t = KontenSchema::table($name);
+            $out[$def['table']] = (int) $db->selectOne("SELECT COUNT(*) c FROM `$t`")->c;
         }
+        $log = KontenSchema::table('logs');
+        $out['logs'] = (int) $db->selectOne("SELECT COUNT(*) c FROM `$log`")->c;
         $blob = strlen(RowSync::enc($this->state->read()));
         $out['blobChars'] = $blob;
         $out['blobMB'] = round($blob / 1048576, 3);
