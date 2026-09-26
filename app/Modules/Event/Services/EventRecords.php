@@ -53,7 +53,7 @@ class EventRecords
     {
         $key = self::RESOURCES[$resource] ?? throw new InvalidArgumentException("unknown resource $resource");
 
-        return ['key' => $key] + EventSchema::collections()[$key];
+        return ['key' => $key] + EventSchema::defs()[$key];
     }
 
     public static function nowMs(): int
@@ -107,7 +107,8 @@ class EventRecords
             $where[] = '`updated_at` > ?';
             $args[] = (int) $f['updatedSince'];
         }
-        $order = ! empty($def['created']) ? 'created_at ASC, id ASC' : 'id ASC';
+        $key = $def['id'];
+        $order = ! empty($def['created']) ? "created_at ASC, `$key` ASC" : "`$key` ASC";
         $sql = "SELECT updated_at, data FROM `{$def['table']}`".($where ? ' WHERE '.implode(' AND ', $where) : '')." ORDER BY $order";
 
         $out = [];
@@ -125,7 +126,7 @@ class EventRecords
     public function find(string $resource, string $id): ?array
     {
         $def = self::def($resource);
-        $row = $this->db()->selectOne("SELECT updated_at, data FROM `{$def['table']}` WHERE id = ?", [$id]);
+        $row = $this->db()->selectOne("SELECT updated_at, data FROM `{$def['table']}` WHERE `{$def['id']}` = ?", [$id]);
         if (! $row) {
             return null;
         }
@@ -215,7 +216,7 @@ class EventRecords
             if ($cur['version'] !== $baseVersion) {
                 throw new EventConflict('stale', $cur['record']);
             }
-            $this->db()->delete("DELETE FROM `{$def['table']}` WHERE id = ?", [$id]);
+            $this->db()->delete("DELETE FROM `{$def['table']}` WHERE `{$def['id']}` = ?", [$id]);
 
             return true;
         });
@@ -227,7 +228,7 @@ class EventRecords
         // ANY unique key: a reused token would silently rewrite ANOTHER ticket's row
         // (legacy saveAll does exactly that). v1 refuses it up front.
         if ($def['key'] === 'tickets' && ($qr = RowSync::strRaw($row['qr_token'] ?? null)) !== null
-            && $this->db()->selectOne('SELECT id FROM tickets WHERE qr_token = ? AND id <> ?', [$qr, (string) $row['id']])) {
+            && $this->db()->selectOne("SELECT `{$def['id']}` AS id FROM `{$def['table']}` WHERE qr_token = ? AND `{$def['id']}` <> ?", [$qr, (string) $row['id']])) {
             throw new EventConflict('duplicate');
         }
         $b = $v = [];
@@ -253,7 +254,7 @@ class EventRecords
     public function details(): array
     {
         $out = [];
-        foreach ($this->db()->select('SELECT event_id, updated_at, data FROM event_details ORDER BY event_id') as $row) {
+        foreach ($this->db()->select('SELECT event_id, updated_at, data FROM `'.EventSchema::table('event_details').'` ORDER BY event_id') as $row) {
             $d = json_decode((string) $row->data, true);
             if (is_array($d)) {
                 $out[(string) $row->event_id] = ['record' => $d, 'version' => (int) $row->updated_at];
@@ -266,7 +267,7 @@ class EventRecords
     /** @return array{record:array, version:int}|null */
     public function detail(string $eventId): ?array
     {
-        $row = $this->db()->selectOne('SELECT updated_at, data FROM event_details WHERE event_id = ?', [$eventId]);
+        $row = $this->db()->selectOne('SELECT updated_at, data FROM `'.EventSchema::table('event_details').'` WHERE event_id = ?', [$eventId]);
         if (! $row) {
             return null;
         }
@@ -307,7 +308,7 @@ class EventRecords
             if ($cur['version'] !== $baseVersion) {
                 throw new EventConflict('stale', $cur['record']);
             }
-            $this->db()->delete('DELETE FROM event_details WHERE event_id = ?', [$eventId]);
+            $this->db()->delete('DELETE FROM `'.EventSchema::table('event_details').'` WHERE event_id = ?', [$eventId]);
 
             return true;
         });
@@ -326,7 +327,9 @@ class EventRecords
             $args[] = $f['ticket_id'];
         }
         $out = [];
-        foreach ($this->db()->select("SELECT data FROM checkins$where ORDER BY checked_in_at DESC, id DESC LIMIT $limit", $args) as $row) {
+        $sql = 'SELECT data FROM `'.EventSchema::table('checkins').'`'.$where
+            .' ORDER BY checked_in_at DESC, `'.EventSchema::idCol()."` DESC LIMIT $limit";
+        foreach ($this->db()->select($sql, $args) as $row) {
             $d = json_decode((string) $row->data, true);
             if (is_array($d)) {
                 $out[] = $d;
@@ -380,7 +383,7 @@ class EventRecords
             if (! hash_equals($cur['version'], $baseVersion)) {
                 throw new EventConflict('stale', $cur['value']);
             }
-            RowSync::putSetting($this->db(), $key, $value);
+            RowSync::putSetting($this->db(), $key, $value, EventSchema::table('settings'), EventSchema::onCore());
 
             return $this->setting($key);
         });

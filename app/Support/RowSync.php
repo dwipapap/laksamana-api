@@ -26,6 +26,8 @@ use Throwable;
  *                                            legacy id lives in def['id'] (marketing #49)
  *   'versioned' => true                      core cutover: maintain a `version`
  *                                            column (1 on insert, +1 on every write)
+ *   'versionAccepted' => true                core cutover: …but count only writes the
+ *                                            updated_at guard accepted (event, #61)
  *   'ordered' => true                        core cutover: insert-only `urutan`
  *                                            keeps the legacy JSON-array order
  *   'created' => true                        has created_at (from data.createdAt, never overwritten)
@@ -272,10 +274,13 @@ final class RowSync
         }
         $upd[] = 'updated_at = IF(VALUES(updated_at) >= updated_at, VALUES(updated_at), updated_at)';
         if ($versioned) {
-            // Internal revision count only (never on the wire: compat and v1
-            // version by the millisecond stamp). Bumped on every executed
-            // write, even when the guarded columns keep their older values.
-            $upd[] = '`version` = `version` + 1';
+            if (! empty($def['versionAccepted'])) {
+                // version FIRST: it must still see the OLD updated_at, so an
+                // ignored (older) row does not count as a write.
+                array_unshift($upd, '`version` = `version` + IF(VALUES(`updated_at`) >= `updated_at`, 1, 0)');
+            } else {
+                $upd[] = '`version` = `version` + 1';
+            }
         }
         $sql = "INSERT INTO `$table` (`".implode('`,`', $names).'`) VALUES ('
             .implode(',', array_fill(0, count($names), '?')).') ON DUPLICATE KEY UPDATE '.implode(', ', $upd);

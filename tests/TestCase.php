@@ -6,10 +6,12 @@ use App\Auth\AccountRepository;
 use App\Modules\Absensi\Services\AbsensiService;
 use App\Modules\Akademi\Services\AkademiSchema;
 use App\Modules\Bd\Services\BdState;
+use App\Modules\Event\Services\EventState;
 use App\Modules\Hr\Services\HrState;
 use App\Modules\Jadwal\Services\JadwalService;
 use App\Modules\Konten\Services\KontenSchema;
 use App\Modules\Marketing\Services\MarketingSchema;
+use App\Modules\Ticketing\Services\TicketSchema;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\Artisan;
@@ -73,6 +75,12 @@ abstract class TestCase extends BaseTestCase
         }
         if (HrState::onCore()) {
             Artisan::call('core:import', ['module' => 'hr']);
+        }
+        if (EventState::onCore()) {
+            Artisan::call('core:import', ['module' => 'event']);
+        }
+        if (TicketSchema::onCore()) {
+            Artisan::call('core:import', ['module' => 'ticketing']);
         }
     }
 
