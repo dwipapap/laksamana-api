@@ -34,9 +34,9 @@ class StockLog
                     continue;
                 }
                 $waktu = StockSupport::now();
-                StockSupport::db()->insert('INSERT INTO `activity_log`
-                    (`id`,`waktu`,`tanggal`,`modul`,`aksi`,`aktor`,`tim`,`ringkas`,`data`)
-                    VALUES (?,?,?,?,?,?,?,?,?)', [
+                StockSupport::db()->insert(StockSupport::q('INSERT INTO {activity_log}
+                    ({id},`waktu`,`tanggal`,`modul`,`aksi`,`aktor`,`tim`,`ringkas`,`data`)
+                    VALUES (?,?,?,?,?,?,?,?,?)'), [
                     StockSupport::uid('LOG'), $waktu, substr($waktu, 0, 10), $modul, $aksi,
                     trim(StockSupport::str($e->aktor ?? '')), trim(StockSupport::str($e->tim ?? '')),
                     mb_substr(trim(StockSupport::str($e->ringkas ?? '')), 0, 500),
@@ -57,7 +57,7 @@ class StockLog
     public function read(string $dari = '', string $ke = '', string $modul = '', string $cari = '', int $limit = 300): array
     {
         try {
-            $sql = 'SELECT * FROM `activity_log` WHERE 1=1';
+            $sql = StockSupport::q('SELECT {*activity_log} FROM {activity_log} WHERE 1=1');
             $par = [];
             StockSupport::dateFilter($sql, $par, $dari, $ke);
             if ($modul !== '') {
@@ -73,7 +73,7 @@ class StockLog
                 $limit = 300;
             }
             $out = [];
-            foreach (StockSupport::db()->select($sql.' ORDER BY `waktu` DESC, `id` DESC LIMIT '.$limit, $par) as $r) {
+            foreach (StockSupport::db()->select($sql.StockSupport::q(' ORDER BY `waktu` DESC, {id} DESC LIMIT ').$limit, $par) as $r) {
                 $d = json_decode((string) $r->data);
                 $out[] = [
                     'id' => $r->id, 'waktu' => $r->waktu, 'tanggal' => $r->tanggal,

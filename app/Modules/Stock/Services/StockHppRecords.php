@@ -58,12 +58,12 @@ class StockHppRecords
     public function ingredients(): array
     {
         return array_map(fn ($r) => ['record' => StockHpp::ingredientRow($r), 'version' => StockRecords::hash((array) $r)],
-            self::db()->select('SELECT * FROM hpp_bahan ORDER BY nama'));
+            self::db()->select(StockSupport::q('SELECT {*hpp_bahan} FROM {hpp_bahan} ORDER BY nama')));
     }
 
     public function ingredient(string $nama, bool $lock = false): ?array
     {
-        $r = self::db()->selectOne('SELECT * FROM hpp_bahan WHERE nama = ?'.($lock ? ' FOR UPDATE' : ''), [$nama]);
+        $r = self::db()->selectOne(StockSupport::q('SELECT {*hpp_bahan} FROM {hpp_bahan} WHERE nama = ?').($lock ? ' FOR UPDATE' : ''), [$nama]);
 
         return $r ? ['record' => StockHpp::ingredientRow($r), 'version' => StockRecords::hash((array) $r)] : null;
     }
@@ -118,12 +118,12 @@ class StockHppRecords
     public function recipes(): array
     {
         return array_map(fn ($r) => ['record' => StockHpp::recipeRow($r), 'version' => StockRecords::hash((array) $r)],
-            self::db()->select('SELECT * FROM hpp_resep ORDER BY jenis, tipe, nama'));
+            self::db()->select(StockSupport::q('SELECT {*hpp_resep} FROM {hpp_resep} ORDER BY jenis, tipe, nama')));
     }
 
     public function recipe(string $id, bool $lock = false): ?array
     {
-        $r = self::db()->selectOne('SELECT * FROM hpp_resep WHERE id = ?'.($lock ? ' FOR UPDATE' : ''), [$id]);
+        $r = self::db()->selectOne(StockSupport::q('SELECT {*hpp_resep} FROM {hpp_resep} WHERE {id} = ?').($lock ? ' FOR UPDATE' : ''), [$id]);
 
         return $r ? ['record' => StockHpp::recipeRow($r), 'version' => StockRecords::hash((array) $r)] : null;
     }
@@ -159,8 +159,8 @@ class StockHppRecords
     public function month(string $bulan, bool $lock = false): array
     {
         if ($lock) {
-            self::db()->select('SELECT bulan FROM hpp_bulan WHERE bulan = ? FOR UPDATE', [$bulan]);
-            self::db()->select('SELECT bahan FROM hpp_pakai WHERE bulan = ? FOR UPDATE', [$bulan]);
+            self::db()->select(StockSupport::q('SELECT bulan FROM {hpp_bulan} WHERE bulan = ? FOR UPDATE'), [$bulan]);
+            self::db()->select(StockSupport::q('SELECT bahan FROM {hpp_pakai} WHERE bulan = ? FOR UPDATE'), [$bulan]);
         }
         $u = $this->hpp->usage($bulan);
 
@@ -186,7 +186,7 @@ class StockHppRecords
     public function settings(bool $lock = false): array
     {
         if ($lock) {
-            self::db()->select('SELECT id FROM hpp_setting WHERE id = 1 FOR UPDATE');
+            self::db()->select(StockSupport::q('SELECT {id} AS `id` FROM {hpp_setting} WHERE {id} = 1 FOR UPDATE'));
         }
         $s = $this->hpp->settings();
 

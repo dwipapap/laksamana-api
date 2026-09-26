@@ -1,5 +1,6 @@
 <?php
 
+use App\Modules\Stock\Services\StockSupport;
 use App\Support\Modules;
 use Illuminate\Testing\TestResponse;
 
@@ -18,7 +19,7 @@ function hpDb()
 it('serves the flat all payload with derived per1 and default settings', function () {
     $all = $this->get('/stock-api-mysql/hpp.php?action=all')->assertOk()->json();
     expect(array_keys($all))->toBe(['bahan', 'resep', 'setting', 'ts'])
-        ->and(count($all['bahan']))->toBe((int) hpDb()->selectOne('SELECT COUNT(*) c FROM hpp_bahan')->c)
+        ->and(count($all['bahan']))->toBe((int) hpDb()->selectOne(StockSupport::q('SELECT COUNT(*) c FROM {hpp_bahan}'))->c)
         ->and($all['setting'])->toMatchArray(['targetFood' => 0.33, 'buffer' => 0.05, 'lampuMerah' => 8]);
     $b = collect($all['bahan'])->first(fn ($x) => $x['qty_beli'] > 0);
     expect($b['per1'])->toEqual($b['harga_beli'] / $b['qty_beli']);
@@ -32,24 +33,24 @@ it('answers a thrown error as 500 with the reason, like legacy', function () {
 });
 
 it('renames an ingredient into every recipe line and the monthly usage', function () {
-    $used = hpDb()->selectOne("SELECT COUNT(*) c FROM hpp_resep WHERE bahan LIKE '%\"nama\":\"Brisket\"%'")->c;
-    hpDb()->insert("INSERT INTO hpp_pakai (bulan,bahan) VALUES ('2031-01','Brisket')");
+    $used = hpDb()->selectOne(StockSupport::q("SELECT COUNT(*) c FROM {hpp_resep} WHERE bahan LIKE '%\"nama\":\"Brisket\"%'"))->c;
+    hpDb()->insert(StockSupport::q("INSERT INTO {hpp_pakai} (bulan,bahan) VALUES ('2031-01','Brisket')"));
     hpPost(['action' => 'simpanBahan', 'by' => 'Kru', 'data' => ['nama' => 'Brisket Baru', 'namaLama' => 'Brisket', 'di_purchasing' => false]])
         ->assertOk()->assertExactJson(['status' => 'success', 'saved' => true, 'nama' => 'Brisket Baru', 'resepIkutBerubah' => $used]);
-    expect(hpDb()->selectOne("SELECT nama FROM hpp_bahan WHERE nama='Brisket'"))->toBeNull()
-        ->and(hpDb()->selectOne("SELECT bahan FROM hpp_pakai WHERE bulan='2031-01'")->bahan)->toBe('Brisket Baru');
+    expect(hpDb()->selectOne(StockSupport::q("SELECT nama FROM {hpp_bahan} WHERE nama='Brisket'")))->toBeNull()
+        ->and(hpDb()->selectOne(StockSupport::q("SELECT bahan FROM {hpp_pakai} WHERE bulan='2031-01'"))->bahan)->toBe('Brisket Baru');
 });
 
 it('registers a new ingredient as a Purchasing product, and a CK recipe as a ck product', function () {
     hpPost(['action' => 'simpanBahan', 'data' => ['nama' => 'Tes HPP Baru', 'satuan' => 'Gram']])->assertJsonPath('purchasingBaru', true);
-    expect(json_decode(hpDb()->selectOne("SELECT data FROM products WHERE nama='Tes HPP Baru'")->data)->satuan)->toBe(['Gram']);
+    expect(json_decode(hpDb()->selectOne(StockSupport::q("SELECT data FROM {products} WHERE nama='Tes HPP Baru'"))->data)->satuan)->toBe(['Gram']);
 
     $id = hpPost(['action' => 'simpanResep', 'data' => ['nama' => 'Tes Base CK', 'yield_qty' => 0, 'yield_unit' => 'Ml', 'kode' => 'ab1', 'di_purchasing' => 1,
         'bahan' => [['nama' => 'Gula', 'qty' => '5'], ['catatan' => 'saring'], 7]]])->assertJsonPath('purchasingBaru', true)->assertJsonPath('bahan', 2)->json('id');
-    $r = hpDb()->selectOne('SELECT yield_qty, kode, bahan FROM hpp_resep WHERE id = ?', [$id]);
+    $r = hpDb()->selectOne(StockSupport::q('SELECT yield_qty, kode, bahan FROM {hpp_resep} WHERE {id} = ?'), [$id]);
     expect((float) $r->yield_qty)->toBe(1.0)->and($r->kode)->toBe('AB1')
         ->and(json_decode($r->bahan, true))->toBe([['nama' => 'Gula', 'qty' => 5, 'satuan' => '', 'ref' => 'bahan'], ['catatan' => 'saring']])
-        ->and(json_decode(hpDb()->selectOne("SELECT data FROM products WHERE nama='Tes Base CK'")->data)->sumber)->toBe('ck');
+        ->and(json_decode(hpDb()->selectOne(StockSupport::q("SELECT data FROM {products} WHERE nama='Tes Base CK'"))->data)->sumber)->toBe('ck');
 });
 
 it('refuses the one-time import when HPP holds data', function () {
@@ -94,7 +95,7 @@ it('creates, patches, renames and deletes an ingredient with versions (by = the 
     $this->withToken($t)->withHeader('If-Match', $c->json('meta.version'))->deleteJson('/api/v1/stock/hpp/ingredients/V1 Bahan Baru')->assertStatus(409);
     $this->flushHeaders();
     $this->withToken($t)->withHeader('If-Match', $p->json('meta.version'))->deleteJson('/api/v1/stock/hpp/ingredients/V1 Bahan Baru')->assertOk();
-    expect(hpDb()->selectOne("SELECT nama FROM hpp_bahan WHERE nama LIKE 'V1 Bahan%'"))->toBeNull();
+    expect(hpDb()->selectOne(StockSupport::q("SELECT nama FROM {hpp_bahan} WHERE nama LIKE 'V1 Bahan%'")))->toBeNull();
 });
 
 it('refuses a rename onto a name another ingredient holds', function () {

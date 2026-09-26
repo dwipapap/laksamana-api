@@ -1,5 +1,6 @@
 <?php
 
+use App\Modules\Stock\Services\StockSupport;
 use App\Support\Modules;
 use Illuminate\Testing\TestResponse;
 
@@ -20,7 +21,7 @@ it('serves the CK balance (never date-filtered) and the filtered movements', fun
     $all = $this->get('/stock-api-mysql/ck.php')->assertOk()->json();
     $some = $this->get('/stock-api-mysql/ck.php?dari=2099-01-01')->assertOk()->json();
     expect($some['saldo'])->toBe($all['saldo'])->and($some['mutasi'])->toBe([])
-        ->and(count($all['mutasi']))->toBe((int) ctDb()->selectOne('SELECT COUNT(*) c FROM ck_stock')->c);
+        ->and(count($all['mutasi']))->toBe((int) ctDb()->selectOne(StockSupport::q('SELECT COUNT(*) c FROM {ck_stock}'))->c);
     $row = collect($all['saldo'])->firstWhere('item', 'Ayam Hainan');
     expect($row)->toHaveKeys(['sumber', 'packIsi', 'packSatuan', 'masuk', 'keluar', 'saldo', 'terakhir'])
         ->and($row['saldo'])->toEqual($row['masuk'] - $row['keluar']);
@@ -32,7 +33,7 @@ it('converts a Pack to the base unit from the master and refuses non-CK goods', 
     $id = ctPost('ck.php', ['action' => 'simpan', 'item' => 'Ayam Hainan', 'arah' => 'MASUK', 'qtyInput' => 2, 'unitInput' => 'pack', 'sebab' => 'aneh', 'tanggal' => '2031-01-01'])
         ->assertOk()->json('id');
     expect($id)->toMatch('/^CK-\d{6}-\d{6}-[0-9A-F]{6}$/');
-    $r = ctDb()->selectOne('SELECT qty, qty_input, sebab, ref FROM ck_stock WHERE id = ?', [$id]);
+    $r = ctDb()->selectOne(StockSupport::q('SELECT qty, qty_input, sebab, ref FROM {ck_stock} WHERE {id} = ?'), [$id]);
     expect((float) $r->qty)->toBe(2400.0)->and($r->sebab)->toBe('produksi')->and($r->ref)->toBeNull();
 
     ctPost('ck.php', ['action' => 'hapus', 'id' => $id])->assertExactJson(['status' => 'success', 'deleted' => 1]);
@@ -44,15 +45,15 @@ it('keeps the legacy 500 when a CK movement is saved with an id (#113)', functio
 });
 
 it('protects order-sync rows and only lets outlet goods be sent to CK', function () {
-    $ref = ctDb()->selectOne('SELECT id FROM ck_stock WHERE ref IS NOT NULL LIMIT 1')->id;
+    $ref = ctDb()->selectOne(StockSupport::q('SELECT {id} AS `id` FROM {ck_stock} WHERE ref IS NOT NULL LIMIT 1'))->id;
     ctPost('ck.php', ['action' => 'hapus', 'id' => $ref])
         ->assertExactJson(['status' => 'error', 'message' => 'mutasi dari pengajuan hanya hilang bila check-in dibatalkan']);
 
-    ctDb()->insert("INSERT INTO products (nama, data) VALUES ('Tes CK Saja', '{\"sumber\":\"ck\",\"diOutlet\":false}')");
+    ctDb()->insert('INSERT INTO '.StockSupport::table('products')." (nama, data) VALUES ('Tes CK Saja', '{\"sumber\":\"ck\",\"diOutlet\":false}')");
     ctPost('ck.php', ['action' => 'kirim', 'item' => 'Tes CK Saja', 'qtyInput' => 1])
         ->assertJsonPath('message', 'barang ini tidak disimpan di outlet, jadi tidak bisa dikirim ke CK');
     $id = ctPost('ck.php', ['action' => 'kirim', 'item' => 'Dimsum Ayam', 'qtyInput' => 2, 'unitInput' => 'Pack'])->json('id');
-    $r = ctDb()->selectOne('SELECT arah, qty, sebab, status FROM ck_stock WHERE id = ?', [$id]);
+    $r = ctDb()->selectOne(StockSupport::q('SELECT arah, qty, sebab, status FROM {ck_stock} WHERE {id} = ?'), [$id]);
     expect($r->arah)->toBe('masuk')->and((float) $r->qty)->toBe(18.0)->and($r->sebab)->toBe('kiriman')->and($r->status)->toBe('');
 });
 
@@ -85,7 +86,7 @@ it('requires a photo for a new handover, and keeps the legacy save-then-500 on e
     $id = ctPost('serah.php', $body + ['foto' => 'data:y'])->assertOk()->json('id');
 
     ctPost('serah.php', ['id' => $id, 'penerima' => 'Diedit'] + $body)->assertStatus(500);
-    expect(ctDb()->selectOne('SELECT penerima, foto FROM serah_terima WHERE id = ?', [$id]))
+    expect(ctDb()->selectOne(StockSupport::q('SELECT penerima, foto FROM {serah_terima} WHERE {id} = ?'), [$id]))
         ->penerima->toBe('Diedit')->foto->toBe('data:y');
 });
 
@@ -107,12 +108,12 @@ it('logs entries with the server clock and reads them back newest first, limited
     ]])->assertExactJson(['status' => 'success', 'dicatat' => 1]);
     $r = $this->get('/stock-api-mysql/log.php?q=tes_log&dari=2031-01-02')->assertOk()->json('0');
     expect($r['waktu'])->toBe('2031-01-02 03:30:00')->and(mb_strlen($r['ringkas']))->toBe(500)->and($r['data'])->toBe([]);
-    expect($this->get('/stock-api-mysql/log.php?limit=5000')->json())->toHaveCount(min(300, (int) ctDb()->selectOne('SELECT COUNT(*) c FROM activity_log')->c));
+    expect($this->get('/stock-api-mysql/log.php?limit=5000')->json())->toHaveCount(min(300, (int) ctDb()->selectOne(StockSupport::q('SELECT COUNT(*) c FROM {activity_log}'))->c));
 });
 
 it('scopes usage, waste and serah lists to the caller\'s teams from ?sesi=', function () {
     config(['laksamana.stock_batas_per_tim' => true]);
-    ctDb()->insert("INSERT INTO waste (id,tanggal,item,tim,waktu,foto,data) VALUES ('WST-T1','2031-02-01','A','Kitchen','','','{}'), ('WST-T2','2031-02-01','B','Bar','','','{}')");
+    ctDb()->insert(StockSupport::q('INSERT INTO {waste} ({id},')."tanggal,item,tim,waktu,foto,data) VALUES ('WST-T1','2031-02-01','A','Kitchen','','','{}'), ('WST-T2','2031-02-01','B','Bar','','','{}')");
     $sesi = legacySesi(officeUser('u-arif')); // Bar crew, not a usage admin
     $ids = array_column($this->get('/stock-api-mysql/waste.php?dari=2031-02-01&sesi='.$sesi)->json(), 'id');
     expect($ids)->toBe(['WST-T2']);

@@ -18,7 +18,7 @@ class StockSnapshot
     {
         $stock = [];
         $asOf = '';
-        foreach (StockSupport::db()->select('SELECT `nama`,`stock_now`,`stock_unit`,`as_of` FROM `stock`') as $r) {
+        foreach (StockSupport::db()->select(StockSupport::q('SELECT `nama`,`stock_now`,`stock_unit`,`as_of` FROM {stock} ORDER BY `nama`')) as $r) {
             $stock[$r->nama] = (object) ['stock_now' => (float) $r->stock_now, 'stock_unit' => $r->stock_unit];
             if ($r->as_of > $asOf) {
                 $asOf = $r->as_of;
@@ -38,7 +38,7 @@ class StockSnapshot
         $db = StockSupport::db();
         $db->beginTransaction();
         try {
-            $db->delete('DELETE FROM `stock`');
+            $db->delete(StockSupport::q('DELETE FROM {stock}'));
             $n = 0;
             foreach ($stockMap as $nama => $v) {
                 $nama = (string) $nama;
@@ -47,7 +47,7 @@ class StockSnapshot
                 }
                 $now = (is_object($v) && isset($v->stock_now) && is_numeric($v->stock_now)) ? (float) $v->stock_now : 0;
                 $unit = (is_object($v) && isset($v->stock_unit)) ? StockSupport::str($v->stock_unit) : '';
-                $db->insert('INSERT INTO `stock` (`nama`,`stock_now`,`stock_unit`,`as_of`,`data`) VALUES (?,?,?,?,?)',
+                $db->insert(StockSupport::q('INSERT INTO {stock} (`nama`,`stock_now`,`stock_unit`,`as_of`,`data`) VALUES (?,?,?,?,?)'),
                     [$nama, $now, $unit, $asOf, StockSupport::enc($v)]);
                 $n++;
             }

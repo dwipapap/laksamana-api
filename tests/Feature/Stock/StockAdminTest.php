@@ -1,5 +1,6 @@
 <?php
 
+use App\Modules\Stock\Services\StockSupport;
 use App\Support\Modules;
 use Illuminate\Support\Facades\File;
 use Illuminate\Testing\TestResponse;
@@ -33,12 +34,12 @@ it('legacy: users are served with PINs and add/update/delete keep the last admin
 
     stockAdminPost('users.php', ['action' => 'add', 'user' => ['id' => 'u-parity', 'name' => 'Kru Parity', 'pin' => '1234', 'keterangan' => 'Kitchen']])
         ->assertExactJson(['status' => 'success']);
-    expect(json_decode(Modules::db('stock')->selectOne("SELECT data FROM users WHERE id='u-parity'")->data, true))
+    expect(json_decode(Modules::db('stock')->selectOne(StockSupport::q("SELECT data FROM {users} WHERE {id}='u-parity'"))->data, true))
         ->toMatchArray(['id' => 'u-parity', 'name' => 'Kru Parity', 'role' => 'full', 'keterangan' => 'Kitchen']);
 
     stockAdminPost('users.php', ['action' => 'update', 'user' => ['id' => 'u-parity', 'name' => 'Kru Diubah', 'role' => 'full']])
         ->assertExactJson(['status' => 'success']);
-    expect(json_decode(Modules::db('stock')->selectOne("SELECT data FROM users WHERE id='u-parity'")->data, true))
+    expect(json_decode(Modules::db('stock')->selectOne(StockSupport::q("SELECT data FROM {users} WHERE {id}='u-parity'"))->data, true))
         ->toMatchArray(['name' => 'Kru Diubah', 'pin' => '', 'role' => 'full']);
 
     stockAdminPost('users.php', ['action' => 'add'])->assertExactJson(['status' => 'error', 'message' => 'user tanpa id']);
@@ -51,7 +52,7 @@ it('legacy: users are served with PINs and add/update/delete keep the last admin
 it('legacy: ordering users save one, seed many without deleting, and delete by id', function () {
     $res = stockAdminPost('ordering-users.php', ['action' => 'saveUser', 'user' => ['name' => 'Dapur Parity', 'pin' => '4321']])
         ->assertExactJson(['status' => 'success']);
-    $id = (string) Modules::db('stock')->selectOne("SELECT id FROM ordering_users WHERE nama='Dapur Parity'")->id;
+    $id = (string) Modules::db('stock')->selectOne(StockSupport::q("SELECT {id} AS `id` FROM {ordering_users} WHERE nama='Dapur Parity'"))->id;
     expect($id)->toStartWith('u-')->and($res->json())->toBe(['status' => 'success']);
 
     stockAdminPost('ordering-users.php', ['action' => 'bulkSeed', 'users' => [
@@ -59,8 +60,8 @@ it('legacy: ordering users save one, seed many without deleting, and delete by i
         ['id' => $id, 'name' => 'Dapur Diubah', 'pin' => '9'],
         'not-an-object',
     ]])->assertExactJson(['status' => 'success', 'seeded' => 2]);
-    expect((int) Modules::db('stock')->selectOne('SELECT COUNT(*) c FROM ordering_users')->c)->toBe(29)
-        ->and(json_decode(Modules::db('stock')->selectOne("SELECT data FROM ordering_users WHERE id='$id'")->data, true)['name'])->toBe('Dapur Diubah');
+    expect((int) Modules::db('stock')->selectOne(StockSupport::q('SELECT COUNT(*) c FROM {ordering_users}'))->c)->toBe(29)
+        ->and(json_decode(Modules::db('stock')->selectOne(StockSupport::q('SELECT data FROM {ordering_users} WHERE {id}=?'), [$id])->data, true)['name'])->toBe('Dapur Diubah');
 
     stockAdminPost('ordering-users.php', ['action' => 'bulkSeed', 'users' => (object) ['x' => 1]])
         ->assertExactJson(['status' => 'error', 'message' => 'users bukan array']);
@@ -123,7 +124,7 @@ it('v1: users are versioned and never return a PIN', function () {
     $patched = $this->withToken($token)->patchJson('/api/v1/stock/users/u-v1-test?version='.$v, ['role' => 'admin'])
         ->assertOk()->assertJsonPath('data.role', 'admin');
     expect($patched->json('data'))->not->toHaveKey('pin')
-        ->and(json_decode(Modules::db('stock')->selectOne("SELECT data FROM users WHERE id='u-v1-test'")->data, true)['pin'])->toBe('9999');
+        ->and(json_decode(Modules::db('stock')->selectOne(StockSupport::q("SELECT data FROM {users} WHERE {id}='u-v1-test'"))->data, true)['pin'])->toBe('9999');
 
     $this->withToken($token)->deleteJson('/api/v1/stock/users/u-v1-test?version='.$patched->json('meta.version'))->assertOk();
 });
@@ -133,7 +134,7 @@ it('v1: the last Purchasing admin cannot be deleted and non-admins are refused',
     $admin = $this->withToken($token)->getJson('/api/v1/stock/users/u-admin')->assertOk();
     $this->withToken($token)->deleteJson('/api/v1/stock/users/u-admin?version='.$admin->json('meta.version'))
         ->assertStatus(409)->assertJsonPath('error.code', 'last_admin');
-    expect(Modules::db('stock')->selectOne("SELECT id FROM users WHERE id='u-admin'"))->not->toBeNull();
+    expect(Modules::db('stock')->selectOne(StockSupport::q("SELECT {id} AS `id` FROM {users} WHERE {id}='u-admin'")))->not->toBeNull();
 });
 
 it('v1: ordering users use the same contract without PINs', function () {

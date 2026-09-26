@@ -1,5 +1,6 @@
 <?php
 
+use App\Modules\Stock\Services\StockSupport;
 use App\Support\Modules;
 
 /*
@@ -16,7 +17,7 @@ it('requires login and one of the stock modules', function () {
 it('lists products with versions and reads one by name', function () {
     $token = loginAs(officeUser('u-adit'));
     $res = $this->withToken($token)->getJson('/api/v1/stock/products')->assertOk();
-    expect($res->json('meta.total'))->toBe((int) Modules::db('stock')->selectOne('SELECT COUNT(*) c FROM products')->c);
+    expect($res->json('meta.total'))->toBe((int) Modules::db('stock')->selectOne(StockSupport::q('SELECT COUNT(*) c FROM {products}'))->c);
     $nama = $res->json('data.0.nama');
     $this->withToken($token)->getJson('/api/v1/stock/products/'.rawurlencode($nama))->assertOk()
         ->assertJsonPath('data.nama', $nama)->assertJsonPath('meta.version', $res->json("meta.versions.$nama"));
@@ -41,7 +42,7 @@ it('creates, patches (preserve-if-null), renames and deletes a product with vers
     $this->withToken($token)->withHeader('If-Match', 'stale')->deleteJson('/api/v1/stock/products/V1 Tepung Baru')->assertStatus(409);
     $this->flushHeaders();
     $this->withToken($token)->withHeader('If-Match', $p->json('meta.version'))->deleteJson('/api/v1/stock/products/V1 Tepung Baru')->assertOk();
-    expect(Modules::db('stock')->selectOne("SELECT nama FROM products WHERE nama IN ('V1 Tepung','V1 Tepung Baru')"))->toBeNull();
+    expect(Modules::db('stock')->selectOne(StockSupport::q("SELECT nama FROM {products} WHERE nama IN ('V1 Tepung','V1 Tepung Baru')")))->toBeNull();
 });
 
 it('submits a batch with the acting user as pic, then patches and deletes an order', function () {
@@ -77,12 +78,12 @@ it('filters orders and lists joinable batches', function () {
 });
 
 it('refuses archive to Ordering-only crew', function () {
-    $nomor = Modules::db('stock')->selectOne("SELECT nomor_order FROM orders WHERE status = 'Aktif' LIMIT 1")->nomor_order;
+    $nomor = Modules::db('stock')->selectOne(StockSupport::q("SELECT nomor_order FROM {orders} WHERE status = 'Aktif' LIMIT 1"))->nomor_order;
     $this->withToken(loginAs(officeUser('u-adit')))->postJson('/api/v1/stock/orders/archive', ['orderIds' => [$nomor]])->assertStatus(403);
 });
 
 it('archives and restores orders for Purchasing', function () {
-    $nomor = Modules::db('stock')->selectOne("SELECT nomor_order FROM orders WHERE status = 'Aktif' LIMIT 1")->nomor_order;
+    $nomor = Modules::db('stock')->selectOne(StockSupport::q("SELECT nomor_order FROM {orders} WHERE status = 'Aktif' LIMIT 1"))->nomor_order;
     $token = loginAs(officeUser('u-andry'));
     $this->withToken($token)->postJson('/api/v1/stock/orders/archive', ['orderIds' => [$nomor]])->assertOk()->assertJsonPath('data.updated', 1);
     $this->withToken($token)->postJson('/api/v1/stock/orders/unarchive', ['orderIds' => [$nomor]])->assertOk()->assertJsonPath('data.updated', 1);
