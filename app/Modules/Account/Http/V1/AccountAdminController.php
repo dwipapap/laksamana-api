@@ -2,6 +2,7 @@
 
 namespace App\Modules\Account\Http\V1;
 
+use App\Auth\AccountRepository;
 use App\Auth\OfficeAccess;
 use App\Modules\Account\Services\AccountService;
 use App\Support\Api\ApiResponse;
@@ -18,6 +19,7 @@ class AccountAdminController
     public function __construct(
         private readonly AccountService $account,
         private readonly OfficeAccess $access,
+        private readonly AccountRepository $users,
     ) {}
 
     private static function result(array $r, int $okStatus = 200): JsonResponse
@@ -31,6 +33,7 @@ class AccountAdminController
         $status = match ($code) {
             'not_found' => 404,
             'forbidden' => 403,
+            'is_kepala_divisi' => 409,
             default => 422,
         };
         unset($r['ok'], $r['error']);
@@ -43,8 +46,9 @@ class AccountAdminController
     public function users(): JsonResponse
     {
         $p = $this->account->usersPayload(false);
+        $users = array_map(fn ($u) => $u + ['ulid' => $this->users->userUlid($u['id'])], $p['users']);
 
-        return ApiResponse::ok($p['users'], ['modules' => $p['modules'], 'rules' => $this->account->rulePayload()]);
+        return ApiResponse::ok($users, ['modules' => $p['modules'], 'rules' => $this->account->rulePayload()]);
     }
 
     public function saveUser(Request $request, ?string $id = null): JsonResponse

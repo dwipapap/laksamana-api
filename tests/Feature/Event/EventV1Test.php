@@ -115,7 +115,7 @@ it('records append-only check-ins with the acting user as staff', function () {
     $token = loginAs(officeUser('u-andry'));
     $c = $this->withToken($token)->postJson('/api/v1/event/checkins', ['id' => 'ci_v1', 'ticket_id' => 'tk_v1', 'staff' => 'Director', 'gate' => 'Main', 'result' => 'Valid'])
         ->assertCreated();
-    $name = Modules::db('account')->selectOne("SELECT name FROM users WHERE id='u-andry'")->name;
+    $name = officeUser('u-andry')['name'];
     expect($c->json('data.staff'))->toBe($name)->and($c->json('data.checked_in_at'))->toEndWith('Z');
 
     $this->withToken($token)->postJson('/api/v1/event/checkins', ['id' => 'ci_v1', 'ticket_id' => 'tk_v1'])

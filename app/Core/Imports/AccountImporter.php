@@ -168,10 +168,11 @@ final class AccountImporter implements Importer
             // the FKs now forbid (#2): it is dropped, not invented.
             $kepala = [];
             foreach ($heads as $div => $list) {
+                $pos = 0;
                 foreach (is_array($list) ? $list : [] as $u) {
                     $u = is_scalar($u) ? trim((string) $u) : '';
-                    if (isset($uid[$u], $did[(string) $div])) {
-                        $kepala[$div.'|'.$u] = ['divisi_id' => $did[(string) $div], 'user_id' => $uid[$u]];
+                    if (isset($uid[$u], $did[(string) $div]) && ! isset($kepala[$div.'|'.$u])) {
+                        $kepala[$div.'|'.$u] = ['divisi_id' => $did[(string) $div], 'user_id' => $uid[$u], 'urutan' => ++$pos];
                     }
                 }
             }

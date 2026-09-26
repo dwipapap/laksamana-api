@@ -55,7 +55,7 @@ class AuthController
             'token' => $token->plainTextToken,
             'tokenType' => 'Bearer',
             'expiresAt' => $token->accessToken->expires_at?->toIso8601String(),
-            'user' => $this->access->profile($row),
+            'user' => $this->access->profile($row) + ['ulid' => $this->users->userUlid($row['id'])],
         ]);
     }
 
@@ -66,6 +66,7 @@ class AuthController
         return ApiResponse::ok($this->access->profile($row) + AccountService::hrJson($row) + [
             'noHp' => (string) ($row['no_hp'] ?? ''),
             'talentaId' => (string) ($row['talenta_id'] ?? ''),
+            'ulid' => $this->users->userUlid((string) $row['id']),
         ]);
     }
 

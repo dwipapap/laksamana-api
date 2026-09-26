@@ -2,6 +2,8 @@
 
 namespace App\Modules\Jadwal\Services;
 
+use App\Auth\AccountRepository;
+use App\Auth\CoreAccountRepository;
 use App\Support\Divisi;
 use App\Support\JsonDoc;
 use App\Support\Legacy\Sesi;
@@ -30,6 +32,8 @@ class JadwalService
     private const PETA = ['shifts', 'heads', 'divOverride', 'jabatan', 'shiftKru', 'template'];
 
     private ?array $settingArr = null;
+
+    private ?array $divisiInputs = null;
 
     public function __construct(
         private readonly Sesi $sesi,
@@ -84,7 +88,36 @@ class JadwalService
         }
         $v = json_decode($row->data);
 
-        return $v === null ? new stdClass : $v;
+        return $this->withDivisiMaps($v === null ? new stdClass : $v);
+    }
+
+    /**
+     * Identity on core (#44): Kepala Divisi and Penempatan Divisi are no longer
+     * in the blob; the wire shape rebuilds them as `heads` and `divOverride`.
+     */
+    private function withDivisiMaps(mixed $v): mixed
+    {
+        if (! AccountRepository::onCore() || ! $v instanceof stdClass) {
+            return $v;
+        }
+        $core = app(CoreAccountRepository::class);
+        $v->heads = (object) $core->headsByDivisi();
+        $v->divOverride = (object) $core->penempatanMap();
+
+        return $v;
+    }
+
+    /** Divisi resolution inputs: [divOverride, synonyms, office words] (core tables once identity is on core). */
+    private function divisiInputs(): array
+    {
+        if (! AccountRepository::onCore()) {
+            $ov = $this->settingArr()['divOverride'] ?? [];
+
+            return [is_array($ov) ? $ov : [], Divisi::SYNONYMS, Divisi::OFFICE_WORDS];
+        }
+        $core = app(CoreAccountRepository::class);
+
+        return [$core->penempatanMap(), ...$core->divisiWords()];
     }
 
     /** Array view for rule checks (never written back). */
@@ -96,10 +129,10 @@ class JadwalService
     /** A crew member's Divisi, resolved by the shared Divisi service. */
     public function divisiUser(string $uid): string
     {
-        $ov = $this->settingArr()['divOverride'] ?? [];
+        [$ov, $syn, $office] = $this->divisiInputs ??= $this->divisiInputs();
         $roster = $this->sesi->roster();
 
-        return Divisi::resolve($uid, is_array($ov) ? $ov : [], isset($roster[$uid]) ? (array) $roster[$uid] : null);
+        return Divisi::resolve($uid, $ov, isset($roster[$uid]) ? (array) $roster[$uid] : null, $syn, $office);
     }
 
     /** Office roster with each User's Divisi attached (read model for new apps). */
@@ -372,6 +405,13 @@ class JadwalService
             throw new RuntimeException('Payload setting kosong/invalid');
         }
         $d = (array) $data;
+        if (AccountRepository::onCore()) {
+            // The blob is replaced whole, so absent maps mean "none" here too.
+            app(CoreAccountRepository::class)->saveDivisiMaps(
+                JsonDoc::toArray($d['heads'] ?? []), JsonDoc::toArray($d['divOverride'] ?? []), $by);
+            unset($d['heads'], $d['divOverride']);
+        }
+        $this->divisiInputs = null;
         foreach (self::PETA as $k) {
             if (isset($d[$k]) && is_array($d[$k]) && count($d[$k]) === 0) {
                 $d[$k] = new stdClass;

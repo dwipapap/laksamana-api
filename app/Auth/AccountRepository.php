@@ -23,12 +23,24 @@ use Illuminate\Database\ConnectionInterface;
  */
 class AccountRepository
 {
-    private function db(): ConnectionInterface
+    /** Identity cut over (#44): the account Modul reads and writes the `core` identity tables. */
+    public static function onCore(): bool
+    {
+        return Modules::connectionName('account') === 'core';
+    }
+
+    /** The User's ULID; null until identity is on core (legacy rows have none). */
+    public function userUlid(string $legacyId): ?string
+    {
+        return null;
+    }
+
+    protected function db(): ConnectionInterface
     {
         return Modules::db('account');
     }
 
-    private static function s(mixed $v): string
+    protected static function s(mixed $v): string
     {
         return is_array($v) || is_object($v) ? '' : trim((string) $v);
     }

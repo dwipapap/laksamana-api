@@ -2,8 +2,10 @@
 
 namespace Tests;
 
+use App\Auth\AccountRepository;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Testing\TestResponse;
 
 /**
@@ -29,6 +31,17 @@ abstract class TestCase extends BaseTestCase
         }
 
         return $names;
+    }
+
+    /**
+     * With identity on core (DB_ACCOUNT_CONNECTION=core, #44) the freshly
+     * migrated test core is filled from the restored legacy DBs once per run.
+     */
+    protected function afterRefreshingDatabase(): void
+    {
+        if (AccountRepository::onCore()) {
+            Artisan::call('core:import', ['module' => 'account']);
+        }
     }
 
     /** POST a legacy text/plain JSON body to an old-style URL. */

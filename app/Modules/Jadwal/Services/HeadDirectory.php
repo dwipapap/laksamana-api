@@ -2,6 +2,8 @@
 
 namespace App\Modules\Jadwal\Services;
 
+use App\Auth\AccountRepository;
+use App\Auth\CoreAccountRepository;
 use App\Support\JsonDoc;
 use App\Support\Modules;
 use Illuminate\Support\Facades\Cache;
@@ -10,7 +12,8 @@ use Throwable;
 /**
  * "Who heads which division" — port of jadwal-mysql head_ids().
  *
- * The list lives ONLY in `jadwal_setting.data.heads` ({divisi: [userId…]}),
+ * The list lives in `jadwal_setting.data.heads` ({divisi: [userId…]}) — or,
+ * once identity is on core (#44), in `kepala_divisi` —
  * where the Jadwal admin assigns it. Legacy account-api fetched it over HTTP
  * (action=headIds) with a 60 s file cache; here it is a direct read of the
  * jadwal database with the same 60 s cache — no HTTP hop, same staleness.
@@ -55,9 +58,29 @@ class HeadDirectory
     /** @return array<string,array<int,string>> */
     public function compute(): array
     {
+        return self::invert($this->headsByDivisi());
+    }
+
+    /**
+     * The `heads` map as the jadwal setting holds it (divisi => [userId…]).
+     * On core (#44) it is Kepala Divisi, no longer the jadwal blob.
+     *
+     * @return array<string,mixed>
+     */
+    public function headsByDivisi(): array
+    {
+        if (AccountRepository::onCore()) {
+            return app(CoreAccountRepository::class)->headsByDivisi();
+        }
         $row = Modules::db('jadwal')->selectOne('SELECT `data` FROM `jadwal_setting` WHERE `id` = 1');
         $set = JsonDoc::toArray($row ? JsonDoc::decode($row->data) : null);
-        $heads = (isset($set['heads']) && is_array($set['heads'])) ? $set['heads'] : [];
+
+        return (isset($set['heads']) && is_array($set['heads'])) ? $set['heads'] : [];
+    }
+
+    /** @return array<string,array<int,string>> userId => [divisi…] */
+    private static function invert(array $heads): array
+    {
         $out = [];
         foreach ($heads as $div => $daftar) {
             if (! is_array($daftar)) {

@@ -1,8 +1,9 @@
 <?php
 
 use App\Modules\Jadwal\Services\HeadDirectory;
+use App\Modules\Jadwal\Services\JadwalService;
 use App\Support\Divisi;
-use App\Support\Modules;
+use App\Support\JsonDoc;
 
 /*
  * The Divisi service (App\Support\Divisi) is the single copy of Divisi
@@ -15,13 +16,12 @@ use App\Support\Modules;
  */
 
 it('lets Penempatan Divisi override the Tim words', function () {
-    $db = Modules::db('jadwal');
-    $data = json_decode($db->selectOne('SELECT data FROM jadwal_setting WHERE id = 1')->data, true);
+    // Through the service, so it lands in jadwal_setting or, with identity on core, penempatan_divisi.
+    $jadwal = app(JadwalService::class);
+    $data = JsonDoc::toArray($jadwal->setting());
     // u-andry has an empty Tim (nonshift); u-arif has Tim "Bar".
     $data['divOverride'] = ['u-andry' => 'floor', 'u-arif' => 'kitchen'];
-    $db->update('UPDATE jadwal_setting SET data = ? WHERE id = 1',
-        [json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)]);
-    app(HeadDirectory::class)->flush();
+    $jadwal->saveSetting($data, 'test');
 
     $rows = $this->withToken(loginAs(officeUser('u-arif')))->getJson('/api/v1/jadwal/roster')
         ->assertOk()->json('data');
