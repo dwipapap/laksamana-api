@@ -357,7 +357,7 @@
               "s": "16:00"
             },
             "OFF": {
-              "libur": true
+              "libur": 1
             }
           },
           "heads": {
@@ -371,6 +371,7 @@
           "divOverride": [],
           "jabatan": [],
           "shiftKru": {},
+          "manajemen": [],
           "template": []
         }
       }
