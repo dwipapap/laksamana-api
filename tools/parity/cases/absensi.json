@@ -1027,7 +1027,10 @@
       "query": {
         "action": "wajahDaftar",
         "sesi": "$sesi:admin"
-      }
+      },
+      "unordered": [
+        "data"
+      ]
     },
     {
       "name": "wajahDaftar crew",
@@ -1035,7 +1038,10 @@
       "query": {
         "action": "wajahDaftar",
         "sesi": "$sesi:crew"
-      }
+      },
+      "unordered": [
+        "data"
+      ]
     },
     {
       "name": "hapusLokasi fixed id",
