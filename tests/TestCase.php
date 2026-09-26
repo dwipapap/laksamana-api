@@ -5,6 +5,7 @@ namespace Tests;
 use App\Auth\AccountRepository;
 use App\Modules\Absensi\Services\AbsensiService;
 use App\Modules\Jadwal\Services\JadwalService;
+use App\Modules\Konten\Services\KontenSchema;
 use App\Modules\Marketing\Services\MarketingSchema;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
@@ -57,6 +58,9 @@ abstract class TestCase extends BaseTestCase
         }
         if (AbsensiService::onCore()) {
             Artisan::call('core:import', ['module' => 'absensi']);
+        }
+        if (KontenSchema::onCore()) {
+            Artisan::call('core:import', ['module' => 'konten']);
         }
     }
 

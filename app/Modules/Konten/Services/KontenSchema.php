@@ -2,6 +2,8 @@
 
 namespace App\Modules\Konten\Services;
 
+use App\Support\Modules;
+
 /**
  * Collection → table map of the konten database (port of collections(),
  * scalar_keys() in lib_konten_mysql.php).
@@ -12,6 +14,80 @@ namespace App\Modules\Konten\Services;
  */
 final class KontenSchema
 {
+    /** Legacy app key => core table. */
+    public const CORE_TABLES = [
+        'users' => 'konten_users',
+        'brands' => 'konten_brands',
+        'campaigns' => 'konten_campaigns',
+        'content' => 'konten_content',
+        'prodTasks' => 'konten_prod_tasks',
+        'shootings' => 'konten_shootings',
+        'assets' => 'konten_assets',
+        'bank' => 'konten_bank',
+        'kols' => 'konten_kols',
+        'visits' => 'konten_visits',
+        'ads' => 'konten_ads',
+        'adFunds' => 'konten_ad_funds',
+        'notifs' => 'konten_notifs',
+        'logs' => 'konten_logs',
+    ];
+
+    public const CORE_SETTINGS_TABLE = 'konten_pengaturan';
+
+    /** Konten cut over (#55): the Modul reads and writes the core tables. */
+    public static function onCore(): bool
+    {
+        return Modules::connectionName('konten') === 'core';
+    }
+
+    /** Physical table for an app key (a collection, 'logs' or 'settings'). */
+    public static function table(string $key): string
+    {
+        if ($key === 'settings') {
+            return self::onCore() ? self::CORE_SETTINGS_TABLE : 'settings';
+        }
+        if (self::onCore() && isset(self::CORE_TABLES[$key])) {
+            return self::CORE_TABLES[$key];
+        }
+        if (isset(self::collections()[$key])) {
+            return self::collections()[$key]['table'];
+        }
+
+        return $key === 'logs' ? 'logs' : $key;
+    }
+
+    /** Id column for row reads/writes: the legacy id, or `legacy_id` on core. */
+    public static function idCol(): string
+    {
+        return self::onCore() ? 'legacy_id' : 'id';
+    }
+
+    /** RowSync defs for the current connection (core defs carry ULID/version). */
+    public static function defs(): array
+    {
+        $defs = self::collections();
+        if (! self::onCore()) {
+            return $defs;
+        }
+        foreach ($defs as $key => $def) {
+            $defs[$key] = array_merge($def, ['table' => self::CORE_TABLES[$key], 'id' => 'legacy_id', 'ulid' => true, 'versioned' => true]);
+        }
+
+        return $defs;
+    }
+
+    /** ORDER BY for a created-first listing on the current connection. */
+    public static function createdOrder(): string
+    {
+        return self::onCore() ? 'created_at DESC, legacy_id DESC' : 'created_at DESC, id DESC';
+    }
+
+    /** ORDER BY for an id-sorted listing on the current connection. */
+    public static function idOrder(): string
+    {
+        return self::onCore() ? 'legacy_id ASC' : 'id ASC';
+    }
+
     public static function collections(): array
     {
         return [

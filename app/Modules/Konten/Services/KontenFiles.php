@@ -128,7 +128,8 @@ class KontenFiles
         $db = Modules::db('konten');
         // Files can be pointed at from several places, all in the form
         // "...?action=receipt&key=xxx" or {key:...} — both are caught.
-        foreach (['content', 'assets', 'bank'] as $t) {
+        foreach (['content', 'assets', 'bank'] as $key) {
+            $t = KontenSchema::table($key);
             foreach ($db->select("SELECT data FROM `$t`") as $row) {
                 $s = (string) $row->data;
                 if (preg_match_all('/[?&]key=([^&"\'\\\\]+)/', $s, $m)) {
