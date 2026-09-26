@@ -58,9 +58,10 @@ class BdRecords
     /** @return list<array> rows in legacy order (created_at, id) */
     public function list(string $resource, int $updatedSince = 0): array
     {
-        $t = self::def($resource)['table'];
+        $t = BdState::table(self::def($resource)['table']);
+        $key = BdState::idCol();
         $out = [];
-        foreach ($this->db()->select("SELECT `data` FROM `$t` WHERE `updated_at` > ? ORDER BY `created_at` ASC, `id` ASC", [$updatedSince]) as $r) {
+        foreach ($this->db()->select("SELECT `data` FROM `$t` WHERE `updated_at` > ? ORDER BY `created_at` ASC, `$key` ASC", [$updatedSince]) as $r) {
             $d = json_decode((string) $r->data, true);
             if (is_array($d)) {
                 $out[] = $d;
@@ -73,8 +74,8 @@ class BdRecords
     /** @return array{row:array,version:int}|null */
     public function find(string $resource, string $id, bool $lock = false): ?array
     {
-        $t = self::def($resource)['table'];
-        $r = $this->db()->selectOne("SELECT `data`, `updated_at` FROM `$t` WHERE `id` = ?".($lock ? ' FOR UPDATE' : ''), [$id]);
+        $t = BdState::table(self::def($resource)['table']);
+        $r = $this->db()->selectOne("SELECT `data`, `updated_at` FROM `$t` WHERE `".BdState::idCol().'` = ?'.($lock ? ' FOR UPDATE' : ''), [$id]);
         if (! $r) {
             return null;
         }
@@ -142,7 +143,7 @@ class BdRecords
             if ($cur['version'] !== $base) {
                 throw new BdConflict('stale', $cur);
             }
-            $this->db()->delete('DELETE FROM `'.self::def($resource)['table'].'` WHERE `id` = ?', [$id]);
+            $this->db()->delete('DELETE FROM `'.BdState::table(self::def($resource)['table']).'` WHERE `'.BdState::idCol().'` = ?', [$id]);
 
             return true;
         });
@@ -153,7 +154,7 @@ class BdRecords
     /** @return array{value:mixed,version:string} */
     public function document(string $key): array
     {
-        $raw = $this->db()->selectOne('SELECT `v` FROM `settings` WHERE `k` = ?', [$key])?->v;
+        $raw = $this->db()->selectOne('SELECT `v` FROM `'.BdState::table('settings').'` WHERE `k` = ?', [$key])?->v;
         $value = $raw === null ? null : json_decode((string) $raw, true);
         if ($value === null) {
             $value = self::DOCUMENTS[$key] === 'object' ? new \stdClass : [];
