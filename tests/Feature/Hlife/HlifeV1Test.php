@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__.'/helpers.php';
+
 use App\Support\Modules;
 
 /* u-jb holds module `howandi_life`; u-adit does not. */
@@ -29,7 +31,7 @@ it('creates, reads, patches and deletes a record with version checks', function 
     expect($id)->toMatch('/^[0-9a-z]{7}$/');
 
     $db = Modules::db('hlife');
-    expect($db->selectOne('SELECT nama, data FROM tasks WHERE id = ?', [$id]))
+    expect($db->selectOne(hlSql('SELECT nama, data FROM tasks WHERE id = ?'), [$id]))
         ->nama->toBe('API task')
         ->data->toContain('"meta":{}');
 
@@ -42,12 +44,12 @@ it('creates, reads, patches and deletes a record with version checks', function 
         ->assertOk()->assertJsonPath('data.name', 'API task')->assertJsonPath('data.done', true);
     $v2 = $patched->json('meta.version');
     expect($v2)->not->toBe($v1)
-        ->and((int) $db->selectOne('SELECT done FROM tasks WHERE id = ?', [$id])->done)->toBe(1);
+        ->and((int) $db->selectOne(hlSql('SELECT done FROM tasks WHERE id = ?'), [$id])->done)->toBe(1);
 
     $this->flushHeaders(); // withHeader() persists; test the ?version= form
     $this->withToken($token)->deleteJson("/api/v1/hlife/tasks/$id?version=$v1")->assertStatus(409);
     $this->withToken($token)->deleteJson("/api/v1/hlife/tasks/$id?version=$v2")->assertOk()->assertJsonPath('data.deleted', true);
-    expect($db->selectOne('SELECT id FROM tasks WHERE id = ?', [$id]))->toBeNull();
+    expect($db->selectOne(hlSql('SELECT id FROM tasks WHERE id = ?'), [$id]))->toBeNull();
 });
 
 it('replaces a record with PUT and rejects a duplicate id or mismatched body id', function () {
@@ -59,7 +61,7 @@ it('replaces a record with PUT and rejects a duplicate id or mismatched body id'
 
     $this->withToken($token)->withHeader('If-Match', $v)->putJson('/api/v1/hlife/ledger/led-t1', ['month' => '2026-10', 'income' => 3])
         ->assertOk()->assertJsonPath('data', ['month' => '2026-10', 'income' => 3, 'id' => 'led-t1']);
-    expect(Modules::db('hlife')->selectOne("SELECT bulan, income FROM ledger WHERE id='led-t1'"))
+    expect(Modules::db('hlife')->selectOne(hlSql("SELECT bulan, income FROM ledger WHERE id='led-t1'")))
         ->bulan->toBe('2026-10')->income->toEqual(3);
 });
 
@@ -72,7 +74,7 @@ it('reads and writes a setting with its version', function () {
     $this->withToken($token)->withHeader('If-Match', 'stale')->putJson('/api/v1/hlife/settings/channels', ['value' => ['A']])->assertStatus(409);
     $this->withToken($token)->withHeader('If-Match', $v)->putJson('/api/v1/hlife/settings/channels', ['value' => ['A', 'B']])
         ->assertOk()->assertJsonPath('data', ['A', 'B']);
-    expect(Modules::db('hlife')->selectOne("SELECT v FROM settings WHERE k='channels'")->v)->toBe('["A","B"]');
+    expect(Modules::db('hlife')->selectOne(hlSql("SELECT v FROM settings WHERE k='channels'"))->v)->toBe('["A","B"]');
 
     $this->withToken($token)->getJson('/api/v1/hlife/settings/nope')->assertStatus(404);
 });

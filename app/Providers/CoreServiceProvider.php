@@ -11,6 +11,7 @@ use App\Core\Imports\AkademiImporter;
 use App\Core\Imports\BdImporter;
 use App\Core\Imports\DummyImporter;
 use App\Core\Imports\EventImporter;
+use App\Core\Imports\HlifeImporter;
 use App\Core\Imports\HrImporter;
 use App\Core\Imports\ImporterRegistry;
 use App\Core\Imports\JadwalImporter;
@@ -34,6 +35,8 @@ final class CoreServiceProvider extends ServiceProvider
             // EMS: event owns the tables the public shop also uses, so event imports before ticketing
             $app->make(EventImporter::class),
             $app->make(HrImporter::class),
+            // hlife has no user FKs and imports straight from its own legacy database
+            $app->make(HlifeImporter::class),
             $app->make(JadwalImporter::class),
             $app->make(KontenImporter::class),
             $app->make(MarketingImporter::class),

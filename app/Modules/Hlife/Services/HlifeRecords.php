@@ -11,9 +11,11 @@ use stdClass;
 /**
  * Granular writes for /api/v1/hlife (the legacy app only has whole-state saveAll).
  *
- * The hlife tables have no version column, so a record's version is a hash of
+ * The legacy hlife tables have no version column, so a record's version is a hash of
  * its stored JSON: any write through either surface (v1 or compat saveAll)
- * changes it. Writes check it under SELECT … FOR UPDATE.
+ * changes it. Writes check it under SELECT … FOR UPDATE. On core (#65) the
+ * `version` column also counts the writes, but the exposed version stays the
+ * JSON hash, identical on both storages.
  */
 class HlifeRecords
 {
@@ -41,8 +43,8 @@ class HlifeRecords
     /** @return list<array{record:stdClass, version:string}> */
     public function list(string $resource): array
     {
-        $table = self::table($resource);
-        $order = $table === 'ledger' ? ' ORDER BY `bulan`' : '';
+        $table = HlifeState::table(self::table($resource));
+        $order = $resource === 'ledger' ? ' ORDER BY `bulan`' : '';
         $out = [];
         foreach ($this->db()->select("SELECT `data` FROM `$table`".$order) as $r) {
             $o = json_decode($r->data);
@@ -57,8 +59,9 @@ class HlifeRecords
     /** @return array{record:stdClass, version:string}|null */
     public function find(string $resource, string $id, bool $lock = false): ?array
     {
-        $table = self::table($resource);
-        $r = $this->db()->selectOne("SELECT `data` FROM `$table` WHERE `id` = ?".($lock ? ' FOR UPDATE' : ''), [$id]);
+        $table = HlifeState::table(self::table($resource));
+        $key = HlifeState::idCol();
+        $r = $this->db()->selectOne("SELECT `data` FROM `$table` WHERE `$key` = ?".($lock ? ' FOR UPDATE' : ''), [$id]);
         if (! $r) {
             return null;
         }
@@ -118,9 +121,10 @@ class HlifeRecords
     /** @return bool false = not found ; throws HlifeConflict */
     public function delete(string $resource, string $id, string $baseVersion): bool
     {
-        $table = self::table($resource);
+        $table = HlifeState::table(self::table($resource));
+        $key = HlifeState::idCol();
 
-        return $this->db()->transaction(function () use ($resource, $table, $id, $baseVersion) {
+        return $this->db()->transaction(function () use ($resource, $table, $key, $id, $baseVersion) {
             $cur = $this->find($resource, $id, true);
             if (! $cur) {
                 return false;
@@ -128,7 +132,7 @@ class HlifeRecords
             if (! hash_equals($cur['version'], $baseVersion)) {
                 throw new HlifeConflict('stale', $cur);
             }
-            $this->db()->delete("DELETE FROM `$table` WHERE `id` = ?", [$id]);
+            $this->db()->delete("DELETE FROM `$table` WHERE `$key` = ?", [$id]);
 
             return true;
         });
@@ -139,7 +143,7 @@ class HlifeRecords
     /** @return array{value:mixed, version:string} ; a missing row reads as its default. */
     public function setting(string $key, bool $lock = false): array
     {
-        $r = $this->db()->selectOne('SELECT `v` FROM `settings` WHERE `k` = ?'.($lock ? ' FOR UPDATE' : ''), [$key]);
+        $r = $this->db()->selectOne('SELECT `v` FROM `'.HlifeState::table('settings').'` WHERE `k` = ?'.($lock ? ' FOR UPDATE' : ''), [$key]);
         $raw = $r ? $r->v : JsonDoc::encode(HlifeState::settingDefault($key));
 
         return ['value' => json_decode($raw), 'version' => self::version($raw)];
