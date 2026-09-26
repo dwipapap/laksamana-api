@@ -63,3 +63,16 @@ The frontend draws QR codes in JS, and the server puts them into the PDF. Both m
 - `/api/v1/tickets/orders/{ref}`
 - `/api/v1/tickets/me`
 - The webhook stays on its legacy path.
+
+## Port notes (#38: QR and PDF)
+
+- `lib_qr.php` → `App\Modules\Ticketing\Services\QrCode::matrix()` and `lib_pdf.php` → `TicketPdf::eticket()` / `::qr()` / `::fileName()`. These are faithful ports with the same penalty/mask choice, the same PDF object layout and the same WinAnsi transliteration.
+- **Test vectors:** `tests/Fixtures/ticketing/` was recorded from the legacy PHP by running the legacy libs over fixed synthetic inputs.
+  - QR texts cover versions 1..10, plus a too-long text that must throw.
+  - Three e-ticket PDFs: seat/table/general/fallback tickets with a CP1252 title and no event, and one capped at `$max`.
+  - The attachment names.
+- `tests/Unit/TicketingQrPdfTest.php` (DB-free, so it also runs in CI) asserts:
+  - identical QR matrices
+  - byte-identical PDFs when the zlib build matches the recording, and identical inflated page content with any zlib build
+- Legacy `tools/uji-qr.js` proves legacy PHP = frontend JS `qrMatrix()`, so matching the legacy vectors keeps the PDF QR and the on-screen QR the same code.
+- **No action surface:** the legacy API exposes no QR or PDF action. The PDF is only a mail attachment, built in `kirim_eticket()` when an order is paid. The compat actions and v1 that use these services arrive with #39 (orders/e-ticket) and #40 (mail, buyer v1).
