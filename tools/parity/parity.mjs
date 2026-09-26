@@ -2,7 +2,7 @@
 /*
  * PARITY — old PHP backend vs this Laravel API, same data, same requests.
  *
- *   node tools/parity/parity.mjs <module> [--case <substring>] [--keep] [--core [--importer <key>]]
+ *   node tools/parity/parity.mjs <module> [--case <substring>] [--keep] [--core [--importer <key,...>]]
  *
  * For each module described in tools/parity/cases/<module>.json it:
  *   1. clones the module's LOCAL database twice (parity_old_<db>, parity_new_<db>)
@@ -16,12 +16,12 @@
  *      paths) and exits non-zero on any difference.
  *
  * --core (the cutover gate, ADR-0002/0004): additionally creates and migrates a
- * scratch core database (parity_core), runs `core:import <importer>` from the
- * parity_new_* clones into it, and serves Laravel with DB_DATABASE=parity_core.
- * The importer defaults to the module key; when it IS the module key, the
- * module's connection is switched to core (DB_<MODULE>_CONNECTION=core) so its
- * compat routes answer from core. Any other importer (`--importer dummy`, the
- * C1 proof) exercises the create/migrate/import/serve pipeline only.
+ * scratch core database (parity_core), runs `core:import <key>` for every
+ * registered importer (or only those named by --importer a,b) from the
+ * parity_new_* clones into it, and serves Laravel with DB_DATABASE=parity_core
+ * and DB_<KEY>_CONNECTION=core for each imported key, so every cut-over module
+ * answers from core (`jadwal --core` runs jadwal with identity on core).
+ * A key that is not a module (`dummy`, the C1 proof) switches nothing.
  *
  * LOCAL ONLY: refuses to run unless MYSQL_HOST is 127.0.0.1/localhost.
  *
@@ -69,11 +69,11 @@ if (!['127.0.0.1', 'localhost'].includes(HOST)) { console.error('REFUSING: non-l
 
 const args = process.argv.slice(2);
 const mod = args[0];
-if (!mod) { console.error('usage: parity.mjs <module> [--case x] [--keep] [--core [--importer key]]'); process.exit(2); }
+if (!mod) { console.error('usage: parity.mjs <module> [--case x] [--keep] [--core [--importer key,...]]'); process.exit(2); }
 const only = args.includes('--case') ? args[args.indexOf('--case') + 1] : null;
 const keep = args.includes('--keep');
 const core = args.includes('--core');
-const importer = args.includes('--importer') ? args[args.indexOf('--importer') + 1] : mod;
+const importerArg = args.includes('--importer') ? args[args.indexOf('--importer') + 1] : null;
 const spec = JSON.parse(fs.readFileSync(path.join(HERE, 'cases', `${mod}.json`), 'utf8'));
 
 const sql = (q, db) => execFileSync(MYSQL, ['-uroot', `-h${HOST}`, '-N', '-B', ...(db ? [db] : []), '-e', q], { encoding: 'utf8' });
@@ -160,8 +160,12 @@ if (core) {
     catch { console.error(`core mode: php artisan ${argv.join(' ')} failed`); process.exit(2); }
   };
   artisan(['migrate', '--database=core', '--force']);
-  artisan(['core:import', importer]);
-  if (importer === mod) env[`DB_${mod.toUpperCase()}_CONNECTION`] = 'core';
+  const keys = importerArg ? importerArg.split(',')
+    : execFileSync(PHP, ['artisan', 'core:import', '--list'], { cwd: API_ROOT, env, encoding: 'utf8' }).split(/\r?\n/).filter(Boolean);
+  for (const key of keys) {
+    artisan(['core:import', key]);
+    env[`DB_${key.toUpperCase()}_CONNECTION`] = 'core';
+  }
 }
 const newData = path.join(scratch, 'data-new');
 for (const [k] of Object.entries({ AKADEMI: 1, EVENT: 1, KOMPAS: 1, KONTEN: 1, MARKETING: 1, RESERVASI: 1, STOCK: 1 })) {

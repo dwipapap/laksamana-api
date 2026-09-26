@@ -68,8 +68,8 @@ Before a Modul cuts over, its parity cases must be green with Laravel reading
 `core` (ADR-0002). `tools/parity` has a core mode for that:
 
 ```bash
-node tools/parity/parity.mjs <module> --core                    # the Modul's own importer
-node tools/parity/parity.mjs account --core --importer dummy    # C1 pipeline proof
+node tools/parity/parity.mjs <module> --core                    # every cut-over Modul on core
+node tools/parity/parity.mjs account --core --importer dummy    # C1 pipeline proof only
 ```
 
 On top of the usual run (clone the local legacy DBs twice, serve the old PHP
@@ -77,18 +77,19 @@ on one set and Laravel on the other), `--core`:
 
 1. creates a scratch database `parity_core` (`parity_<PARITY_TAG>_core` when
    `PARITY_TAG` is set) and runs `php artisan migrate --database=core` on it;
-2. runs `php artisan core:import <importer>` with every legacy connection
-   pointed at the `parity_new_*` clones, so the import reads the same rows the
-   old PHP serves;
-3. serves Laravel with `DB_DATABASE=parity_core` and, when the importer is the
-   Modul's own key, `DB_<MODULE>_CONNECTION=core`, so the Modul's compat routes
-   answer from `core` while the old PHP still answers from its legacy clone;
+2. runs `php artisan core:import <key>` for every registered importer
+   (`core:import --list`), or only for the keys given as `--importer a,b`,
+   with every legacy connection pointed at the `parity_new_*` clones, so the
+   import reads the same rows the old PHP serves;
+3. serves Laravel with `DB_DATABASE=parity_core` and `DB_<KEY>_CONNECTION=core`
+   for every imported key, so each cut-over Modul answers from `core` while the
+   old PHP still answers from its legacy clone. `jadwal --core` therefore runs
+   jadwal with identity (account) on core;
 4. diffs every case as today and drops `parity_core` afterwards (kept with
    `--keep`).
 
-The importer defaults to the Modul key. Any other importer (such as `dummy`)
-leaves the Modul on its legacy connection and only proves the
-create/migrate/import/serve pipeline. Everything runs on local MySQL only.
+A key that is not a Modul (such as `dummy`) switches nothing. Everything runs
+on local MySQL only.
 
 ## Switches
 

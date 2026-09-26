@@ -2,7 +2,9 @@
 
 namespace App\Providers;
 
+use App\Auth\AccountRepository;
 use App\Auth\AccountUser;
+use App\Auth\CoreAccountRepository;
 use App\Auth\CorePersonalAccessToken;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\ServiceProvider;
@@ -12,7 +14,10 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
+        // Identity cutover (#44): same repository contract, core tables behind it.
+        // Resolved per call, so switching DB_ACCOUNT_CONNECTION back rolls back.
+        $this->app->bind(AccountRepository::class,
+            fn () => AccountRepository::onCore() ? new CoreAccountRepository : new AccountRepository);
     }
 
     public function boot(): void

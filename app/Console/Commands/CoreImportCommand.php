@@ -9,12 +9,19 @@ use Illuminate\Console\Command;
 
 final class CoreImportCommand extends Command
 {
-    protected $signature = 'core:import {module : Registered core importer key}';
+    protected $signature = 'core:import {module? : Registered core importer key} {--list : Print the registered keys, one per line}';
 
     protected $description = 'Import one registered legacy source into the core database idempotently';
 
     public function handle(ImporterRegistry $importers): int
     {
+        if ($this->option('list')) {
+            foreach ($importers->modules() as $key) {
+                $this->line($key);
+            }
+
+            return self::SUCCESS;
+        }
         $module = (string) $this->argument('module');
         if (! $importers->has($module)) {
             $this->components->error("No core importer registered for [{$module}].");

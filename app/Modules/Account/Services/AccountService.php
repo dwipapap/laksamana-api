@@ -3,6 +3,7 @@
 namespace App\Modules\Account\Services;
 
 use App\Auth\AccountRepository;
+use App\Auth\CoreAccountRepository;
 use App\Auth\LegacySessions;
 use App\Auth\OfficeAccess;
 use App\Support\Modules;
@@ -441,6 +442,10 @@ class AccountService
         }
         if (! ((int) $u['active'] === 0)) {
             return ['ok' => false, 'error' => 'must_deactivate_first'];
+        }
+        // On core the kepala_divisi FK refuses the delete (#2); say so instead of failing.
+        if ($this->users instanceof CoreAccountRepository && ($div = $this->users->kepalaDivisiOf($id))) {
+            return ['ok' => false, 'error' => 'is_kepala_divisi', 'divisi' => $div];
         }
         $this->users->deleteUserCascade($id);
         $this->access->forgetUser($id);

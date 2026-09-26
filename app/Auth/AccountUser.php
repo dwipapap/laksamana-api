@@ -5,8 +5,10 @@ namespace App\Auth;
 use App\Support\Modules;
 use Illuminate\Auth\Authenticatable;
 use Illuminate\Contracts\Auth\Authenticatable as AuthenticatableContract;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Laravel\Sanctum\HasApiTokens;
+use Laravel\Sanctum\Sanctum;
 
 /**
  * An Office account — a row of `users` in the EXISTING account database
@@ -41,9 +43,35 @@ class AccountUser extends Model implements AuthenticatableContract
         return Modules::connectionName('account');
     }
 
+    /*
+     * Identity on core (#44): the row is `user`, and the key every module uses
+     * (getKey(), guards, module data) stays the LEGACY id (`legacy_id`), while
+     * Sanctum tokens point at the ULID `id` column (re-keyed by the importer).
+     * On the legacy table both are the same `id` column.
+     */
+    public function getTable(): string
+    {
+        return AccountRepository::onCore() ? 'user' : 'users';
+    }
+
+    public function getKeyName(): string
+    {
+        return AccountRepository::onCore() ? 'legacy_id' : 'id';
+    }
+
+    public function tokens()
+    {
+        return $this->morphMany(Sanctum::$personalAccessTokenModel, 'tokenable', null, null, 'id');
+    }
+
+    protected function name(): Attribute
+    {
+        return Attribute::get(fn ($v, array $a) => $a['name'] ?? $a['nama'] ?? null);
+    }
+
     public function isActive(): bool
     {
-        return (int) $this->active === 1;
+        return (int) ($this->attributes['active'] ?? $this->attributes['aktif'] ?? 0) === 1;
     }
 
     // Authenticatable: there is no password column; PIN auth is done in LoginService.

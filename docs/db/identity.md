@@ -6,7 +6,9 @@ cutover order (PRD #1): every other FK points at `user`.
 
 Migration: `database/migrations/2026_09_26_090000_create_identity_tables.php`.
 Importer: `App\Core\Imports\AccountImporter` (`php artisan core:import account`).
-The services still read the legacy databases until #44 rewires them.
+Served from core when `DB_ACCOUNT_CONNECTION=core` (#44): `App\Auth\CoreAccountRepository`
+replaces `AccountRepository` behind the same contract, and the switch back to
+the legacy connection is the rollback path (ADR-0004).
 
 ## ERD
 
@@ -158,5 +160,32 @@ php artisan core:import account      # reads legacy_account + legacy_jadwal, wri
 
 Idempotent: rows are matched on `legacy_id` (or `kunci`, `kode`, `kata`,
 `token`), unchanged rows are left alone, changed rows get `version + 1`, and
-rows whose legacy source is gone are deleted. The Modul switch
-(`DB_ACCOUNT_CONNECTION=core`) belongs to #44, which rewires the services.
+rows whose legacy source is gone are deleted.
+
+## Serving from core (#44)
+
+```dotenv
+DB_ACCOUNT_CONNECTION=core   # after `core:import account`; unset = legacy (rollback)
+```
+
+- **Ids.** Compat routes and every other Modul keep the legacy user ids
+  (`whoami`, rosters, `userId`), because unmigrated modules store them.
+  `AccountUser::getKey()` stays the legacy id; Sanctum tokens point at the
+  ULID. v1 adds the ULID as `ulid` on `auth/login`, `me` and
+  `account/users`; path parameters stay legacy ids.
+- **Divisi.** The jadwal setting no longer holds `heads` or `divOverride`.
+  Saving it writes `kepala_divisi` (with `urutan` as the list order) and
+  `penempatan_divisi`, and reading it rebuilds both maps. Divisi words come
+  from `divisi_kata`.
+- **Deviations the FKs force.** Legacy stored these rows silently; on core
+  they are dropped instead:
+  - a grant or admin row for an unknown User or Modul key;
+  - a Larangan on `*`;
+  - a head or placement id with no User;
+  - a Divisi key with an empty head list.
+
+  A join date that is not a real date becomes empty. The Office screens
+  only send registered keys and ids, so none of this is reachable from
+  them.
+- **Deleting a Kepala Divisi** is refused with `is_kepala_divisi` (and the
+  Divisi codes) on both surfaces, and v1 answers 409 (#2).

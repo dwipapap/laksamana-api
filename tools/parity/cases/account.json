@@ -200,7 +200,7 @@
         "callerName": "$each1",
         "callerPin": "$each2",
         "userId": "u-paritytester",
-        "module": "stock",
+        "module": "ordering",
         "access": true
       }
     },
