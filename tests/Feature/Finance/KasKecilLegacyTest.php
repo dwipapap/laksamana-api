@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__.'/helpers.php';
+
 use App\Support\Modules;
 use Illuminate\Testing\TestResponse;
 
@@ -22,11 +24,13 @@ it('saves a transaction with its split rows and rewrites them on edit', function
     $id = finPost('simpanTrx', ['tgl' => '2026-09-03', 'keterangan' => 'Galon', 'kategori_id' => 4, 'oleh' => 'Kasir',
         'baris' => [['pos_id' => 1, 'kredit' => 15000]]])->assertOk()->json('data.id');
     $db = Modules::db('finance');
-    expect($db->selectOne('SELECT dibuat_oleh, kategori_id FROM kk_trx WHERE id = ?', [$id]))->dibuat_oleh->toBe('Kasir')->kategori_id->toBe(4);
+    $row = $db->selectOne(finSql('SELECT dibuat_oleh, kategori_id FROM kk_trx WHERE id = ?'), [$id]);
+    // kategori_id holds the legacy id: an int on legacy, its string form on core
+    expect($row->dibuat_oleh)->toBe('Kasir')->and((int) $row->kategori_id)->toBe(4);
 
     finPost('simpanTrx', ['id' => $id, 'tgl' => '2026-09-03', 'keterangan' => 'Galon', 'baris' => [['pos_id' => 2, 'debet' => 700]]])->assertOk();
-    expect($db->select('SELECT pos_id, debet, kredit FROM kk_trx_pos WHERE trx_id = ?', [$id]))->toHaveCount(1)
-        ->and((int) $db->selectOne('SELECT pos_id FROM kk_trx_pos WHERE trx_id = ?', [$id])->pos_id)->toBe(2);
+    expect($db->select(finSql('SELECT pos_id, debet, kredit FROM kk_trx_pos WHERE trx_id = ?'), [$id]))->toHaveCount(1)
+        ->and((int) $db->selectOne(finSql('SELECT pos_id FROM kk_trx_pos WHERE trx_id = ?'), [$id])->pos_id)->toBe(2);
 
     finPost('simpanTrx', ['tgl' => '2026-09-03', 'keterangan' => 'x', 'baris' => [['pos_id' => 1, 'debet' => 5, 'kredit' => 5]]])
         ->assertOk()->assertExactJson(['ok' => false, 'error' => 'Satu pos tidak boleh debet dan kredit sekaligus.']);

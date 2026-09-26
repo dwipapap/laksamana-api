@@ -195,9 +195,7 @@ class InvoiceController
 
     private function find(string $id): ?array
     {
-        $row = $this->inv->db()->selectOne('SELECT * FROM `inv_kwitansi` WHERE `id`=?', [$id]);
-
-        return $row ? Invoices::row($row) : null;
+        return $this->inv->find($id);
     }
 
     private function signatory(string $id): ?array

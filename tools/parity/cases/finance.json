@@ -32,14 +32,14 @@
 
     {"name": "simpanPos without a name", "query": {"action": "simpanPos"}, "body": {"nama": " "}},
     {"name": "simpanPos duplicate name", "query": {"action": "simpanPos"}, "body": {"nama": "Kas Kecil", "urut": 5}},
-    {"name": "simpanPos create", "query": {"action": "simpanPos"}, "body": {"nama": "Pos Parity", "urut": "45"}},
+    {"name": "simpanPos create", "query": {"action": "simpanPos"}, "ignore": ["data.id"], "body": {"nama": "Pos Parity", "urut": "45"}},
     {"name": "simpanPos rename", "query": {"action": "simpanPos"}, "body": {"id": 4, "nama": "Pos Parity 2", "urut": 46}},
     {"name": "nonaktifPos", "query": {"action": "nonaktifPos"}, "body": {"id": 4}},
     {"name": "aktifPos", "query": {"action": "aktifPos"}, "body": {"id": 4}},
     {"name": "hapusPos used", "query": {"action": "hapusPos"}, "body": {"id": 1}},
     {"name": "hapusPos unused", "query": {"action": "hapusPos"}, "body": {"id": 4}},
     {"name": "simpanKategori duplicate", "query": {"action": "simpanKategori"}, "body": {"nama": "COGS"}},
-    {"name": "simpanKategori create", "query": {"action": "simpanKategori"}, "body": {"nama": "Kategori Parity", "urut": 130}},
+    {"name": "simpanKategori create", "query": {"action": "simpanKategori"}, "ignore": ["data.id"], "body": {"nama": "Kategori Parity", "urut": 130}},
     {"name": "hapusKategori used", "query": {"action": "hapusKategori"}, "body": {"id": 4}},
     {"name": "nonaktifKategori", "query": {"action": "nonaktifKategori"}, "body": {"id": 13}},
     {"name": "hapusKategori unused", "query": {"action": "hapusKategori"}, "body": {"id": 13}},
@@ -107,7 +107,7 @@
     {"name": "invPenandaHapus used one refused", "query": {"action": "invPenandaHapus"}, "body": {"penandaId": "pen6a87ce77dehvuk"}},
     {"name": "invPenandaHapus unknown id", "query": {"action": "invPenandaHapus"}, "ignore": ["data.*.id"], "body": {"penandaId": "pen-none"}},
     {"name": "invDaftar at the end", "query": {"action": "invDaftar"}, "ignore": ["data.list.*.id", "data.list.*.mintaAt", "data.list.*.putusAt", "data.penanda.*.id"], "body": {}},
-    {"name": "getAll at the end", "method": "GET", "query": {"action": "getAll"}},
+    {"name": "getAll at the end", "method": "GET", "query": {"action": "getAll"}, "ignore": ["data.pos.3.id", "data.kategori.12.id"]},
     {"name": "stats at the end", "method": "GET", "query": {"action": "stats"}}
   ]
 }

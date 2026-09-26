@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__.'/helpers.php';
+
 use App\Support\Modules;
 
 /* u-novi holds module `finance` (not admin); u-wandi is superadmin; u-adit has no finance. */
@@ -32,7 +34,7 @@ it('creates a transaction as the session user, then edits, marks and deletes it 
         ->assertOk()->assertJsonCount(2, 'data.baris')->json('meta.version');
 
     $this->withToken($token)->deleteJson("/api/v1/finance/petty-cash/transactions/$id?version=$v3")->assertOk()->assertJsonPath('data.deleted', true);
-    expect(Modules::db('finance')->selectOne('SELECT COUNT(*) n FROM kk_trx_pos WHERE trx_id = ?', [$id])->n)->toBe(0);
+    expect(Modules::db('finance')->selectOne(finSql('SELECT COUNT(*) n FROM kk_trx_pos WHERE trx_id = ?'), [$id])->n)->toBe(0);
 });
 
 it('manages sources: create, rename/deactivate with version, refuse deleting a used one', function () {
@@ -57,7 +59,7 @@ it('lets the module admin edit the Akses Halaman matrix and a role', function ()
     $v = $this->withToken($token)->getJson('/api/v1/finance/petty-cash/access')->assertOk()->json('meta.version');
     $this->withToken($token)->putJson("/api/v1/finance/petty-cash/access/matrix?version=$v", ['matrix' => ['viewer' => ['rekap' => 1]]])
         ->assertOk()->assertJsonPath('data.viewer.rekap', 1);
-    expect(Modules::db('finance')->selectOne('SELECT COUNT(*) n FROM kk_akses')->n)->toBe(1);
+    expect(Modules::db('finance')->selectOne(finSql('SELECT COUNT(*) n FROM kk_akses'))->n)->toBe(1);
 
     $this->withToken($token)->putJson('/api/v1/finance/petty-cash/access/roles/u-novi?version='.substr(sha1('null'), 0, 16), ['role' => 'manajemen'])
         ->assertOk()->assertJsonPath('data', 'manajemen');

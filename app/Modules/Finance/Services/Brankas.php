@@ -38,7 +38,7 @@ class Brankas
         $db = $this->db();
         $data = null;
         $ts = 0;
-        $row = $db->selectOne('SELECT `data`,`updated_at` FROM `bk_state` WHERE `id`=1'.($lock ? ' FOR UPDATE' : ''));
+        $row = $db->selectOne('SELECT `data`,`updated_at` FROM `'.KasKecil::t('bk_state').'` WHERE `'.KasKecil::idCol().'`=1'.($lock ? ' FOR UPDATE' : ''));
         if ($row && (string) $row->data !== '') {
             $d = json_decode((string) $row->data, true);
             if (is_array($d)) {
@@ -54,7 +54,7 @@ class Brankas
     public function akses(): object
     {
         $out = [];
-        foreach ($this->db()->select('SELECT `kunci`,`halaman`,`tingkat` FROM `bk_akses`') as $r) {
+        foreach ($this->db()->select('SELECT `kunci`,`halaman`,`tingkat` FROM `'.KasKecil::t('bk_akses').'`') as $r) {
             $out[(string) $r->kunci][(string) $r->halaman] = (int) $r->tingkat;
         }
 
@@ -64,7 +64,7 @@ class Brankas
     public function peran(): object
     {
         $out = [];
-        foreach ($this->db()->select('SELECT `kunci`,`peran` FROM `bk_peran`') as $r) {
+        foreach ($this->db()->select('SELECT `kunci`,`peran` FROM `'.KasKecil::t('bk_peran').'`') as $r) {
             $out[(string) $r->kunci] = (string) $r->peran;
         }
 
@@ -90,9 +90,16 @@ class Brankas
 
         $by = $oleh === null ? '' : substr(trim(KasKecil::s($oleh)), 0, 80);
         $ts ??= (int) round(microtime(true) * 1000);
-        $this->db()->insert('INSERT INTO `bk_state` (`id`,`data`,`updated_at`,`updated_by`) VALUES (1,?,?,?)
+        if (KasKecil::onCore()) {
+            // the singleton keeps legacy id 1; created_at is set once (not in the ODKU)
+            $this->db()->insert('INSERT INTO `'.KasKecil::t('bk_state').'` (`id`,`legacy_id`,`data`,`created_at`,`updated_at`,`diubah_oleh`,`version`) VALUES (?,?,?,?,?,?,?)'
+                .' ON DUPLICATE KEY UPDATE `version`=`version`+1, `data`=VALUES(`data`), `updated_at`=VALUES(`updated_at`), `diubah_oleh`=VALUES(`diubah_oleh`)',
+                [KasKecil::ulid(), '1', json_encode($clean, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $ts, $ts, $by, 1]);
+        } else {
+            $this->db()->insert('INSERT INTO `bk_state` (`id`,`data`,`updated_at`,`updated_by`) VALUES (1,?,?,?)
             ON DUPLICATE KEY UPDATE `data`=VALUES(`data`),`updated_at`=VALUES(`updated_at`),`updated_by`=VALUES(`updated_by`)',
-            [json_encode($clean, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $ts, $by]);
+                [json_encode($clean, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $ts, $by]);
+        }
 
         return ['saved' => true, 'updated_at' => $ts];
     }
@@ -144,7 +151,10 @@ class Brankas
     {
         $peta = is_array($peta) ? $peta : [];
         $this->db()->transaction(function () use ($peta) {
-            $this->db()->delete('DELETE FROM `bk_akses`');
+            $core = KasKecil::onCore();
+            $t = KasKecil::t('bk_akses');
+            $now = (int) round(microtime(true) * 1000);
+            $this->db()->delete('DELETE FROM `'.$t.'`');
             foreach ($peta as $kunci => $baris) {
                 if (! is_array($baris)) {
                     continue;
@@ -156,7 +166,10 @@ class Brankas
                 foreach ($baris as $hal => $tk) {
                     $hal = substr((string) $hal, 0, 40);
                     if ($hal !== '') {
-                        $this->db()->insert('INSERT INTO `bk_akses` (`kunci`,`halaman`,`tingkat`) VALUES (?,?,?)', [$kunci, $hal, max(0, min(2, (int) $tk))]);
+                        $core
+                            ? $this->db()->insert('INSERT INTO `'.$t.'` (`id`,`legacy_id`,`kunci`,`halaman`,`tingkat`,`created_at`,`updated_at`,`version`) VALUES (?,?,?,?,?,?,?,?)',
+                                [KasKecil::ulid(), (string) KasKecil::nextId($this->db(), 'bk_akses'), $kunci, $hal, max(0, min(2, (int) $tk)), $now, $now, 1])
+                            : $this->db()->insert('INSERT INTO `bk_akses` (`kunci`,`halaman`,`tingkat`) VALUES (?,?,?)', [$kunci, $hal, max(0, min(2, (int) $tk))]);
                     }
                 }
             }
@@ -174,7 +187,14 @@ class Brankas
             throw new RuntimeException('kunci kru kosong');
         }
         if ($peran === '') {
-            $this->db()->delete('DELETE FROM `bk_peran` WHERE `kunci`=?', [$kunci]);
+            $this->db()->delete('DELETE FROM `'.KasKecil::t('bk_peran').'` WHERE `kunci`=?', [$kunci]);
+        } elseif (KasKecil::onCore()) {
+            // version first: it must read the OLD values (ADR-0003 / the recipe)
+            $now = (int) round(microtime(true) * 1000);
+            $this->db()->insert('INSERT INTO `'.KasKecil::t('bk_peran').'` (`id`,`kunci`,`peran`,`user_id`,`created_at`,`updated_at`,`version`)'
+                .' VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE `version`=`version`+1, `peran`=VALUES(`peran`),'
+                .' `user_id`=VALUES(`user_id`), `updated_at`=VALUES(`updated_at`)',
+                [KasKecil::ulid(), $kunci, $peran, KasKecil::userId($kunci), $now, $now, 1]);
         } else {
             $this->db()->insert('INSERT INTO `bk_peran` (`kunci`,`peran`) VALUES (?,?) ON DUPLICATE KEY UPDATE `peran`=VALUES(`peran`)', [$kunci, $peran]);
         }

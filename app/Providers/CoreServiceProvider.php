@@ -11,6 +11,7 @@ use App\Core\Imports\AkademiImporter;
 use App\Core\Imports\BdImporter;
 use App\Core\Imports\DummyImporter;
 use App\Core\Imports\EventImporter;
+use App\Core\Imports\FinanceImporter;
 use App\Core\Imports\HlifeImporter;
 use App\Core\Imports\HrImporter;
 use App\Core\Imports\ImporterRegistry;
@@ -34,6 +35,8 @@ final class CoreServiceProvider extends ServiceProvider
             $app->make(BdImporter::class),
             // EMS: event owns the tables the public shop also uses, so event imports before ticketing
             $app->make(EventImporter::class),
+            // finance_kk_peran.user_id is the '#<Office User id>' key resolved, so after account
+            $app->make(FinanceImporter::class),
             $app->make(HrImporter::class),
             // hlife has no user FKs and imports straight from its own legacy database
             $app->make(HlifeImporter::class),
