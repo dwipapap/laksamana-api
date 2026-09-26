@@ -91,7 +91,7 @@ hlife hr jadwal kompas konten marketing reservasi stock. event+ticketing share `
    so tests may write. Use real rows from the restored DB. One HTTP request per auth identity
    per test (guards cache the user within a test).
 7. `tools/parity/cases/<module>.json` — reads for every action + the important write paths.
-   `node tools/parity/parity.mjs <module>` must print `N/N identical`. Ignore only
+   `node tools/parity/parity.mjs <module>` should print `N/N identical` (optional, see §4 pass criteria). Ignore only
    volatile fields (ts, backend, generated ids/tokens) — never ignore real behaviour.
 8. **Milestone.** Finishing a module = commit + annotated tag (`git tag -a m<N>-<name>`) + a row in
    `docs/MILESTONES.md` + status tables in `docs/modules/README.md` and §5 below.
@@ -118,6 +118,25 @@ CI (`.github/workflows/ci.yml`) runs on every push and PR: `php -l`, Pint `--tes
 the DB-free Unit suite (`php artisan test --testsuite=Unit`), and `route:list`.
 Feature tests need the restored dumps (§0), so CI skips them explicitly until
 the anonymised set from #9 can be restored in CI.
+
+### Pass criteria — keep them LOW (owner's call, 2026-09-26)
+
+Speed beats exhaustive local verification. The bar to merge a PR is:
+**CI green** (lint, Pint, Unit, routes). Nothing else is required.
+
+- Local tests are optional. If you run any, run only the touched module's
+  folder once (`php artisan test tests/Feature/<Name>`, plus `tests/Feature/Core/<Name>*`
+  for a cutover) on the connection you changed. Seconds, not minutes.
+- **Never** run the full suite, never run it once per connection, never chunk it,
+  never re-run it after a rebase. Never run two suites at once.
+- Parity (`parity.mjs`) is optional; run it for the one module you changed, only if
+  you changed a legacy wire shape.
+- "Pest is green" in an issue means the module's own tests, not the full suite.
+- A slow test run is a bug in the harness to report, not a reason to split the run.
+
+The test harness (`tests/TestCase.php`) skips `migrate:fresh` when the migration files
+are unchanged (stamp in `test_schema_stamp`) and runs `core:import` once per process,
+so a module folder takes seconds after the first run.
 
 ### Worktrees — one per issue, verified
 
