@@ -37,10 +37,15 @@ class AkademiStats
     public function trainingStats(): array|object
     {
         $db = Modules::db('akademi');
+        $matTable = AkademiSchema::table('materials');
+        $proTable = AkademiSchema::table('progress');
+        $userTable = AkademiSchema::table('users');
+        $matId = AkademiSchema::onCore() ? '`legacy_id` AS `id`' : '`id`';
+        $userId = AkademiSchema::onCore() ? '`legacy_id` AS `id`' : '`id`';
 
         // Published materials only, with the (PLURAL) division[] from `data`.
         $mats = [];
-        foreach ($db->select('SELECT id, kind, mandatory, published, data FROM materials') as $row) {
+        foreach ($db->select("SELECT $matId, kind, mandatory, published, data FROM `$matTable`") as $row) {
             if (empty($row->published)) {
                 continue;
             }
@@ -59,7 +64,7 @@ class AkademiStats
 
         // progress[userId][materialId] = the whole data JSON (has passed/status).
         $prog = [];
-        foreach ($db->select('SELECT user_id, material_id, data FROM progress') as $row) {
+        foreach ($db->select("SELECT user_id, material_id, data FROM `$proTable`") as $row) {
             $r = json_decode((string) $row->data, true);
             if (! is_array($r)) {
                 continue;
@@ -68,7 +73,7 @@ class AkademiStats
         }
 
         $out = [];
-        foreach ($db->select('SELECT id, divisi, active FROM users') as $u) {
+        foreach ($db->select("SELECT $userId, divisi, active FROM `$userTable`") as $u) {
             if (empty($u->active)) {
                 continue; // inactive crew is excluded
             }
@@ -126,8 +131,14 @@ class AkademiStats
     {
         $db = Modules::db('akademi');
         $out = ['backend' => 'laravel', 'db' => Modules::databaseName('akademi')];
-        foreach (AkademiSchema::statsTables() as $t) {
-            $out[$t] = (int) $db->selectOne("SELECT COUNT(*) c FROM `$t`")->c;
+        // Keys stay the legacy table names on both connections (parity).
+        foreach (AkademiSchema::collections() as $name => $def) {
+            $t = AkademiSchema::table($name);
+            $out[$def['table']] = (int) $db->selectOne("SELECT COUNT(*) c FROM `$t`")->c;
+        }
+        foreach (['progress' => 'progress', 'prog_prog' => 'progProg', 'activity' => 'activity'] as $legacy => $key) {
+            $t = AkademiSchema::table($key);
+            $out[$legacy] = (int) $db->selectOne("SELECT COUNT(*) c FROM `$t`")->c;
         }
         $blob = strlen(RowSync::enc($this->state->read()));
         $out['blobChars'] = $blob;

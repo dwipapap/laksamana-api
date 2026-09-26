@@ -7,6 +7,7 @@ namespace App\Providers;
 use App\Console\Commands\CoreImportCommand;
 use App\Core\Imports\AbsensiImporter;
 use App\Core\Imports\AccountImporter;
+use App\Core\Imports\AkademiImporter;
 use App\Core\Imports\DummyImporter;
 use App\Core\Imports\ImporterRegistry;
 use App\Core\Imports\JadwalImporter;
@@ -22,6 +23,7 @@ final class CoreServiceProvider extends ServiceProvider
         $this->app->singleton(ImporterRegistry::class, fn (Application $app) => new ImporterRegistry(
             $app->make(DummyImporter::class),
             $app->make(AbsensiImporter::class),
+            $app->make(AkademiImporter::class),
             $app->make(AccountImporter::class),
             $app->make(JadwalImporter::class),
             $app->make(KontenImporter::class),

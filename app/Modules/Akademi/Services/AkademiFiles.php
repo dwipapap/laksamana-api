@@ -126,18 +126,17 @@ class AkademiFiles
         $db = Modules::db('akademi');
         // Files can be pointed at from several places, all in the form
         // "...?action=receipt&key=xxx" or {key:...} — both are caught.
-        foreach (['materials'] as $t) {
-            foreach ($db->select("SELECT data FROM `$t`") as $row) {
-                $s = (string) $row->data;
-                if (preg_match_all('/[?&]key=([^&"\'\\\\]+)/', $s, $m)) {
-                    foreach ($m[1] as $k) {
-                        $live[urldecode($k)] = true;
-                    }
+        $t = AkademiSchema::table('materials');
+        foreach ($db->select("SELECT data FROM `$t`") as $row) {
+            $s = (string) $row->data;
+            if (preg_match_all('/[?&]key=([^&"\'\\\\]+)/', $s, $m)) {
+                foreach ($m[1] as $k) {
+                    $live[urldecode($k)] = true;
                 }
-                if (preg_match_all('/"key"\s*:\s*"([^"]+)"/', $s, $m2)) {
-                    foreach ($m2[1] as $k) {
-                        $live[$k] = true;
-                    }
+            }
+            if (preg_match_all('/"key"\s*:\s*"([^"]+)"/', $s, $m2)) {
+                foreach ($m2[1] as $k) {
+                    $live[$k] = true;
                 }
             }
         }
