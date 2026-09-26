@@ -31,16 +31,18 @@ function kompasSeed(): void
             'tax' => 1000, 'oleh' => 'Seed', 'oleh_id' => KP_USER, 'dibuat' => 1790000000000, 'diubah' => 1790000000000,
             'diubah_oleh' => 'Seed'],
         ['id' => 'vseed2', 'tgl' => '2026-09-11', 'bill' => 'B-2', 'item' => 'Nasi', 'penginput' => 'Kasir B',
-            'salah' => 'Dapur', 'alasan' => 'batal', 'nominal' => 20000, 'oleh' => 'Seed', 'dibuat' => 1790000000001,
+            'salah' => 'Dapur', 'alasan' => 'batal', 'nominal' => 20000, 'subtotal' => 20000, 'service' => 0,
+            'tax' => 0, 'oleh' => 'Seed', 'oleh_id' => '', 'dibuat' => 1790000000001,
             'diubah' => 1790000000001, 'diubah_oleh' => 'Seed'],
     ]);
     $l->table('bri_mutasi')->insert([
         ['id' => 'bseed1', 'sidik' => '2026-09-10|15:46|300000|#0', 'tgl' => '2026-09-10', 'jam' => '15:46',
-            'nominal' => 300000, 'ket' => 'QRIS A', 'oleh' => 'Seed', 'oleh_id' => KP_USER,
+            'nominal' => 300000, 'ket' => 'QRIS A', 'sumber' => '', 'cara' => '', 'catatan' => '',
+            'oleh' => 'Seed', 'oleh_id' => KP_USER,
             'dibuat' => 1790000000000, 'diubah' => 1790000000000],
         ['id' => 'bseed2', 'sidik' => '2026-09-11|16:00|500000|#0', 'tgl' => '2026-09-11', 'jam' => '16:00',
             'nominal' => 500000, 'ket' => 'QRIS B', 'sumber' => 'manual', 'cara' => 'bukan', 'catatan' => 'sewa',
-            'oleh' => 'Seed', 'dibuat' => 1790000000001, 'diubah' => 1790000000001],
+            'oleh' => 'Seed', 'oleh_id' => '', 'dibuat' => 1790000000001, 'diubah' => 1790000000001],
     ]);
     $l->table('bri_dp_abai')->insert(['dp_id' => 'dp-seed', 'res_id' => 'r-1', 'nama' => 'Tamu A', 'tgl' => '2026-09-12',
         'nominal' => 100000, 'alasan' => 'bukan BRI', 'oleh' => 'Seed', 'abai_at' => 1790000000002]);

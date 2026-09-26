@@ -41,6 +41,9 @@ function kpCore(string $table, string|int $legacyId): ?object
 
 beforeEach(function () {
     kompasCoreSeed();
+    // the account import fills core.user, which the '#<user id>' keys link to
+    // (independent of which connection the account Modul itself is on)
+    $this->artisan('core:import', ['module' => 'account'])->assertSuccessful();
     $this->artisan('core:import', ['module' => 'kompas'])->assertSuccessful();
     config(['laksamana.modules.kompas.connection' => 'core']);
 });
@@ -84,7 +87,9 @@ it('legacy void writes, cancels and lists on core, never on legacy', function ()
     expect((int) kpCore('kompas_void_log', $id)->version)->toBe(2);
 
     $list = kpCorePost(['action' => 'voidList', 'dari' => '2026-09-01', 'sampai' => '2026-09-30'])->assertOk();
-    expect($list->json('data.total'))->toBe(2)->and($list->json('data.setting.tax'))->toBe(10.0);
+    // the percentage is a JSON number: a whole rate may come back as 10 rather than
+    // 10.0 (the wire value is the same; parity compares numerically), so compare as float
+    expect($list->json('data.total'))->toBe(2)->and((float) $list->json('data.setting.tax'))->toBe(10.0);
     // the wire keeps the LEGACY id, never the ULID (parity ignores these paths)
     $ids = array_column($list->json('data.baris'), 'id');
     expect($ids)->toContain('vseed1')->toContain($id)
@@ -118,7 +123,7 @@ it('legacy void writes, cancels and lists on core, never on legacy', function ()
         ->and($bri->json('data.n'))->toBe(1);
 });
 
-it('v1 writes the targets, a void and the settings document on core', function () {
+it('v1 writes the targets and a void on core', function () {
     $token = loginAs(officeUser('u-novi'));
     $this->withToken($token)->putJson('/api/v1/kompas/targets', ['companyMonthlyTarget' => '1.000.000'])
         ->assertOk()->assertJsonPath('data.saved', true);
@@ -127,14 +132,19 @@ it('v1 writes the targets, a void and the settings document on core', function (
     $id = $this->withToken($token)->postJson('/api/v1/kompas/voids', ['tgl' => '2026-09-12', 'bill' => 'B-9', 'item' => 'Kopi',
         'penginput' => 'A', 'salah' => 'B', 'alasan' => 'x', 'subtotal' => 1000])->assertCreated()->json('data.id');
     expect((int) kpCore('kompas_void_log', $id)->subtotal)->toBe(1000);
+});
 
-    // the percentages live in kompas_pengaturan as the `void` document
+it('v1 lets a module admin write the void settings on core', function () {
+    // one identity per test (the guard resolves it once, so a second loginAs is ignored)
     $admin = loginAs(officeUser('u-wandi'));
     $v = $this->withToken($admin)->getJson('/api/v1/kompas/voids/settings')->assertOk()->json('meta.version');
-    $this->withToken($admin)->putJson('/api/v1/kompas/voids/settings?version='.$v, ['tax' => 11, 'service' => 4])
-        ->assertOk()->assertJsonPath('data.setting.tax', 11.0);
-    expect(json_decode(DB::connection('core')->table('kompas_pengaturan')->where('k', 'void')->value('v'), true))
-        ->toMatchArray(['tax_persen' => 11.0, 'service_persen' => 4.0, 'oleh' => officeUser('u-wandi')['name']]);
+    $res = $this->withToken($admin)->putJson('/api/v1/kompas/voids/settings?version='.$v, ['tax' => 11, 'service' => 4])
+        ->assertOk();
+    expect((float) $res->json('data.setting.tax'))->toBe(11.0); // see the voidList note: compare numerically
+    // the percentages live in kompas_pengaturan as the `void` document
+    $doc = json_decode(DB::connection('core')->table('kompas_pengaturan')->where('k', 'void')->value('v'), true);
+    expect((float) $doc['tax_persen'])->toBe(11.0)->and((float) $doc['service_persen'])->toBe(4.0)
+        ->and($doc['oleh'])->toBe(officeUser('u-wandi')['name']);
 });
 
 it('keeps the cross-module agenda reading the other Moduls through their services', function () {
