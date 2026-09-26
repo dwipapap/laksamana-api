@@ -4,6 +4,7 @@ namespace Tests;
 
 use App\Auth\AccountRepository;
 use App\Modules\Jadwal\Services\JadwalService;
+use App\Modules\Marketing\Services\MarketingSchema;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\Artisan;
@@ -38,7 +39,8 @@ abstract class TestCase extends BaseTestCase
      * With identity on core (DB_ACCOUNT_CONNECTION=core, #44) the freshly
      * migrated test core is filled from the restored legacy DBs once per run;
      * with jadwal on core (#47) its tables follow, after the account import
-     * the user FKs point at.
+     * the user FKs point at. Marketing (#49) has no user FKs and imports
+     * straight from its own legacy database.
      */
     protected function afterRefreshingDatabase(): void
     {
@@ -47,6 +49,9 @@ abstract class TestCase extends BaseTestCase
         }
         if (JadwalService::onCore()) {
             Artisan::call('core:import', ['module' => 'jadwal']);
+        }
+        if (MarketingSchema::onCore()) {
+            Artisan::call('core:import', ['module' => 'marketing']);
         }
     }
 

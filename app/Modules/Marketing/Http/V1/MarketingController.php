@@ -6,6 +6,7 @@ use App\Auth\OfficeAccess;
 use App\Modules\Marketing\Services\MarketingFiles;
 use App\Modules\Marketing\Services\MarketingQueries;
 use App\Modules\Marketing\Services\MarketingRecords;
+use App\Modules\Marketing\Services\MarketingSchema;
 use App\Modules\Marketing\Services\MarketingState;
 use App\Modules\Marketing\Services\RecordConflict;
 use App\Support\Api\ApiResponse;
@@ -227,12 +228,14 @@ class MarketingController
     {
         $d = $r->validate(['refId' => ['nullable', 'string'], 'limit' => ['nullable', 'integer', 'min:1', 'max:5000']]);
         $args = [];
-        $sql = 'SELECT data FROM activities';
+        $t = MarketingSchema::table('activities');
+        $id = MarketingSchema::idCol();
+        $sql = "SELECT data FROM `$t`";
         if (! empty($d['refId'])) {
             $sql .= ' WHERE ref_id = ?';
             $args[] = $d['refId'];
         }
-        $sql .= ' ORDER BY at_time DESC, id DESC LIMIT '.(int) ($d['limit'] ?? 200);
+        $sql .= " ORDER BY at_time DESC, `$id` DESC LIMIT ".(int) ($d['limit'] ?? 200);
         $rows = array_values(array_filter(array_map(fn ($x) => json_decode((string) $x->data, true),
             Modules::db('marketing')->select($sql, $args)), 'is_array'));
 

@@ -59,7 +59,27 @@ class MarketingRecords
         $inSettings = in_array($key, MarketingSchema::settingsCollections(), true);
 
         return ['key' => $key, 'prefix' => $prefix, 'label' => $label, 'inSettings' => $inSettings,
-            'def' => $inSettings ? null : MarketingSchema::collections()[$key]];
+            'def' => $inSettings ? null : MarketingSchema::defs()[$key]];
+    }
+
+    /** All rows of a settings-held collection (vip/design-requests): settings JSON or core table. */
+    private function settingsList(string $key): array
+    {
+        $db = $this->db();
+        if (MarketingSchema::onCore()) {
+            $t = MarketingSchema::table($key);
+            $out = [];
+            foreach ($db->select("SELECT data FROM `$t` ORDER BY urutan") as $row) {
+                $d = json_decode((string) $row->data, true);
+                if (is_array($d)) {
+                    $out[] = $d;
+                }
+            }
+
+            return $out;
+        }
+
+        return RowSync::settingsRows($db, $key);
     }
 
     public static function nowMs(): int
@@ -76,7 +96,7 @@ class MarketingRecords
     public function list(string $resource, array $f, int $page, int $perPage): array
     {
         $r = self::resource($resource);
-        $rows = $r['inSettings'] ? RowSync::settingsRows($this->db(), $r['key']) : $this->tableRows($r['def'], $f);
+        $rows = $r['inSettings'] ? $this->settingsList($r['key']) : $this->tableRows($r['def'], $f);
         $rows = array_values(array_filter($rows, fn ($x) => is_array($x) && $this->matches($x, $f)));
         $total = count($rows);
 
@@ -109,7 +129,7 @@ class MarketingRecords
             $where[] = '`updated_at` > ?';
             $args[] = (int) $f['updatedSince'];
         }
-        $order = ! empty($def['created']) ? 'created_at DESC, id DESC' : 'id ASC';
+        $order = ! empty($def['created']) ? MarketingSchema::createdOrder() : MarketingSchema::idOrder();
         $sql = "SELECT data FROM `{$def['table']}`".($where ? ' WHERE '.implode(' AND ', $where) : '')." ORDER BY $order";
         $out = [];
         foreach ($this->db()->select($sql, $args) as $row) {
@@ -148,7 +168,7 @@ class MarketingRecords
     {
         $r = self::resource($resource);
         if ($r['inSettings']) {
-            foreach (RowSync::settingsRows($this->db(), $r['key']) as $row) {
+            foreach ($this->settingsList($r['key']) as $row) {
                 if (is_array($row) && (string) ($row['id'] ?? '') === $id) {
                     return $row;
                 }
@@ -156,7 +176,8 @@ class MarketingRecords
 
             return null;
         }
-        $row = $this->db()->selectOne("SELECT data FROM `{$r['def']['table']}` WHERE id = ?", [$id]);
+        $idCol = MarketingSchema::idCol();
+        $row = $this->db()->selectOne("SELECT data FROM `{$r['def']['table']}` WHERE `$idCol` = ?", [$id]);
         $d = $row ? json_decode((string) $row->data, true) : null;
 
         return is_array($d) ? $d : null;
@@ -237,11 +258,17 @@ class MarketingRecords
             $db = $this->db();
             $db->transaction(function () use ($db, $r, $id) {
                 if ($r['inSettings']) {
-                    $rows = array_values(array_filter(RowSync::settingsRows($db, $r['key']),
-                        fn ($x) => ! (is_array($x) && (string) ($x['id'] ?? '') === $id)));
-                    RowSync::putSetting($db, 'extra:'.$r['key'], $rows);
+                    if (MarketingSchema::onCore()) {
+                        $t = MarketingSchema::table($r['key']);
+                        $db->delete("DELETE FROM `$t` WHERE `legacy_id` = ?", [$id]);
+                    } else {
+                        $rows = array_values(array_filter(RowSync::settingsRows($db, $r['key']),
+                            fn ($x) => ! (is_array($x) && (string) ($x['id'] ?? '') === $id)));
+                        RowSync::putSetting($db, 'extra:'.$r['key'], $rows);
+                    }
                 } else {
-                    $db->delete("DELETE FROM `{$r['def']['table']}` WHERE id = ?", [$id]);
+                    $idCol = MarketingSchema::idCol();
+                    $db->delete("DELETE FROM `{$r['def']['table']}` WHERE `$idCol` = ?", [$id]);
                 }
             });
             $this->log($r, $id, $cur, 'dihapus', $by);
@@ -256,7 +283,11 @@ class MarketingRecords
         $versi = [];
         $db->transaction(function () use ($db, $r, $row, &$bentrok, &$versi) {
             if ($r['inSettings']) {
-                RowSync::upsertSettingsCollection($db, $r['key'], [$row], MarketingSchema::SYNC, $bentrok, $versi, 0);
+                if (MarketingSchema::onCore()) {
+                    RowSync::upsertCollection($db, MarketingSchema::settingsDef($r['key']), [$row], $r['key'], MarketingSchema::SYNC, $bentrok, $versi);
+                } else {
+                    RowSync::upsertSettingsCollection($db, $r['key'], [$row], MarketingSchema::SYNC, $bentrok, $versi, 0);
+                }
             } else {
                 RowSync::upsertCollection($db, $r['def'], [$row], $r['key'], ['conflict' => false], $bentrok, $versi);
             }
@@ -291,7 +322,8 @@ class MarketingRecords
     /** @return array{value:mixed,version:string} version = sha1 of the stored JSON */
     public function document(string $doc): array
     {
-        $row = $this->db()->selectOne('SELECT v FROM settings WHERE k = ?', [self::documentKey($doc)]);
+        $t = MarketingSchema::table('settings');
+        $row = $this->db()->selectOne("SELECT v FROM `$t` WHERE k = ?", [self::documentKey($doc)]);
         $raw = $row ? (string) $row->v : 'null';
 
         return ['value' => json_decode($raw, true), 'version' => sha1($raw)];
@@ -304,7 +336,8 @@ class MarketingRecords
             if ($cur['version'] !== $baseVersion) {
                 throw new RecordConflict('conflict', ['value' => $cur['value'], 'version' => $cur['version']]);
             }
-            RowSync::putSetting($this->db(), self::documentKey($doc), $value);
+            RowSync::putSetting($this->db(), self::documentKey($doc), $value,
+                MarketingSchema::table('settings'), MarketingSchema::onCore());
 
             return $this->document($doc);
         });

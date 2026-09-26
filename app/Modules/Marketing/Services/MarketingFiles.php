@@ -225,7 +225,8 @@ class MarketingFiles
     public function keysInUse(): array
     {
         $live = [];
-        foreach (Modules::db('marketing')->select('SELECT data FROM events') as $row) {
+        $t = MarketingSchema::table('events');
+        foreach (Modules::db('marketing')->select("SELECT data FROM `$t`") as $row) {
             $e = json_decode((string) $row->data, true);
             if (! is_array($e)) {
                 continue;
