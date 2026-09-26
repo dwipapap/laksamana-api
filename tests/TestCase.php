@@ -3,6 +3,7 @@
 namespace Tests;
 
 use App\Auth\AccountRepository;
+use App\Modules\Absensi\Services\AbsensiService;
 use App\Modules\Jadwal\Services\JadwalService;
 use App\Modules\Marketing\Services\MarketingSchema;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -40,7 +41,8 @@ abstract class TestCase extends BaseTestCase
      * migrated test core is filled from the restored legacy DBs once per run;
      * with jadwal on core (#47) its tables follow, after the account import
      * the user FKs point at. Marketing (#49) has no user FKs and imports
-     * straight from its own legacy database.
+     * straight from its own legacy database; absensi (#53) likewise, while
+     * its shift lookups follow whatever connection jadwal/dw use.
      */
     protected function afterRefreshingDatabase(): void
     {
@@ -52,6 +54,9 @@ abstract class TestCase extends BaseTestCase
         }
         if (MarketingSchema::onCore()) {
             Artisan::call('core:import', ['module' => 'marketing']);
+        }
+        if (AbsensiService::onCore()) {
+            Artisan::call('core:import', ['module' => 'absensi']);
         }
     }
 
