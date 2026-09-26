@@ -5,6 +5,7 @@ namespace App\Support;
 use DateTime;
 use DateTimeZone;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Support\Str;
 use Throwable;
 
 /**
@@ -21,6 +22,12 @@ use Throwable;
  * ─── Collection definition ($def) ────────────────────────────────────────
  *   'table'   => 'events'
  *   'id'      => 'id'                        id column (and app field)
+ *   'ulid'    => true                        core cutover: ULID PK `id`, the
+ *                                            legacy id lives in def['id'] (marketing #49)
+ *   'versioned' => true                      core cutover: maintain a `version`
+ *                                            column (1 on insert, +1 on every write)
+ *   'ordered' => true                        core cutover: insert-only `urutan`
+ *                                            keeps the legacy JSON-array order
  *   'created' => true                        has created_at (from data.createdAt, never overwritten)
  *   'created_field' => 'created'             app field feeding created_at (default createdAt; event orders)
  *   'cols'    => ['nama' => ['nama','str'], 'tanggal' => ['tanggal','date'], …]
@@ -219,6 +226,9 @@ final class RowSync
         $idCol = $def['id'] ?? 'id';
         $cols = $def['cols'] ?? [];
         $hasCreated = ! empty($def['created']);
+        $useUlid = ! empty($def['ulid']);
+        $versioned = ! empty($def['versioned']);
+        $ordered = ! empty($def['ordered']);
         $conflict = ! empty($opt['conflict']);
         $useSidik = ! empty($opt['sidik']);
         $capBump = ! empty($opt['capBump']);
@@ -247,13 +257,30 @@ final class RowSync
             $names[] = 'created_at';
         }
         $names[] = 'data';
+        if ($versioned) {
+            $names[] = 'version';
+        }
+        if ($ordered) {
+            $names[] = 'urutan';
+        }
+        if ($useUlid) {
+            array_unshift($names, 'id');
+        }
         $upd = [];
         foreach (array_merge(array_keys($cols), ['data']) as $n) {
             $upd[] = "`$n` = IF(VALUES(updated_at) >= updated_at, VALUES(`$n`), `$n`)";
         }
         $upd[] = 'updated_at = IF(VALUES(updated_at) >= updated_at, VALUES(updated_at), updated_at)';
+        if ($versioned) {
+            // Internal revision count only (never on the wire: compat and v1
+            // version by the millisecond stamp). Bumped on every executed
+            // write, even when the guarded columns keep their older values.
+            $upd[] = '`version` = `version` + 1';
+        }
         $sql = "INSERT INTO `$table` (`".implode('`,`', $names).'`) VALUES ('
             .implode(',', array_fill(0, count($names), '?')).') ON DUPLICATE KEY UPDATE '.implode(', ', $upd);
+
+        $maxUrut = null;
 
         $ids = [];
         foreach ($rows as $r) {
@@ -308,6 +335,26 @@ final class RowSync
                 $args[] = self::ms($simpan[$createdField] ?? 0);
             }
             $args[] = self::enc($simpan);
+            if ($versioned) {
+                $args[] = 1;
+            }
+            if ($ordered) {
+                // Insert-only: existing rows keep their list position, exactly
+                // like the legacy JSON array (stored order, newcomers appended).
+                if (! isset($verServer[$id])) {
+                    if ($maxUrut === null) {
+                        $maxUrut = (int) ($db->selectOne("SELECT COALESCE(MAX(`urutan`), 0) AS m FROM `$table`")->m ?? 0);
+                    }
+                    $args[] = ++$maxUrut;
+                } else {
+                    // ON DUPLICATE needs a value for every column; the guarded
+                    // update below keeps the stored one.
+                    $args[] = 0;
+                }
+            }
+            if ($useUlid) {
+                array_unshift($args, strtolower((string) Str::ulid()));
+            }
             $db->statement($sql, $args);
         }
 
@@ -355,17 +402,25 @@ final class RowSync
 
     // ───────────────────────────── collections stored inside `settings` ──
 
-    public static function settingsRows(ConnectionInterface $db, string $name, string $prefix = 'extra:'): array
+    public static function settingsRows(ConnectionInterface $db, string $name, string $prefix = 'extra:', string $table = 'settings'): array
     {
-        $v = $db->selectOne('SELECT v FROM settings WHERE k = ?', [$prefix.$name]);
+        $v = $db->selectOne("SELECT v FROM `$table` WHERE k = ?", [$prefix.$name]);
         $d = $v ? json_decode((string) $v->v, true) : null;
 
         return is_array($d) ? $d : [];
     }
 
-    public static function putSetting(ConnectionInterface $db, string $k, mixed $v): void
+    public static function putSetting(ConnectionInterface $db, string $k, mixed $v, string $table = 'settings', bool $core = false): void
     {
-        $db->statement('INSERT INTO settings (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)', [$k, self::enc($v)]);
+        if (! $core) {
+            $db->statement('INSERT INTO settings (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)', [$k, self::enc($v)]);
+
+            return;
+        }
+        $db->statement(
+            "INSERT INTO `$table` (id, k, v, version) VALUES (?, ?, ?, 1) ON DUPLICATE KEY UPDATE v = VALUES(v), `version` = `version` + 1",
+            [strtolower((string) Str::ulid()), $k, self::enc($v)]
+        );
     }
 
     /**

@@ -27,6 +27,46 @@ class MarketingQueries
         return Modules::db('marketing');
     }
 
+    /** Ordered `data` rows of a settings-held collection (settings JSON or core child table). */
+    private function listedRows(string $key): array
+    {
+        $db = $this->db();
+        if (MarketingSchema::onCore()) {
+            $t = MarketingSchema::table($key);
+            $out = [];
+            foreach ($db->select("SELECT data FROM `$t` ORDER BY urutan") as $row) {
+                $d = json_decode((string) $row->data, true);
+                if (is_array($d)) {
+                    $out[] = $d;
+                }
+            }
+
+            return $out;
+        }
+
+        return RowSync::settingsRows($db, $key);
+    }
+
+    /** Physical table for a legacy table name on the current connection. */
+    private function phys(string $legacy): string
+    {
+        if (! MarketingSchema::onCore()) {
+            return $legacy;
+        }
+        foreach (MarketingSchema::collections() as $key => $def) {
+            if ($def['table'] === $legacy && isset(MarketingSchema::CORE_TABLES[$key])) {
+                return MarketingSchema::CORE_TABLES[$key];
+            }
+        }
+
+        return $legacy;
+    }
+
+    private function idCol(): string
+    {
+        return MarketingSchema::idCol();
+    }
+
     public function identity(): array
     {
         return [
@@ -47,9 +87,17 @@ class MarketingQueries
             throw new RuntimeException('tanggal tidak sah: '.$tgl);
         }
         $batas = date('Y-m-d', strtotime($tgl.' 00:00:00 -60 days'));
+        $ev = $this->phys('events');
+        $us = $this->phys('users');
+        $id = $this->idCol();
+        // On core the wire keeps legacy ids: join on legacy_id, select it as the id.
+        $sel = MarketingSchema::onCore()
+            ? "e.`legacy_id` AS id, e.nama, e.tanggal, e.status, e.pax, e.mkt_pic, e.data, u.name AS pic_name
+               FROM `$ev` e LEFT JOIN `$us` u ON u.`legacy_id` = e.mkt_pic"
+            : "e.id, e.nama, e.tanggal, e.status, e.pax, e.mkt_pic, e.data, u.name AS pic_name
+               FROM `$ev` e LEFT JOIN `$us` u ON u.id = e.mkt_pic";
         $rows = $this->db()->select(
-            "SELECT e.id, e.nama, e.tanggal, e.status, e.pax, e.mkt_pic, e.data, u.name AS pic_name
-               FROM events e LEFT JOIN users u ON u.id = e.mkt_pic
+            "SELECT $sel
               WHERE e.status IN ('Deal', 'Event Done') AND e.tanggal <= ? AND e.tanggal >= ?
               ORDER BY e.nama", [$tgl, $batas]);
         $out = [];
@@ -78,7 +126,7 @@ class MarketingQueries
                 'detail' => isset($d['detail']) && is_array($d['detail']) ? $d['detail'] : [],
             ];
         }
-        $set = RowSync::settingsRows($this->db(), 'settings', '');
+        $set = RowSync::settingsRows($this->db(), 'settings', '', MarketingSchema::table('settings'));
 
         return [
             'events' => $out,
@@ -94,7 +142,7 @@ class MarketingQueries
     public function vipOn(string $tgl): array
     {
         $pick = [];
-        foreach (RowSync::settingsRows($this->db(), 'vip') as $v) {
+        foreach ($this->listedRows('vip') as $v) {
             if (! is_array($v) || RowSync::tanggal($v['tanggal'] ?? '') !== $tgl || ! empty($v['batalAt'])
                 || ($v['jenis'] ?? '') !== 'Assisted') {
                 continue;
@@ -145,9 +193,11 @@ class MarketingQueries
         if (! $ids) {
             return [];
         }
+        $t = $this->phys($table);
+        $id = $this->idCol();
         $ph = implode(',', array_fill(0, count($ids), '?'));
         $map = [];
-        foreach ($this->db()->select("SELECT id, `$col` AS v FROM `$table` WHERE id IN ($ph)", array_values($ids)) as $r) {
+        foreach ($this->db()->select("SELECT `$id` AS id, `$col` AS v FROM `$t` WHERE `$id` IN ($ph)", array_values($ids)) as $r) {
             $map[(string) $r->id] = (string) $r->v;
         }
 
@@ -192,10 +242,17 @@ class MarketingQueries
         $luarMin = '';
         $luarMax = '';
 
+        $ev = $this->phys('events');
+        $us = $this->phys('users');
+        $cli = $this->phys('clients');
+        // On core the wire keeps legacy ids (LEFT JOINs on legacy_id).
+        $join = MarketingSchema::onCore()
+            ? "FROM `$ev` e LEFT JOIN `$cli` c ON c.`legacy_id` = e.client_id LEFT JOIN `$us` u ON u.`legacy_id` = e.mkt_pic"
+            : "FROM `$ev` e LEFT JOIN `$cli` c ON c.id = e.client_id LEFT JOIN `$us` u ON u.id = e.mkt_pic";
+        $eid = MarketingSchema::onCore() ? 'e.`legacy_id` AS id' : 'e.id';
         $rows = $db->select(
-            'SELECT e.id, e.nama, e.jenis, e.tanggal, e.status, e.data, c.nama AS client_nama, u.name AS pic_name
-               FROM events e LEFT JOIN clients c ON c.id = e.client_id LEFT JOIN users u ON u.id = e.mkt_pic
-              WHERE e.tanggal BETWEEN ? AND ? ORDER BY e.tanggal DESC', [$dari, $sampai]);
+            "SELECT $eid, e.nama, e.jenis, e.tanggal, e.status, e.data, c.nama AS client_nama, u.name AS pic_name
+               $join WHERE e.tanggal BETWEEN ? AND ? ORDER BY e.tanggal DESC", [$dari, $sampai]);
         foreach ($rows as $r) {
             $d = json_decode((string) ($r->data ?? ''), true);
             $pays = is_array($d) && isset($d['payments']) && is_array($d['payments']) ? $d['payments'] : [];
@@ -223,7 +280,7 @@ class MarketingQueries
 
         $vipLocked = 0;
         $vipLockedRp = 0;
-        $allVip = json_decode((string) ($db->selectOne("SELECT v FROM settings WHERE k = 'extra:vip'")->v ?? ''), true);
+        $allVip = $this->listedRows('vip');
         if (is_array($allVip)) {
             foreach ($allVip as $v) {
                 if (! is_array($v) || ! empty($v['batalAt'])) {
@@ -283,7 +340,7 @@ class MarketingQueries
             }
         }
 
-        foreach ($db->select('SELECT e.tanggal, e.data FROM events e WHERE e.tanggal NOT BETWEEN ? AND ?', [$dari, $sampai]) as $r) {
+        foreach ($db->select("SELECT e.tanggal, e.data FROM `$ev` e WHERE e.tanggal NOT BETWEEN ? AND ?", [$dari, $sampai]) as $r) {
             $d = json_decode((string) ($r->data ?? ''), true);
             $pays = is_array($d) && isset($d['payments']) && is_array($d['payments']) ? $d['payments'] : [];
             $tgl = (string) $r->tanggal;
@@ -322,7 +379,8 @@ class MarketingQueries
 
     private function blob(string $k): array
     {
-        $v = $this->db()->selectOne('SELECT v FROM settings WHERE k = ?', [$k]);
+        $t = MarketingSchema::table('settings');
+        $v = $this->db()->selectOne("SELECT v FROM `$t` WHERE k = ?", [$k]);
         $d = $v ? json_decode((string) $v->v, true) : null;
 
         return is_array($d) ? $d : [];
@@ -333,7 +391,7 @@ class MarketingQueries
     {
         $prog = $this->blob('extra:designreqprog');
         $out = [];
-        foreach ($this->blob('extra:designreqs') as $r) {
+        foreach ($this->listedRows('designreqs') as $r) {
             if (! is_array($r) || empty($r['id']) || ! empty($r['batalAt'])) {
                 continue;
             }
@@ -367,7 +425,7 @@ class MarketingQueries
         if ($id === '') {
             throw new RuntimeException('id permintaan kosong');
         }
-        foreach ($this->blob('extra:designreqs') as $r) {
+        foreach ($this->listedRows('designreqs') as $r) {
             if (! is_array($r) || (string) ($r['id'] ?? '') !== $id) {
                 continue;
             }
@@ -409,7 +467,8 @@ class MarketingQueries
             if (! $clean['brands'] && ! $clean['pics'] && ! $clean['platforms']) {
                 return ['disimpan' => false, 'sebab' => 'titipan kosong diabaikan'];
             }
-            RowSync::putSetting($this->db(), 'extra:designreqopsi', $clean);
+            RowSync::putSetting($this->db(), 'extra:designreqopsi', $clean,
+                MarketingSchema::table('settings'), MarketingSchema::onCore());
 
             return ['disimpan' => true, 'brands' => count($clean['brands']), 'pics' => count($clean['pics']), 'platforms' => count($clean['platforms'])];
         });
@@ -426,7 +485,8 @@ class MarketingQueries
             $status = $status === 'done' ? 'done' : 'todo';
             $prog = $this->blob('extra:designreqprog');
             $prog[$id] = ['status' => $status, 'picNama' => (string) $picNama, 'at' => gmdate('c')];
-            RowSync::putSetting($this->db(), 'extra:designreqprog', $prog);
+            RowSync::putSetting($this->db(), 'extra:designreqprog', $prog,
+                MarketingSchema::table('settings'), MarketingSchema::onCore());
 
             return ['id' => $id, 'status' => $status];
         });
@@ -437,9 +497,13 @@ class MarketingQueries
     public function stats(): array
     {
         $out = array_merge(['backend' => 'laravel'], $this->identity());
-        foreach (MarketingSchema::statsTables() as $t) {
-            $out[$t] = (int) $this->db()->selectOne("SELECT COUNT(*) c FROM `$t`")->c;
+        // Keys stay the legacy table names on both connections (parity).
+        foreach (MarketingSchema::collections() as $name => $def) {
+            $t = MarketingSchema::table($name);
+            $out[$def['table']] = (int) $this->db()->selectOne("SELECT COUNT(*) c FROM `$t`")->c;
         }
+        $act = MarketingSchema::table('activities');
+        $out['activities'] = (int) $this->db()->selectOne("SELECT COUNT(*) c FROM `$act`")->c;
         $blob = strlen(RowSync::enc($this->state->read()));
         $out['blobChars'] = $blob;
         $out['blobMB'] = round($blob / 1048576, 3);
