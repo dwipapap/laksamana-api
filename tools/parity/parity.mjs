@@ -191,8 +191,13 @@ function diff(a, b, ignore, p = '', out = []) {
   if (p && ignore.some(ig => matches(p.slice(1), ig))) return out;
   if (a === b) return out;
   if (p && Array.isArray(a) && Array.isArray(b) && UNORDERED.some(u => matches(p.slice(1), u))) {
-    a = [...a].sort((x, y) => canon(x) < canon(y) ? -1 : 1);
-    b = [...b].sort((x, y) => canon(x) < canon(y) ? -1 : 1);
+    // sort on each element WITHOUT its ignored (volatile) fields, or random ids decide the order
+    const strip = (v, at) => (v && typeof v === 'object')
+      ? Object.fromEntries(Object.entries(v).filter(([k]) => !ignore.some(ig => matches(`${at}.${k}`, ig))).map(([k, x]) => [k, strip(x, `${at}.${k}`)]))
+      : v;
+    const key = x => canon(strip(x, `${p.slice(1)}.0`));
+    a = [...a].sort((x, y) => key(x) < key(y) ? -1 : 1);
+    b = [...b].sort((x, y) => key(x) < key(y) ? -1 : 1);
   }
   const ta = Array.isArray(a) ? 'array' : typeof a, tb = Array.isArray(b) ? 'array' : typeof b;
   if (ta !== tb || a === null || b === null || ta !== 'object' && ta !== 'array') {
