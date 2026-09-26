@@ -4,6 +4,7 @@ namespace App\Modules\Hr\Services;
 
 use App\Support\Modules;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Support\Str;
 use stdClass;
 
 /**
@@ -23,6 +24,11 @@ use stdClass;
  * live database. Their presence is checked read-only; without them the
  * attendance map is kept in the `extra:attendance` setting, which is where
  * production stores it today (see attendanceTables()).
+ *
+ * Core (#63, DB_HR_CONNECTION=core): the same SQL runs on the hr_* tables of
+ * `core` (t()), rows keyed by `legacy_id` (idCol()), the attendance tables
+ * always present, and `hr_meta.version` holding the legacy rev. The wire
+ * shapes are identical. Mapping: docs/db/hr.md.
  */
 class HrState
 {
@@ -84,6 +90,33 @@ class HrState
         return Modules::db('hr');
     }
 
+    /** HR cut over (#63): the Modul reads and writes the hr_* tables of core. */
+    public static function onCore(): bool
+    {
+        return Modules::connectionName('hr') === 'core';
+    }
+
+    /** Physical table for a legacy table name on the current connection. */
+    public static function t(string $table): string
+    {
+        if (! self::onCore()) {
+            return $table;
+        }
+
+        return $table === 'settings' ? 'hr_pengaturan' : 'hr_'.$table;
+    }
+
+    /** Record id column: the legacy id, or `legacy_id` on core. */
+    public static function idCol(): string
+    {
+        return self::onCore() ? 'legacy_id' : 'id';
+    }
+
+    private static function ulid(): string
+    {
+        return strtolower((string) Str::ulid());
+    }
+
     public static function enc(mixed $v): string
     {
         return json_encode($v, JSON_UNESCAPED_UNICODE);
@@ -98,6 +131,10 @@ class HrState
     /** Whether the attendance tables exist (read-only information_schema check, cached per request). */
     public function attendanceTables(): bool
     {
+        if (self::onCore()) {
+            return true;
+        }
+
         return $this->attendance ??= (int) $this->db()->selectOne(
             "SELECT COUNT(*) c FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name IN ('attendance_months','attendance_days')"
         )->c === 2;
@@ -118,14 +155,14 @@ class HrState
         $out['audit'] = array_map(fn ($r) => (object) [
             'id' => $r->id, 'at' => $r->at, 'userId' => $r->user_id,
             'userName' => $r->user_name, 'action' => $r->action, 'detail' => $r->detail ?? '',
-        ], $db->select('SELECT `id`, `at`, `user_id`, `user_name`, `action`, `detail` FROM `audit` ORDER BY `at` DESC, `id` DESC'));
+        ], $db->select('SELECT `'.self::idCol().'` AS `id`, `at`, `user_id`, `user_name`, `action`, `detail` FROM `'.self::t('audit').'` ORDER BY `at` DESC, `'.self::idCol().'` DESC'));
 
         $out['kpiActuals'] = $this->kpiActuals();
         $out['monthlyInputs'] = $this->monthlyInputs();
         $out['attendance'] = $this->attendance();
 
         $set = [];
-        foreach ($db->select('SELECT `k`, `v` FROM `settings`') as $r) {
+        foreach ($db->select('SELECT `k`, `v` FROM `'.self::t('settings').'` ORDER BY `k`') as $r) {
             $v = json_decode($r->v);
             if (str_starts_with($r->k, 'extra:')) {
                 $out[substr($r->k, 6)] = $v;   // unknown top-level key, kept so it is not lost
@@ -148,7 +185,7 @@ class HrState
     public function records(string $table): array
     {
         $list = [];
-        foreach ($this->db()->select("SELECT `data` FROM `$table`") as $r) {
+        foreach ($this->db()->select('SELECT `data` FROM `'.self::t($table).'` ORDER BY `'.self::idCol().'`') as $r) {
             $o = json_decode($r->data);
             if (is_object($o)) {
                 $list[] = $o;
@@ -162,7 +199,7 @@ class HrState
     public function kpiActuals(): stdClass
     {
         $ka = [];
-        foreach ($this->db()->select('SELECT `div_id`, `bulan`, `item_id`, `nilai` FROM `kpi_actuals`') as $r) {
+        foreach ($this->db()->select('SELECT `div_id`, `bulan`, `item_id`, `nilai` FROM `'.self::t('kpi_actuals').'` ORDER BY `div_id`, `bulan`, `item_id`') as $r) {
             $ka[$r->div_id][$r->bulan][$r->item_id] = $r->nilai === null ? null : (float) $r->nilai;
         }
         foreach ($ka as $d => $perMonth) {
@@ -179,7 +216,7 @@ class HrState
     public function monthlyInputs(): stdClass
     {
         $mi = [];
-        foreach ($this->db()->select('SELECT `emp_id`, `bulan`, `data` FROM `monthly_inputs`') as $r) {
+        foreach ($this->db()->select('SELECT `emp_id`, `bulan`, `data` FROM `'.self::t('monthly_inputs').'` ORDER BY `emp_id`, `bulan`') as $r) {
             $o = json_decode($r->data);
             $mi[$r->emp_id][$r->bulan] = is_object($o) ? $o : (object) [];
         }
@@ -201,7 +238,7 @@ class HrState
             return $map instanceof stdClass ? $map : new stdClass;
         }
         $att = [];
-        foreach ($this->db()->select('SELECT `bulan`, `data`, `imported_at`, `imported_by` FROM `attendance_months`') as $r) {
+        foreach ($this->db()->select('SELECT `bulan`, `data`, `imported_at`, `imported_by` FROM `'.self::t('attendance_months').'` ORDER BY `bulan`') as $r) {
             $o = json_decode($r->data);
             if (! is_object($o)) {
                 $o = (object) [];
@@ -211,7 +248,7 @@ class HrState
             $o->days = [];
             $att[$r->bulan] = $o;
         }
-        foreach ($this->db()->select('SELECT `bulan`, `talenta_id`, `tanggal`, `emp_id`, `data` FROM `attendance_days` ORDER BY `talenta_id`, `tanggal`') as $r) {
+        foreach ($this->db()->select('SELECT `bulan`, `talenta_id`, `tanggal`, `emp_id`, `data` FROM `'.self::t('attendance_days').'` ORDER BY `talenta_id`, `tanggal`') as $r) {
             if (! isset($att[$r->bulan])) {
                 continue; // orphan day without its month
             }
@@ -230,7 +267,11 @@ class HrState
 
     public function meta(bool $lock = false): ?stdClass
     {
-        return $this->db()->selectOne('SELECT `rev`, `saved_at`, `saved_by`, `versi` FROM `meta` WHERE `id`=1'.($lock ? ' FOR UPDATE' : ''));
+        $sql = self::onCore()
+            ? 'SELECT `version` AS `rev`, `saved_at`, `saved_by`, `versi` FROM `hr_meta` WHERE `legacy_id`=1'
+            : 'SELECT `rev`, `saved_at`, `saved_by`, `versi` FROM `meta` WHERE `id`=1';
+
+        return $this->db()->selectOne($sql.($lock ? ' FOR UPDATE' : ''));
     }
 
     /** hr_stats */
@@ -239,11 +280,11 @@ class HrState
         $db = $this->db();
         $out = [];
         foreach (self::COLLECTIONS as $appKey => $table) {
-            $out[$appKey] = (int) $db->selectOne("SELECT COUNT(*) c FROM `$table`")->c;
+            $out[$appKey] = (int) $db->selectOne('SELECT COUNT(*) c FROM `'.self::t($table).'`')->c;
         }
         foreach (['audit', 'kpi_actuals', 'monthly_inputs', 'attendance_months', 'attendance_days', 'settings'] as $t) {
             $out[$t] = str_starts_with($t, 'attendance_') && ! $this->attendanceTables()
-                ? 0 : (int) $db->selectOne("SELECT COUNT(*) c FROM `$t`")->c;
+                ? 0 : (int) $db->selectOne('SELECT COUNT(*) c FROM `'.self::t($t).'`')->c;
         }
         $m = $this->meta();
         $out['_rev'] = $m ? (int) $m->rev : 0;
@@ -294,7 +335,9 @@ class HrState
         return $this->db()->transaction(function () use ($baseRev, $write) {
             $m = $this->meta(true);
             if (! $m) {
-                $this->db()->insert("INSERT INTO `meta` (`id`, `rev`, `saved_at`, `saved_by`, `versi`) VALUES (1,0,'','',1)");
+                self::onCore()
+                    ? $this->db()->insert("INSERT INTO `hr_meta` (`id`, `legacy_id`, `version`, `saved_at`, `saved_by`, `versi`) VALUES (?,1,0,'','',1)", [self::ulid()])
+                    : $this->db()->insert("INSERT INTO `meta` (`id`, `rev`, `saved_at`, `saved_by`, `versi`) VALUES (1,0,'','',1)");
                 $m = (object) ['rev' => 0, 'saved_at' => '', 'saved_by' => '', 'versi' => 1];
             }
             $revServer = (int) $m->rev;
@@ -311,7 +354,9 @@ class HrState
 
             [$by, $versi] = $write();
             $rev = $revServer + 1;
-            $this->db()->update('UPDATE `meta` SET `rev`=?, `saved_at`=?, `saved_by`=?, `versi`=? WHERE `id`=1',
+            $this->db()->update(self::onCore()
+                ? 'UPDATE `hr_meta` SET `version`=?, `saved_at`=?, `saved_by`=?, `versi`=? WHERE `legacy_id`=1'
+                : 'UPDATE `meta` SET `rev`=?, `saved_at`=?, `saved_by`=?, `versi`=? WHERE `id`=1',
                 [$rev, gmdate('Y-m-d\TH:i:s.000\Z'), $by, $versi ?? (int) ($m->versi ?? 1)]);
 
             return ['ok' => true, 'rev' => $rev];
@@ -355,10 +400,35 @@ class HrState
             $vals[] = self::coreValue($rec, $map[$c], in_array($c, $nulls, true));
         }
         $vals[] = self::enc($rec);
+        if (self::onCore()) {
+            $this->upsertCore($table, $cols, $vals);
+
+            return;
+        }
         $all = ['id', ...$cols, 'data'];
         $upd = implode(',', array_map(fn ($c) => "`$c`=VALUES(`$c`)", [...$cols, 'data']));
         $this->db()->insert("INSERT INTO `$table` (`".implode('`,`', $all).'`) VALUES ('
             .implode(',', array_fill(0, count($all), '?')).") ON DUPLICATE KEY UPDATE $upd", $vals);
+    }
+
+    /**
+     * Core upsert keyed by legacy_id: a new row gets a ULID, `version` bumps
+     * only when `data` changes (the columns derive from it), and an employee
+     * is linked to the Office User with the same legacy id, when one exists.
+     */
+    private function upsertCore(string $table, array $cols, array $vals): void
+    {
+        $all = ['legacy_id', ...$cols, 'data'];
+        $ph = array_fill(0, count($all), '?');
+        $upd = ['`version`=`version`+(`data`<>VALUES(`data`))', ...array_map(fn ($c) => "`$c`=VALUES(`$c`)", [...$cols, 'data'])];
+        if ($table === 'employees') {
+            $all[] = 'user_id';
+            $ph[] = '(SELECT u.`id` FROM `user` u WHERE u.`legacy_id` = ?)';
+            $vals[] = $vals[0];
+            $upd[] = '`user_id`=VALUES(`user_id`)';
+        }
+        $this->db()->insert('INSERT INTO `'.self::t($table).'` (`id`,`'.implode('`,`', $all).'`) VALUES (?,'.implode(',', $ph)
+            .') ON DUPLICATE KEY UPDATE '.implode(',', $upd), [self::ulid(), ...$vals]);
     }
 
     /** hr_simpan_koleksi — upsert, then DELETE NOT IN (everything when the list is empty). */
@@ -372,16 +442,17 @@ class HrState
             $ids[] = $rec->id;
             $this->upsert($table, $rec);
         }
+        $t = self::t($table);
         if ($ids) {
-            $this->db()->delete("DELETE FROM `$table` WHERE id NOT IN (".implode(',', array_fill(0, count($ids), '?')).')', $ids);
+            $this->db()->delete("DELETE FROM `$t` WHERE `".self::idCol().'` NOT IN ('.implode(',', array_fill(0, count($ids), '?')).')', $ids);
         } else {
-            $this->db()->delete("DELETE FROM `$table`");
+            $this->db()->delete("DELETE FROM `$t`");
         }
     }
 
     public function replaceKpiActuals(mixed $map): void
     {
-        $this->db()->delete('DELETE FROM `kpi_actuals`');
+        $this->db()->delete('DELETE FROM `'.self::t('kpi_actuals').'`');
         if (! is_object($map)) {
             return;
         }
@@ -402,13 +473,21 @@ class HrState
 
     public function putKpiActual(string $divId, string $bulan, string $itemId, mixed $nilai): void
     {
+        $nilai = is_numeric($nilai) ? $nilai : null;
+        if (self::onCore()) {
+            $this->db()->insert('INSERT INTO `hr_kpi_actuals` (`id`, `legacy_id`, `div_id`, `bulan`, `item_id`, `nilai`) VALUES (?,?,?,?,?,?)
+                ON DUPLICATE KEY UPDATE `version`=`version`+(NOT (`nilai`<=>VALUES(`nilai`))), `nilai`=VALUES(`nilai`)',
+                [self::ulid(), "$divId|$bulan|$itemId", $divId, $bulan, $itemId, $nilai]);
+
+            return;
+        }
         $this->db()->insert('INSERT INTO `kpi_actuals` (`div_id`, `bulan`, `item_id`, `nilai`) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE `nilai`=VALUES(`nilai`)',
-            [$divId, $bulan, $itemId, is_numeric($nilai) ? $nilai : null]);
+            [$divId, $bulan, $itemId, $nilai]);
     }
 
     public function replaceMonthly(mixed $map): void
     {
-        $this->db()->delete('DELETE FROM `monthly_inputs`');
+        $this->db()->delete('DELETE FROM `'.self::t('monthly_inputs').'`');
         if (! is_object($map)) {
             return;
         }
@@ -424,6 +503,13 @@ class HrState
 
     public function putMonthly(string $empId, string $bulan, mixed $isi): void
     {
+        if (self::onCore()) {
+            $this->db()->insert('INSERT INTO `hr_monthly_inputs` (`id`, `legacy_id`, `emp_id`, `bulan`, `data`) VALUES (?,?,?,?,?)
+                ON DUPLICATE KEY UPDATE `version`=`version`+(`data`<>VALUES(`data`)), `data`=VALUES(`data`)',
+                [self::ulid(), "$empId|$bulan", $empId, $bulan, self::enc($isi)]);
+
+            return;
+        }
         $this->db()->insert('INSERT INTO `monthly_inputs` (`emp_id`, `bulan`, `data`) VALUES (?,?,?) ON DUPLICATE KEY UPDATE `data`=VALUES(`data`)',
             [$empId, $bulan, self::enc($isi)]);
     }
@@ -442,11 +528,14 @@ class HrState
             return; // stored as the `extra:attendance` setting instead (replaceSettings)
         }
         $db = $this->db();
+        $core = self::onCore();
+        $months = self::t('attendance_months');
+        $daysT = self::t('attendance_days');
         $keep = array_map('strval', array_keys(get_object_vars($map)));
         if ($pruneMissing && $keep) {
             $ph = implode(',', array_fill(0, count($keep), '?'));
-            $db->delete("DELETE FROM `attendance_months` WHERE `bulan` NOT IN ($ph)", $keep);
-            $db->delete("DELETE FROM `attendance_days` WHERE `bulan` NOT IN ($ph)", $keep);
+            $db->delete("DELETE FROM `$months` WHERE `bulan` NOT IN ($ph)", $keep);
+            $db->delete("DELETE FROM `$daysT` WHERE `bulan` NOT IN ($ph)", $keep);
         }
         foreach ($map as $bulan => $isi) {
             if (! is_object($isi)) {
@@ -457,12 +546,18 @@ class HrState
 
             $summary = clone $isi;
             unset($summary->days, $summary->importedAt, $summary->importedBy);
-            $db->insert('INSERT INTO `attendance_months` (`bulan`, `data`, `imported_at`, `imported_by`) VALUES (?,?,?,?)
-                ON DUPLICATE KEY UPDATE `data`=VALUES(`data`), `imported_at`=VALUES(`imported_at`), `imported_by`=VALUES(`imported_by`)',
-                [$bulan, self::enc($summary), self::s($isi->importedAt ?? ''), self::s($isi->importedBy ?? '')]);
+            $monthVals = [$bulan, self::enc($summary), self::s($isi->importedAt ?? ''), self::s($isi->importedBy ?? '')];
+            $core
+                ? $db->insert('INSERT INTO `hr_attendance_months` (`id`, `legacy_id`, `bulan`, `data`, `imported_at`, `imported_by`) VALUES (?,?,?,?,?,?)
+                    ON DUPLICATE KEY UPDATE `version`=`version`+(`data`<>VALUES(`data`) OR `imported_at`<>VALUES(`imported_at`) OR `imported_by`<>VALUES(`imported_by`)),
+                    `data`=VALUES(`data`), `imported_at`=VALUES(`imported_at`), `imported_by`=VALUES(`imported_by`)',
+                    [self::ulid(), $bulan, ...$monthVals])
+                : $db->insert('INSERT INTO `attendance_months` (`bulan`, `data`, `imported_at`, `imported_by`) VALUES (?,?,?,?)
+                    ON DUPLICATE KEY UPDATE `data`=VALUES(`data`), `imported_at`=VALUES(`imported_at`), `imported_by`=VALUES(`imported_by`)',
+                    $monthVals);
 
             if ($days) {
-                $db->delete('DELETE FROM `attendance_days` WHERE `bulan`=?', [$bulan]);
+                $db->delete("DELETE FROM `$daysT` WHERE `bulan`=?", [$bulan]);
                 foreach ($days as $d) {
                     if (! is_object($d)) {
                         continue;
@@ -474,9 +569,15 @@ class HrState
                     }
                     $row = clone $d;
                     unset($row->talentaId, $row->date, $row->empId);
-                    $db->insert('INSERT INTO `attendance_days` (`bulan`, `talenta_id`, `tanggal`, `emp_id`, `data`) VALUES (?,?,?,?,?)
-                        ON DUPLICATE KEY UPDATE `emp_id`=VALUES(`emp_id`), `data`=VALUES(`data`)',
-                        [$bulan, $tid, $tgl, self::s($d->empId ?? ''), self::enc($row)]);
+                    $dayVals = [$bulan, $tid, $tgl, self::s($d->empId ?? ''), self::enc($row)];
+                    $core
+                        ? $db->insert('INSERT INTO `hr_attendance_days` (`id`, `legacy_id`, `month_id`, `bulan`, `talenta_id`, `tanggal`, `emp_id`, `data`)
+                            VALUES (?,?,(SELECT m.`id` FROM `hr_attendance_months` m WHERE m.`legacy_id` = ?),?,?,?,?,?)
+                            ON DUPLICATE KEY UPDATE `emp_id`=VALUES(`emp_id`), `data`=VALUES(`data`)',
+                            [self::ulid(), "$bulan|$tid|$tgl", $bulan, ...$dayVals])
+                        : $db->insert('INSERT INTO `attendance_days` (`bulan`, `talenta_id`, `tanggal`, `emp_id`, `data`) VALUES (?,?,?,?,?)
+                            ON DUPLICATE KEY UPDATE `emp_id`=VALUES(`emp_id`), `data`=VALUES(`data`)',
+                            $dayVals);
                 }
             }
         }
@@ -492,8 +593,11 @@ class HrState
             if (! is_object($r) || ! isset($r->id) || $r->id === '') {
                 continue;
             }
-            $this->db()->insert('INSERT INTO `audit` (`id`, `at`, `user_id`, `user_name`, `action`, `detail`) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE `id`=`id`',
-                [$r->id, self::s($r->at ?? ''), self::s($r->userId ?? ''), self::s($r->userName ?? ''), self::s($r->action ?? ''), self::s($r->detail ?? '')]);
+            $vals = [$r->id, self::s($r->at ?? ''), self::s($r->userId ?? ''), self::s($r->userName ?? ''), self::s($r->action ?? ''), self::s($r->detail ?? '')];
+            self::onCore()
+                ? $this->db()->insert('INSERT INTO `hr_audit` (`id`, `legacy_id`, `at`, `user_id`, `user_name`, `action`, `detail`) VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE `legacy_id`=`legacy_id`',
+                    [self::ulid(), ...$vals])
+                : $this->db()->insert('INSERT INTO `audit` (`id`, `at`, `user_id`, `user_name`, `action`, `detail`) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE `id`=`id`', $vals);
         }
     }
 
@@ -501,7 +605,7 @@ class HrState
     private function replaceSettings(stdClass $data): void
     {
         $skip = [...array_keys(self::COLLECTIONS), ...self::NOT_EXTRA];
-        $this->db()->delete('DELETE FROM `settings`');
+        $this->db()->delete('DELETE FROM `'.self::t('settings').'`');
         if (isset($data->settings) && is_object($data->settings)) {
             foreach ($data->settings as $k => $v) {
                 $this->putSetting((string) $k, $v);
@@ -523,6 +627,9 @@ class HrState
 
     public function putSetting(string $k, mixed $v): void
     {
-        $this->db()->insert('INSERT INTO `settings` (`k`, `v`) VALUES (?,?) ON DUPLICATE KEY UPDATE `v`=VALUES(`v`)', [$k, self::enc($v)]);
+        self::onCore()
+            ? $this->db()->insert('INSERT INTO `hr_pengaturan` (`id`, `k`, `v`) VALUES (?,?,?) ON DUPLICATE KEY UPDATE `version`=`version`+(`v`<>VALUES(`v`)), `v`=VALUES(`v`)',
+                [self::ulid(), $k, self::enc($v)])
+            : $this->db()->insert('INSERT INTO `settings` (`k`, `v`) VALUES (?,?) ON DUPLICATE KEY UPDATE `v`=VALUES(`v`)', [$k, self::enc($v)]);
     }
 }
