@@ -48,6 +48,7 @@ Response envelope: `{ok, data}` / `{ok:false, error}`, always HTTP 200.
 
 - **Who may write a row** (`jdw_wajib_boleh_baris`): a module admin, or anyone while no heads are configured yet, or the head of that crew member's division.
 - **Division of a crew member:** `setting.divOverride[uid]` first. Otherwise, keywords in the Office `keterangan` field, using the synonym list (`kitchen`/`dapur`, `bar`/`bartender`, `floor`/`service`/`waiter`/…, `cashier`/`kasir`); `office`/`kantor` means a non-shift worker. The roster comes from `Sesi::roster()`.
+- **Tim "FOH" (#3):** `foh` is a `floor` keyword here (owner-decided fix, ahead of the laksamana-office copies), so those crew get a jadwal sheet and are editable by the floor head.
 - **Names written to `*_oleh` columns** come from the session.
 - **Rejection messages** use the `sesi_tidak_sah:` / `tanpa_modul:` / `tidak_berhak:` prefixes.
 

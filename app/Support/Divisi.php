@@ -22,6 +22,11 @@ use App\Modules\Jadwal\Services\HeadDirectory;
  *  If one copy drifts, a head the screen shows owning a division is rejected
  *  by the backend when saving — with no place to report the confusion.
  *
+ * #3: `foh` (Talenta Organization) is added to floor here as an owner-decided
+ * fix. The laksamana-office copies do not have it yet (tracked in that repo),
+ * so Tim "FOH" resolves to floor on this API while the old jadwal screen may
+ * still show those crew as Nonshift until they catch up.
+ *
  * Matching is always WHOLE-WORD on the Tim column ("Barista" is not "bar"),
  * and Office/Kantor wins over every division word ("Kasir Office" is office
  * staff, never Cashier shift crew).
@@ -32,7 +37,7 @@ final class Divisi
     public const SYNONYMS = [
         'bar' => ['bar', 'bartender'],
         'kitchen' => ['kitchen', 'dapur'],
-        'floor' => ['floor', 'service', 'waiter', 'waitress', 'host', 'hostess'],
+        'floor' => ['floor', 'service', 'waiter', 'waitress', 'host', 'hostess', 'foh'],
         'cashier' => ['cashier', 'kasir'],
     ];
 
@@ -43,7 +48,7 @@ final class Divisi
 
     /** Tim words that grant Akses Bawaan to the jadwal Modul. */
     public const TIM_BAWAAN_JADWAL = ['kitchen', 'dapur', 'bar', 'bartender', 'floor', 'service', 'waiter', 'waitress',
-        'host', 'hostess', 'cashier', 'kasir', 'hrd', 'hr', 'ceo'];
+        'host', 'hostess', 'foh', 'cashier', 'kasir', 'hrd', 'hr', 'ceo'];
 
     /** Tim words that grant Akses Bawaan to the dw Modul. */
     public const TIM_BOLEH_DW = ['hrd', 'hr', 'ceo'];

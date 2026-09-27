@@ -164,8 +164,9 @@ it('serves the roster with the same Divisi legacy jdw_divisi_user gives every Us
     $rows = $this->withToken($token)->getJson('/api/v1/jadwal/roster')->assertOk()->json('data');
     expect($rows)->not->toBe([]);
 
-    // Independent port of legacy jdw_divisi_user (lib_jadwal_mysql.php): the test
-    // guards the endpoint wiring, the anchors below guard the algorithm itself.
+    // Independent port of jdw_divisi_user (lib_jadwal_mysql.php), plus the
+    // owner-decided #3 fix (Tim "FOH" -> floor, which legacy does not have yet):
+    // the test guards the endpoint wiring, the anchors below guard the algorithm.
     $override = json_decode(Modules::db('jadwal')->selectOne('SELECT data FROM jadwal_setting WHERE id = 1')->data, true)['divOverride'] ?? [];
     $legacyDivisi = function (array $u) use ($override): string {
         if (isset($override[$u['id']]) && $override[$u['id']] !== '') {
@@ -178,7 +179,7 @@ it('serves the roster with the same Divisi legacy jdw_divisi_user gives every Us
             }
         }
         $sin = ['bar' => ['bar', 'bartender'], 'kitchen' => ['kitchen', 'dapur'],
-            'floor' => ['floor', 'service', 'waiter', 'waitress', 'host', 'hostess'],
+            'floor' => ['floor', 'service', 'waiter', 'waitress', 'host', 'hostess', 'foh'],
             'cashier' => ['cashier', 'kasir']];
         foreach ($sin as $kode => $daftar) {
             foreach ($daftar as $x) {

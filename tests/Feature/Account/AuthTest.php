@@ -1,5 +1,6 @@
 <?php
 
+use App\Auth\AccountRepository;
 use App\Auth\OfficeAccess;
 
 it('issues a Sanctum token for valid Office credentials and /me matches legacy module resolution', function () {
@@ -89,4 +90,15 @@ it('lets a legacy session token (lm_session.token) resolve through whoami', func
         ->assertOk()
         ->assertJsonPath('user.id', $u['id'])
         ->assertJsonPath('user.modules', $login['user']['modules']);
+});
+
+it('gives the jadwal Akses Bawaan to a User whose Tim is FOH (#3)', function () {
+    // Talenta Organization "FOH" lands in the Tim column. The owner decided
+    // (#3) that it counts as floor, so it must reach the built-in jadwal
+    // access — not only an explicit grant (u-andry also has one, hence
+    // builtinModules, which is exactly the Akses Bawaan list).
+    app(AccountRepository::class)->updateUser('u-andry', ['keterangan' => 'FOH']);
+    app(OfficeAccess::class)->forgetUser('u-andry');
+
+    expect(app(OfficeAccess::class)->builtinModules('u-andry'))->toContain('jadwal');
 });
