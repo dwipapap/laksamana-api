@@ -1,0 +1,158 @@
+# Deploy laksamana-api to the Rumahweb cPanel by FTP (ADR-0005, runbook: docs/deploy.md).
+#
+#   - dev:        automatically, after `ci` passes on main.
+#   - production: only by hand (Actions → deploy → Run workflow → target: production).
+#
+# Each target is a GitHub Environment (`dev`, `production`) holding the secrets
+# FTP_SERVER / FTP_USERNAME / FTP_PASSWORD and the variable APP_HOST (e.g.
+# dev-api.laksamanamuda.id). Until they exist, the run says so and stops green.
+#
+# The server may have no shell, so everything is built here. Deliberately NOT
+# built: config:cache / view:cache (they bake this runner's absolute paths,
+# /home/runner/..., into bootstrap/cache and break the app on the server).
+# `.env` is created once on the server by the owner and is never uploaded or
+# deleted (the FTP action only removes files it uploaded itself).
+#
+# FTP details copied from laksamana-office's deploy.yml, where each was
+# learned the hard way: connect to the IPv4 address (Node's multi-address path
+# aborts after 250 ms), a 300 s timeout (the 30 s default cut large files
+# mid-transfer and still reported success), three attempts with a pause.
+name: deploy
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Where to deploy
+        type: choice
+        options: [dev, production]
+        default: dev
+
+concurrency:
+  group: deploy-${{ github.event_name == 'workflow_dispatch' && inputs.target || 'dev' }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'dev' }}
+    env:
+      SHA: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.workflow_run.head_sha }}
+      APP_HOST: ${{ vars.APP_HOST }}
+    steps:
+      - name: Is this environment set up?
+        id: cfg
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+        run: |
+          if [ -z "$FTP_SERVER" ] || [ -z "$APP_HOST" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Environment not set up yet (FTP_SERVER secret / APP_HOST variable missing): nothing deployed. See docs/deploy.md." | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.cfg.outputs.ready == 'true'
+        with:
+          ref: ${{ env.SHA }}
+
+      - name: Set up PHP
+        if: steps.cfg.outputs.ready == 'true'
+        uses: shivammathur/setup-php@v2
+        with:
+          # the server's PHP; the lock file needs >= 8.3
+          php-version: ${{ vars.PHP_VERSION || '8.3' }}
+          extensions: bcmath, curl, fileinfo, gd, mbstring, openssl, pdo, pdo_mysql, tokenizer, xml, zip
+          coverage: none
+
+      - name: Build (production dependencies only)
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
+          composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --no-progress
+          composer check-platform-reqs --no-dev
+          echo "$SHA" > public/build.txt
+
+      - name: Resolve the FTP server's IPv4
+        if: steps.cfg.outputs.ready == 'true'
+        id: ftpip
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+        run: |
+          HOST="${FTP_SERVER#ftp://}"; HOST="${HOST#ftps://}"; HOST="${HOST%/}"
+          IP=$(getent ahostsv4 "$HOST" 2>/dev/null | awk '{print $1; exit}')
+          echo "host=${IP:-$HOST}" >> "$GITHUB_OUTPUT"
+
+      # The same upload up to three times; each later attempt runs only if the
+      # previous one failed, after a pause (a fresh connection often gets through).
+      - name: Upload by FTP (attempt 1)
+        if: steps.cfg.outputs.ready == 'true'
+        id: ftp1
+        continue-on-error: true
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with: &ftp
+          server: ${{ steps.ftpip.outputs.host }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ${{ vars.FTP_PROTOCOL || 'ftp' }}
+          local-dir: ./
+          server-dir: ${{ vars.FTP_DIR || './' }}
+          timeout: 300000
+          # Replaces the action's defaults on purpose: those drop every .gitignore,
+          # and storage/ + bootstrap/cache/ need theirs so the folders exist.
+          exclude: |
+            **/.git/**
+            .github/**
+            .claude/**
+            tests/**
+            tools/**
+            docs/**
+            node_modules/**
+            .env
+            .env.*
+            storage/logs/*.log
+            storage/framework/testing/**
+            storage/parity/**
+            phpunit.xml
+
+      - name: Pause before attempt 2
+        if: steps.cfg.outputs.ready == 'true' && steps.ftp1.outcome == 'failure'
+        run: sleep 45
+
+      - name: Upload by FTP (attempt 2)
+        if: steps.cfg.outputs.ready == 'true' && steps.ftp1.outcome == 'failure'
+        id: ftp2
+        continue-on-error: true
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with: *ftp
+
+      - name: Pause before attempt 3
+        if: steps.cfg.outputs.ready == 'true' && steps.ftp1.outcome == 'failure' && steps.ftp2.outcome == 'failure'
+        run: sleep 90
+
+      - name: Upload by FTP (attempt 3)
+        if: steps.cfg.outputs.ready == 'true' && steps.ftp1.outcome == 'failure' && steps.ftp2.outcome == 'failure'
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with: *ftp
+
+      # Passing means the new code is what answers: the health route works and
+      # public/build.txt carries this commit. A half-finished upload fails here.
+      - name: Verify
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
+          for i in 1 2 3 4 5 6; do
+            up=$(curl -s -o /dev/null -w '%{http_code}' "https://$APP_HOST/up")
+            got=$(curl -s "https://$APP_HOST/build.txt?$(date +%s)" | tr -d '[:space:]')
+            if [ "$up" = "200" ] && [ "$got" = "$SHA" ]; then
+              echo "Deployed $SHA to https://$APP_HOST (health 200)." | tee -a "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "attempt $i: /up=$up build.txt=${got:-<none>}"; sleep 10
+          done
+          echo "Verification failed: /up=$up, build.txt=${got:-<none>}, expected $SHA. See docs/deploy.md (Troubleshooting)." | tee -a "$GITHUB_STEP_SUMMARY"
+          exit 1
