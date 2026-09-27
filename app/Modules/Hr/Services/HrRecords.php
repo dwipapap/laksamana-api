@@ -45,7 +45,7 @@ class HrRecords
 
     public function find(string $resource, string $id): ?stdClass
     {
-        $r = $this->state->db()->selectOne('SELECT `data` FROM `'.self::table($resource).'` WHERE `id` = ?', [$id]);
+        $r = $this->state->db()->selectOne('SELECT `data` FROM `'.HrState::t(self::table($resource)).'` WHERE `'.HrState::idCol().'` = ?', [$id]);
         $o = $r ? json_decode($r->data) : null;
 
         return is_object($o) ? $o : null;
@@ -75,7 +75,7 @@ class HrRecords
         $table = self::table($resource);
 
         return $this->state->underRev($baseRev, function () use ($table, $id, $by) {
-            if ($this->state->db()->delete("DELETE FROM `$table` WHERE `id` = ?", [$id]) === 0) {
+            if ($this->state->db()->delete('DELETE FROM `'.HrState::t($table).'` WHERE `'.HrState::idCol().'` = ?', [$id]) === 0) {
                 throw new HrMiss('not_found');
             }
 
@@ -90,7 +90,7 @@ class HrRecords
             if (is_numeric($value)) {
                 $this->state->putKpiActual($divId, $month, $itemId, $value);
             } else {
-                $this->state->db()->delete('DELETE FROM `kpi_actuals` WHERE `div_id`=? AND `bulan`=? AND `item_id`=?', [$divId, $month, $itemId]);
+                $this->state->db()->delete('DELETE FROM `'.HrState::t('kpi_actuals').'` WHERE `div_id`=? AND `bulan`=? AND `item_id`=?', [$divId, $month, $itemId]);
             }
 
             return [$by, null];
@@ -102,7 +102,7 @@ class HrRecords
     {
         return $this->state->underRev($baseRev, function () use ($empId, $month, $value, $by) {
             if ($value === null) {
-                $this->state->db()->delete('DELETE FROM `monthly_inputs` WHERE `emp_id`=? AND `bulan`=?', [$empId, $month]);
+                $this->state->db()->delete('DELETE FROM `'.HrState::t('monthly_inputs').'` WHERE `emp_id`=? AND `bulan`=?', [$empId, $month]);
             } else {
                 $this->state->putMonthly($empId, $month, $value);
             }
@@ -116,7 +116,7 @@ class HrRecords
     {
         return $this->state->underRev($baseRev, function () use ($key, $value, $by) {
             if ($value === null) {
-                $this->state->db()->delete('DELETE FROM `settings` WHERE `k`=?', [$key]);
+                $this->state->db()->delete('DELETE FROM `'.HrState::t('settings').'` WHERE `k`=?', [$key]);
             } else {
                 $this->state->putSetting($key, $value);
             }
@@ -139,8 +139,8 @@ class HrRecords
                 }
                 $this->state->putSetting('extra:attendance', $map);
             } elseif ($value === null) {
-                $this->state->db()->delete('DELETE FROM `attendance_months` WHERE `bulan`=?', [$month]);
-                $this->state->db()->delete('DELETE FROM `attendance_days` WHERE `bulan`=?', [$month]);
+                $this->state->db()->delete('DELETE FROM `'.HrState::t('attendance_months').'` WHERE `bulan`=?', [$month]);
+                $this->state->db()->delete('DELETE FROM `'.HrState::t('attendance_days').'` WHERE `bulan`=?', [$month]);
             } else {
                 $this->state->writeAttendance((object) [$month => $value], false);
             }

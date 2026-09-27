@@ -2,6 +2,8 @@
 
 use App\Support\Modules;
 
+require_once __DIR__.'/helpers.php';
+
 /* u-andry holds module reservasi and has role "viewer" in master.users. */
 
 beforeEach(function () {
@@ -16,7 +18,7 @@ afterEach(function () {
 
 function rsScreensVer(): int
 {
-    return (int) Modules::db('reservasi')->selectOne("SELECT v FROM settings WHERE k='_ver'")->v;
+    return (int) Modules::db('reservasi')->selectOne(rsSql("SELECT v FROM settings WHERE k='_ver'"))->v;
 }
 
 it('v1: opens to a Service Excellent-only Modul as well', function () {
@@ -78,7 +80,7 @@ it('v1: replaces one review with both proofs on disk, then deletes it and its fi
 
     $this->withToken($token)->deleteJson('/api/v1/reservasi/master/reviews/rvtest-review?version='.$item->json('meta.version'))
         ->assertOk()->assertJsonPath('data.deleted', true)->assertJsonStructure(['meta' => ['version']]);
-    expect(Modules::db('reservasi')->selectOne("SELECT v FROM settings WHERE k='master'")->v)
+    expect(Modules::db('reservasi')->selectOne(rsSql("SELECT v FROM settings WHERE k='master'"))->v)
         ->not->toContain('rvtest-review')
         ->and(is_file(storage_path('framework/testing/reservasi-db/files/rv_rvtest-review.txt')))->toBeFalse()
         ->and(is_file(storage_path('framework/testing/reservasi-db/files/rv2_rvtest-review.txt')))->toBeFalse()
@@ -126,7 +128,7 @@ it('v1: reservation writes audit the acting user, their master role and the capp
     expect($created->json('data'))->not->toHaveKey('_audit')
         ->and($created->json('data.log.0'))->toMatchArray(['by' => 'Andry', 'role' => 'viewer', 'action' => 'Buat Reservasi'])
         ->and(mb_strlen($created->json('data.log.0.detail')))->toBe(180);
-    $row = Modules::db('reservasi')->selectOne("SELECT data FROM audit WHERE JSON_UNQUOTE(JSON_EXTRACT(data,'$.res'))=?", [$id]);
+    $row = Modules::db('reservasi')->selectOne(rsSql("SELECT data FROM audit WHERE JSON_UNQUOTE(JSON_EXTRACT(data,'$.res'))=?"), [$id]);
     expect(json_decode($row->data, true))->toMatchArray(['user' => 'Andry', 'role' => 'viewer', 'action' => 'Buat Reservasi', 'res' => $id])
         ->and(json_decode($row->data, true)['detail'])->toHaveLength(200);
 

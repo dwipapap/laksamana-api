@@ -25,11 +25,11 @@ class StockEntryRecords
 
     /** kind => [table, version SELECT, team-scoped, has photo] */
     private const KINDS = [
-        'usage' => ['usage_events', 'SELECT * FROM `usage_events`', true, false],
-        'waste' => ['waste', 'SELECT `id`,`tanggal`,`item`,`qty`,`unit`,`sebab`,`pic`,`tim`,`waktu`,MD5(`foto`) AS `foto`,`foto_nama`,`data` FROM `waste`', true, true],
-        'handovers' => ['serah_terima', 'SELECT `id`,`tanggal`,`tujuan`,`penerima`,`pic`,`tim`,`waktu`,MD5(`foto`) AS `foto`,`foto_nama`,`data` FROM `serah_terima`', true, true],
-        'opname' => ['opname', 'SELECT * FROM `opname`', false, false],
-        'ck' => ['ck_stock', 'SELECT * FROM `ck_stock`', false, false],
+        'usage' => ['usage_events', 'SELECT {*usage_events} FROM {usage_events}', true, false],
+        'waste' => ['waste', 'SELECT {id} AS `id`,`tanggal`,`item`,`qty`,`unit`,`sebab`,`pic`,`tim`,`waktu`,MD5(`foto`) AS `foto`,`foto_nama`,`data` FROM {waste}', true, true],
+        'handovers' => ['serah_terima', 'SELECT {id} AS `id`,`tanggal`,`tujuan`,`penerima`,`pic`,`tim`,`waktu`,MD5(`foto`) AS `foto`,`foto_nama`,`data` FROM {serah_terima}', true, true],
+        'opname' => ['opname', 'SELECT {*opname} FROM {opname}', false, false],
+        'ck' => ['ck_stock', 'SELECT {*ck_stock} FROM {ck_stock}', false, false],
     ];
 
     public static function hasPhoto(string $kind): bool
@@ -76,7 +76,7 @@ class StockEntryRecords
     public function list(string $kind, ?array $teams, string $from, string $to): array
     {
         $versions = [];
-        foreach (StockSupport::db()->select(self::KINDS[$kind][1]) as $r) {
+        foreach (StockSupport::db()->select(StockSupport::q(self::KINDS[$kind][1])) as $r) {
             $versions[$r->id] = StockRecords::hash((array) $r);
         }
 
@@ -87,7 +87,7 @@ class StockEntryRecords
     /** @return array{record:array, version:string}|null  null also when outside the caller's teams */
     public function find(string $kind, string $id, ?array $teams, bool $lock = false): ?array
     {
-        $raw = StockSupport::db()->selectOne(self::KINDS[$kind][1].' WHERE `id` = ?'.($lock ? ' FOR UPDATE' : ''), [$id]);
+        $raw = StockSupport::db()->selectOne(StockSupport::q(self::KINDS[$kind][1].' WHERE {id} = ?').($lock ? ' FOR UPDATE' : ''), [$id]);
         if (! $raw) {
             return null;
         }

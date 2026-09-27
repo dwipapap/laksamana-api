@@ -32,12 +32,12 @@ class KasKecilRecords
     public function transaction(int $id, bool $lock = false): ?array
     {
         $db = $this->kas->db();
-        $t = $db->selectOne('SELECT `id`,`tgl`,`keterangan`,`kategori_id`,`input`,`bon`,`dibuat_at`,`dibuat_oleh` FROM `kk_trx` WHERE `id`=?'.($lock ? ' FOR UPDATE' : ''), [$id]);
+        $t = $db->selectOne('SELECT '.KasKecil::idSelect().',`tgl`,`keterangan`,`kategori_id`,`input`,`bon`,`dibuat_at`,`dibuat_oleh` FROM `'.KasKecil::t('kk_trx').'` WHERE `'.KasKecil::idCol().'`=?'.($lock ? ' FOR UPDATE' : ''), [$id]);
         if (! $t) {
             return null;
         }
         $baris = array_map(fn ($b) => ['pos_id' => (int) $b->pos_id, 'debet' => (int) $b->debet, 'kredit' => (int) $b->kredit],
-            $db->select('SELECT `pos_id`,`debet`,`kredit` FROM `kk_trx_pos` WHERE `trx_id`=? ORDER BY `id`', [$id]));
+            $db->select('SELECT `pos_id`,`debet`,`kredit` FROM `'.KasKecil::t('kk_trx_pos').'` WHERE `trx_id`=? ORDER BY '.KasKecil::idOrder(), [$id]));
 
         return [
             'id' => (int) $t->id, 'tgl' => (string) $t->tgl, 'keterangan' => (string) $t->keterangan,
@@ -100,7 +100,7 @@ class KasKecilRecords
 
     public function item(string $table, int $id, bool $lock = false): ?array
     {
-        $r = $this->kas->db()->selectOne("SELECT `id`,`nama`,`urut`,`aktif` FROM `$table` WHERE `id`=?".($lock ? ' FOR UPDATE' : ''), [$id]);
+        $r = $this->kas->db()->selectOne('SELECT '.KasKecil::idSelect().',`nama`,`urut`,`aktif` FROM `'.KasKecil::t($table).'` WHERE `'.KasKecil::idCol().'`=?'.($lock ? ' FOR UPDATE' : ''), [$id]);
 
         return $r ? ['id' => (int) $r->id, 'nama' => (string) $r->nama, 'urut' => (int) $r->urut, 'aktif' => (int) $r->aktif === 1] : null;
     }
@@ -145,7 +145,7 @@ class KasKecilRecords
     public function saveMatrix(mixed $peta, string $base): object
     {
         return $this->kas->db()->transaction(function () use ($peta, $base) {
-            $this->kas->db()->select('SELECT `id` FROM `kk_akses` FOR UPDATE');
+            $this->kas->db()->select('SELECT '.KasKecil::idCol().' FROM `'.KasKecil::t('kk_akses').'` FOR UPDATE');
             $this->guard($this->kas->akses(), $base);
 
             return $this->kas->saveAkses($peta);
@@ -156,7 +156,7 @@ class KasKecilRecords
     public function saveRole(string $userId, ?string $role, string $base): object
     {
         return $this->kas->db()->transaction(function () use ($userId, $role, $base) {
-            $cur = $this->kas->db()->selectOne('SELECT `peran` FROM `kk_peran` WHERE `kunci`=? FOR UPDATE', ['#'.$userId]);
+            $cur = $this->kas->db()->selectOne('SELECT `peran` FROM `'.KasKecil::t('kk_peran').'` WHERE `kunci`=? FOR UPDATE', ['#'.$userId]);
             $this->guard($cur ? (string) $cur->peran : null, $base);
 
             return $this->kas->saveRole(['kunci' => '#'.$userId, 'peran' => (string) $role]);

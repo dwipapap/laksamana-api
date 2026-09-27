@@ -8,6 +8,7 @@ use App\Modules\Jadwal\Services\JadwalService;
 use App\Support\Legacy\Sesi;
 use App\Support\Modules;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -62,6 +63,48 @@ class AbsensiService
     private function db(): ConnectionInterface
     {
         return Modules::db('absensi');
+    }
+
+    /** Absensi cut over (#53): the Modul reads and writes the core tables. */
+    public static function onCore(): bool
+    {
+        return Modules::connectionName('absensi') === 'core';
+    }
+
+    /** Id column on the current connection: the legacy id, or `legacy_id` on core. */
+    private static function kId(): string
+    {
+        return self::onCore() ? 'legacy_id' : 'id';
+    }
+
+    /** `id` select expression rebuilding the legacy id on the wire. */
+    private static function selId(string $t = ''): string
+    {
+        $q = $t !== '' ? "`$t`." : '';
+
+        return self::onCore() ? "{$q}`legacy_id` AS `id`" : "{$q}`id`";
+    }
+
+    /** Natural-key select expression (faces: `subjek`, i.e. 'USER:<id>'). */
+    private static function selSubjek(): string
+    {
+        return self::onCore() ? '`legacy_id` AS `subjek`' : '`subjek`';
+    }
+
+    /** Actor ULID for the technical columns, resolved by session name. */
+    private function actorUlid(string $by): ?string
+    {
+        $by = self::s($by);
+        if ($by === '' || ! self::onCore()) {
+            return null;
+        }
+        try {
+            $r = $this->db()->selectOne('SELECT `id` FROM `user` WHERE `nama` = ? ORDER BY `legacy_id` LIMIT 1', [$by]);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return $r ? (string) $r->id : null;
     }
 
     // ---------------------------------------------------------------- time (WIB)
@@ -193,7 +236,8 @@ class AbsensiService
     public function setting(): array
     {
         try {
-            $row = $this->db()->selectOne('SELECT `data` FROM `abs_setting` WHERE `id` = 1');
+            $kid = self::kId();
+            $row = $this->db()->selectOne("SELECT `data` FROM `abs_setting` WHERE `$kid` = '1'");
         } catch (\Throwable) {
             return self::defaultSetting();
         }
@@ -205,11 +249,22 @@ class AbsensiService
     public function saveSetting(mixed $data, string $by): array
     {
         $bersih = array_merge(self::defaultSetting(), is_array($data) ? $data : []);
-        $this->db()->statement(
-            'INSERT INTO `abs_setting` (`id`,`data`,`updated_at`,`updated_by`) VALUES (1,?,?,?)'.
-            ' ON DUPLICATE KEY UPDATE `data`=VALUES(`data`),`updated_at`=VALUES(`updated_at`),`updated_by`=VALUES(`updated_by`)',
-            [json_encode($bersih, JSON_UNESCAPED_UNICODE), self::ms(), self::s($by)]
-        );
+        $json = json_encode($bersih, JSON_UNESCAPED_UNICODE);
+        if (self::onCore()) {
+            $actor = $this->actorUlid($by);
+            $this->db()->statement(
+                'INSERT INTO `abs_setting` (`id`,`legacy_id`,`data`,`updated_at`,`created_by`,`updated_by`,`version`) VALUES (?,?,?,?,?,?,1)'.
+                ' ON DUPLICATE KEY UPDATE `data`=VALUES(`data`),`updated_at`=VALUES(`updated_at`),'.
+                '`updated_by`=VALUES(`updated_by`),`version`=`version`+1',
+                [strtolower((string) Str::ulid()), '1', $json, self::ms(), $actor, $actor]
+            );
+        } else {
+            $this->db()->statement(
+                'INSERT INTO `abs_setting` (`id`,`data`,`updated_at`,`updated_by`) VALUES (1,?,?,?)'.
+                ' ON DUPLICATE KEY UPDATE `data`=VALUES(`data`),`updated_at`=VALUES(`updated_at`),`updated_by`=VALUES(`updated_by`)',
+                [$json, self::ms(), self::s($by)]
+            );
+        }
 
         return $bersih;
     }
@@ -219,7 +274,8 @@ class AbsensiService
     /** @return array<int,array{id:string,nama:string,lat:float,lng:float,radius:int,aktif:int}> */
     public function locations(bool $onlyActive = true): array
     {
-        $sql = 'SELECT * FROM `abs_lokasi`'.($onlyActive ? ' WHERE `aktif` = 1' : '').' ORDER BY `nama`';
+        $lid = self::selId();
+        $sql = "SELECT $lid,`nama`,`lat`,`lng`,`radius_m`,`aktif` FROM `abs_lokasi`".($onlyActive ? ' WHERE `aktif` = 1' : '').' ORDER BY `nama`';
         $out = [];
         foreach ($this->db()->select($sql) as $r) {
             $out[] = ['id' => $r->id, 'nama' => $r->nama,
@@ -247,25 +303,43 @@ class AbsensiService
         if ($nama === '') {
             throw new RuntimeException('Nama lokasi wajib diisi.');
         }
-        $this->db()->statement(
-            'INSERT INTO `abs_lokasi` (`id`,`nama`,`lat`,`lng`,`radius_m`,`aktif`,`updated_at`,`updated_by`)'.
-            ' VALUES (?,?,?,?,?,?,?,?)'.
-            ' ON DUPLICATE KEY UPDATE `nama`=VALUES(`nama`),`lat`=VALUES(`lat`),`lng`=VALUES(`lng`),'.
-            '`radius_m`=VALUES(`radius_m`),`aktif`=VALUES(`aktif`),'.
-            '`updated_at`=VALUES(`updated_at`),`updated_by`=VALUES(`updated_by`)',
-            [$id, $nama,
-                (float) ($row['lat'] ?? 0), (float) ($row['lng'] ?? 0),
-                self::clampRadius($row['radius'] ?? 120),
-                empty($row['aktif']) ? 0 : 1,
-                self::ms(), self::s($by)]
-        );
+        if (self::onCore()) {
+            $actor = $this->actorUlid($by);
+            $this->db()->statement(
+                'INSERT INTO `abs_lokasi` (`id`,`legacy_id`,`nama`,`lat`,`lng`,`radius_m`,`aktif`,`updated_at`,`created_by`,`updated_by`,`version`)'.
+                ' VALUES (?,?,?,?,?,?,?,?,?,?,1)'.
+                ' ON DUPLICATE KEY UPDATE `nama`=VALUES(`nama`),`lat`=VALUES(`lat`),`lng`=VALUES(`lng`),'.
+                '`radius_m`=VALUES(`radius_m`),`aktif`=VALUES(`aktif`),'.
+                '`updated_at`=VALUES(`updated_at`),`updated_by`=VALUES(`updated_by`),`version`=`version`+1',
+                [strtolower((string) Str::ulid()), $id, $nama,
+                    (float) ($row['lat'] ?? 0), (float) ($row['lng'] ?? 0),
+                    self::clampRadius($row['radius'] ?? 120),
+                    empty($row['aktif']) ? 0 : 1,
+                    self::ms(), $actor, $actor]
+            );
+        } else {
+            $this->db()->statement(
+                'INSERT INTO `abs_lokasi` (`id`,`nama`,`lat`,`lng`,`radius_m`,`aktif`,`updated_at`,`updated_by`)'.
+                ' VALUES (?,?,?,?,?,?,?,?)'.
+                ' ON DUPLICATE KEY UPDATE `nama`=VALUES(`nama`),`lat`=VALUES(`lat`),`lng`=VALUES(`lng`),'.
+                '`radius_m`=VALUES(`radius_m`),`aktif`=VALUES(`aktif`),'.
+                '`updated_at`=VALUES(`updated_at`),`updated_by`=VALUES(`updated_by`)',
+                [$id, $nama,
+                    (float) ($row['lat'] ?? 0), (float) ($row['lng'] ?? 0),
+                    self::clampRadius($row['radius'] ?? 120),
+                    empty($row['aktif']) ? 0 : 1,
+                    self::ms(), self::s($by)]
+            );
+        }
 
         return $id;
     }
 
     public function deleteLocation(mixed $id): int
     {
-        return $this->db()->delete('DELETE FROM `abs_lokasi` WHERE `id` = ?', [self::s($id)]);
+        $kid = self::kId();
+
+        return $this->db()->delete("DELETE FROM `abs_lokasi` WHERE `$kid` = ?", [self::s($id)]);
     }
 
     /**
@@ -326,23 +400,37 @@ class AbsensiService
                 throw new RuntimeException('Sidik wajah berisi nilai bukan angka.');
             }
         }
-        $this->db()->statement(
-            'INSERT INTO `abs_wajah` (`subjek`,`nama`,`descriptor`,`foto`,`aktif`,`daftar_at`,`daftar_oleh`)'.
-            ' VALUES (?,?,?,?,1,?,?)'.
-            ' ON DUPLICATE KEY UPDATE `nama`=VALUES(`nama`),`descriptor`=VALUES(`descriptor`),'.
-            '`foto`=VALUES(`foto`),`aktif`=1,`daftar_at`=VALUES(`daftar_at`),`daftar_oleh`=VALUES(`daftar_oleh`)',
-            [self::subjectKey($tipe, $id), self::s($nama),
-                json_encode(array_map('floatval', $descriptor)),
-                ($foto ? self::s($foto) : null),
-                self::ms(), self::s($by)]
-        );
+        $subjek = self::subjectKey($tipe, $id);
+        $desc = json_encode(array_map('floatval', $descriptor));
+        $fotoVal = ($foto ? self::s($foto) : null);
+        if (self::onCore()) {
+            $actor = $this->actorUlid($by);
+            $this->db()->statement(
+                'INSERT INTO `abs_wajah` (`id`,`legacy_id`,`nama`,`descriptor`,`foto`,`aktif`,`daftar_at`,`daftar_oleh`,`created_by`,`updated_by`,`version`)'.
+                ' VALUES (?,?,?,?,?,1,?,?,?,?,1)'.
+                ' ON DUPLICATE KEY UPDATE `nama`=VALUES(`nama`),`descriptor`=VALUES(`descriptor`),'.
+                '`foto`=VALUES(`foto`),`aktif`=1,`daftar_at`=VALUES(`daftar_at`),`daftar_oleh`=VALUES(`daftar_oleh`),'.
+                '`updated_by`=VALUES(`updated_by`),`version`=`version`+1',
+                [strtolower((string) Str::ulid()), $subjek, self::s($nama), $desc, $fotoVal, self::ms(), self::s($by), $actor, $actor]
+            );
+        } else {
+            $this->db()->statement(
+                'INSERT INTO `abs_wajah` (`subjek`,`nama`,`descriptor`,`foto`,`aktif`,`daftar_at`,`daftar_oleh`)'.
+                ' VALUES (?,?,?,?,1,?,?)'.
+                ' ON DUPLICATE KEY UPDATE `nama`=VALUES(`nama`),`descriptor`=VALUES(`descriptor`),'.
+                '`foto`=VALUES(`foto`),`aktif`=1,`daftar_at`=VALUES(`daftar_at`),`daftar_oleh`=VALUES(`daftar_oleh`)',
+                [$subjek, self::s($nama), $desc, $fotoVal, self::ms(), self::s($by)]
+            );
+        }
 
         return true;
     }
 
     public function deleteFace(mixed $tipe, mixed $id): int
     {
-        return $this->db()->delete('DELETE FROM `abs_wajah` WHERE `subjek` = ?', [self::subjectKey($tipe, $id)]);
+        $key = self::onCore() ? 'legacy_id' : 'subjek';
+
+        return $this->db()->delete("DELETE FROM `abs_wajah` WHERE `$key` = ?", [self::subjectKey($tipe, $id)]);
     }
 
     /**
@@ -352,8 +440,9 @@ class AbsensiService
     public function listFaces(): array
     {
         $out = [];
+        $subj = self::selSubjek();
         foreach ($this->db()->select(
-            'SELECT `subjek`,`nama`,`aktif`,`daftar_at`,`daftar_oleh`,(`descriptor` IS NOT NULL) AS ada FROM `abs_wajah`'
+            "SELECT $subj,`nama`,`aktif`,`daftar_at`,`daftar_oleh`,(`descriptor` IS NOT NULL) AS ada FROM `abs_wajah`"
         ) as $r) {
             $p = explode(':', (string) $r->subjek, 2);
             $out[] = ['tipe' => $p[0], 'id' => $p[1] ?? '', 'nama' => $r->nama,
@@ -366,8 +455,9 @@ class AbsensiService
 
     public function faceRegistered(mixed $tipe, mixed $id): bool
     {
+        $key = self::onCore() ? 'legacy_id' : 'subjek';
         $n = $this->db()->selectOne(
-            'SELECT COUNT(*) c FROM `abs_wajah` WHERE `subjek` = ? AND `aktif` = 1 AND `descriptor` IS NOT NULL',
+            "SELECT COUNT(*) c FROM `abs_wajah` WHERE `$key` = ? AND `aktif` = 1 AND `descriptor` IS NOT NULL",
             [self::subjectKey($tipe, $id)]
         );
 
@@ -410,8 +500,9 @@ class AbsensiService
      */
     public function matchFace(mixed $tipe, mixed $id, mixed $descriptor): array
     {
+        $key = self::onCore() ? 'legacy_id' : 'subjek';
         $row = $this->db()->selectOne(
-            'SELECT `descriptor` FROM `abs_wajah` WHERE `subjek` = ? AND `aktif` = 1',
+            "SELECT `descriptor` FROM `abs_wajah` WHERE `$key` = ? AND `aktif` = 1",
             [self::subjectKey($tipe, $id)]
         );
         $stored = ($row && $row->descriptor) ? json_decode($row->descriptor, true) : null;
@@ -585,7 +676,7 @@ class AbsensiService
         }
 
         return [
-            'id' => $r['id'], 'tipe' => $r['subjek_tipe'], 'uid' => $r['subjek_id'], 'nama' => $r['nama'],
+            'id' => $r['legacy_id'] ?? $r['id'], 'tipe' => $r['subjek_tipe'], 'uid' => $r['subjek_id'], 'nama' => $r['nama'],
             'tgl' => $r['tgl'], 'arah' => $r['arah'], 'waktu' => (int) $r['waktu'], 'jam' => $r['jam'],
             'lat' => (float) $r['lat'], 'lng' => (float) $r['lng'], 'akurasi' => (int) $r['akurasi_m'],
             'lokasi' => $r['lokasi_id'], 'jarak' => (int) $r['jarak_m'], 'dalamArea' => (int) $r['dalam_area'] ? 1 : 0,
@@ -706,11 +797,24 @@ class AbsensiService
             $dalamShift ? 1 : 0, $status, $sebab, $alasan,
             (isset($p['foto']) && $p['foto'] ? self::s($p['foto']) : null), $now,
         ];
-        $sql = 'INSERT INTO `abs_punch`'.
-            ' (`id`,`subjek_tipe`,`subjek_id`,`nama`,`tgl`,`arah`,`waktu`,`jam`,`lat`,`lng`,`akurasi_m`,'.
-            '`lokasi_id`,`jarak_m`,`dalam_area`,`wajah_skor`,`wajah_ok`,`shift_kode`,`shift_mulai`,'.
-            '`shift_selesai`,`shift_sumber`,`dalam_shift`,`status`,`sebab`,`alasan`,`foto`,`dibuat_at`)'.
-            ' VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)';
+        $actor = null;
+        if (self::onCore()) {
+            $actor = $this->actorUlid(self::s($p['nama'] ?? ''));
+            $sql = 'INSERT INTO `abs_punch`'.
+                ' (`id`,`legacy_id`,`subjek_tipe`,`subjek_id`,`nama`,`tgl`,`arah`,`waktu`,`jam`,`lat`,`lng`,`akurasi_m`,'.
+                '`lokasi_id`,`jarak_m`,`dalam_area`,`wajah_skor`,`wajah_ok`,`shift_kode`,`shift_mulai`,'.
+                '`shift_selesai`,`shift_sumber`,`dalam_shift`,`status`,`sebab`,`alasan`,`foto`,`dibuat_at`,'.
+                '`created_by`,`updated_by`,`version`)'.
+                ' VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)';
+            // $row[0] is the legacy punch id: it moves to legacy_id, the ULID leads.
+            $row = [strtolower((string) Str::ulid()), $row[0], ...array_slice($row, 1), $actor, $actor];
+        } else {
+            $sql = 'INSERT INTO `abs_punch`'.
+                ' (`id`,`subjek_tipe`,`subjek_id`,`nama`,`tgl`,`arah`,`waktu`,`jam`,`lat`,`lng`,`akurasi_m`,'.
+                '`lokasi_id`,`jarak_m`,`dalam_area`,`wajah_skor`,`wajah_ok`,`shift_kode`,`shift_mulai`,'.
+                '`shift_selesai`,`shift_sumber`,`dalam_shift`,`status`,`sebab`,`alasan`,`foto`,`dibuat_at`)'.
+                ' VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)';
+        }
         // PULANG: the last one wins — and a new punch is a new submission,
         // so a previous decision trail is cleared with it.
         if ($arah === 'PULANG') {
@@ -722,7 +826,8 @@ class AbsensiService
                 '`shift_selesai`=VALUES(`shift_selesai`),`shift_sumber`=VALUES(`shift_sumber`),'.
                 '`dalam_shift`=VALUES(`dalam_shift`),`status`=VALUES(`status`),`sebab`=VALUES(`sebab`),'.
                 '`alasan`=VALUES(`alasan`),`foto`=VALUES(`foto`),'.
-                '`putus_at`=0,`putus_oleh`="",`putus_nota`=""';
+                '`putus_at`=0,`putus_oleh`="",`putus_nota`=""'.
+                (self::onCore() ? ',`updated_by`=VALUES(`updated_by`),`version`=`version`+1' : '');
         }
         $this->db()->statement($sql, $row);
 
@@ -750,7 +855,8 @@ class AbsensiService
         }
         $n = $this->db()->update(
             'UPDATE `abs_punch` SET `status` = ?, `putus_at` = ?, `putus_oleh` = ?, `putus_nota` = ?'.
-            ' WHERE `id` = ? AND `status` = "MENUNGGU"',
+            (self::onCore() ? ', `version`=`version`+1' : '').
+            ' WHERE `'.self::kId().'` = ? AND `status` = "MENUNGGU"',
             [$status, self::ms(), self::s($by), self::s($nota), self::s($id)]
         );
 

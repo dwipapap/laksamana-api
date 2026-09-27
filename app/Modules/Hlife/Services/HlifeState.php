@@ -5,6 +5,7 @@ namespace App\Modules\Hlife\Services;
 use App\Support\JsonDoc;
 use App\Support\Modules;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Support\Str;
 use stdClass;
 
 /**
@@ -16,6 +17,10 @@ use stdClass;
  *
  * JSON is always decoded WITHOUT the assoc flag so `{}` stays an object
  * (see JsonDoc). No conflict guard on saveAll: last save wins, as legacy.
+ *
+ * Cut over (#65): behind DB_HLIFE_CONNECTION=core the Modul reads and writes
+ * the hlife_* tables of `core` — the legacy id lives in `legacy_id` and every
+ * accepted write bumps `version`. Unset = the legacy database (rollback).
  */
 class HlifeState
 {
@@ -66,6 +71,28 @@ class HlifeState
         return Modules::db('hlife');
     }
 
+    /** Hlife cut over (#65): the Modul reads and writes the hlife_* tables of core. */
+    public static function onCore(): bool
+    {
+        return Modules::connectionName('hlife') === 'core';
+    }
+
+    /** Physical table for a legacy table name on the current connection. */
+    public static function table(string $legacy): string
+    {
+        if (! self::onCore()) {
+            return $legacy;
+        }
+
+        return $legacy === 'settings' ? 'hlife_pengaturan' : 'hlife_'.$legacy;
+    }
+
+    /** The row key: the legacy id, kept in `legacy_id` on core. */
+    public static function idCol(): string
+    {
+        return self::onCore() ? 'legacy_id' : 'id';
+    }
+
     /** Defaults for missing settings rows — must match emptyState() in the frontend. */
     public static function settingDefault(string $k): mixed
     {
@@ -91,7 +118,7 @@ class HlifeState
         // finance is only a { ledger: [...] } wrapper in the app.
         $out['finance'] = (object) ['ledger' => $this->records('ledger')];
 
-        foreach ($this->db()->select('SELECT `k`, `v` FROM `settings`') as $r) {
+        foreach ($this->db()->select('SELECT `k`, `v` FROM `'.self::table('settings').'`') as $r) {
             $out[$r->k] = json_decode($r->v);
         }
         foreach (self::SETTINGS_KEYS as $k) {
@@ -108,7 +135,7 @@ class HlifeState
     {
         $order = $table === 'ledger' ? ' ORDER BY `bulan`' : '';
         $list = [];
-        foreach ($this->db()->select("SELECT `data` FROM `$table`".$order) as $r) {
+        foreach ($this->db()->select('SELECT `data` FROM `'.self::table($table).'`'.$order) as $r) {
             $o = json_decode($r->data);
             if (is_object($o)) {
                 $list[] = $o;
@@ -123,7 +150,7 @@ class HlifeState
     {
         $out = [];
         foreach ([...array_keys(self::COLLECTIONS), 'ledger', 'settings'] as $t) {
-            $out[$t] = (int) $this->db()->selectOne("SELECT COUNT(*) c FROM `$t`")->c;
+            $out[$t] = (int) $this->db()->selectOne('SELECT COUNT(*) c FROM `'.self::table($t).'`')->c;
         }
 
         return $out;
@@ -174,11 +201,12 @@ class HlifeState
         }
 
         // Rows missing from the payload were deleted in the UI (the client always sends everything).
+        $key = self::idCol();
         if ($ids) {
             $ph = implode(',', array_fill(0, count($ids), '?'));
-            $this->db()->delete("DELETE FROM `$table` WHERE `id` NOT IN ($ph)", $ids);
+            $this->db()->delete('DELETE FROM `'.self::table($table)."` WHERE `$key` NOT IN ($ph)", $ids);
         } else {
-            $this->db()->delete("DELETE FROM `$table`");
+            $this->db()->delete('DELETE FROM `'.self::table($table).'`');
         }
     }
 
@@ -188,6 +216,10 @@ class HlifeState
      * $coerce=false is the legacy behaviour: a missing/non-numeric value goes to a numeric
      * column as '' and strict MySQL rejects the save (compat keeps that, parity-checked).
      * v1 passes true: such values become NULL (nullable) or 0.
+     *
+     * On core the legacy id lives in `legacy_id`, a fresh ULID is minted per row,
+     * the ms tech stamps are set by the server (legacy hlife had none), and every
+     * write is accepted (last save wins, as legacy), so `version` bumps on each one.
      */
     public function upsert(string $table, stdClass $rec, bool $coerce = false): void
     {
@@ -195,7 +227,7 @@ class HlifeState
         $nulls = self::NULLABLE[$table] ?? [];
         $cols = array_keys($map);
 
-        $vals = [$rec->id];
+        $vals = [];
         foreach ($cols as $c) {
             $v = self::coreValue($rec, $map[$c], in_array($c, $nulls, true));
             if ($coerce && $v !== null && ! is_numeric($v) && in_array($c, self::NUMERIC[$table] ?? [], true)) {
@@ -205,12 +237,26 @@ class HlifeState
         }
         $vals[] = JsonDoc::encode($rec);
 
+        if (self::onCore()) {
+            $now = (int) round(microtime(true) * 1000);
+            $names = ['id', 'legacy_id', ...$cols, 'data', 'updated_at', 'created_at', 'version'];
+            $args = [strtolower((string) Str::ulid()), $rec->id, ...$vals, $now, $now, 1];
+            $upd = implode(',', array_map(fn ($c) => "`$c`=VALUES(`$c`)", [...$cols, 'data']));
+            $this->db()->insert(
+                'INSERT INTO `'.self::table($table).'` (`'.implode('`,`', $names).'`) VALUES ('.implode(',', array_fill(0, count($names), '?')).')
+                 ON DUPLICATE KEY UPDATE `version` = `version` + 1, '.$upd.', `updated_at` = VALUES(`updated_at`)',
+                $args,
+            );
+
+            return;
+        }
+
         $all = ['id', ...$cols, 'data'];
         $upd = implode(',', array_map(fn ($c) => "`$c`=VALUES(`$c`)", [...$cols, 'data']));
         $this->db()->insert(
             "INSERT INTO `$table` (`".implode('`,`', $all).'`) VALUES ('.implode(',', array_fill(0, count($all), '?')).")
              ON DUPLICATE KEY UPDATE $upd",
-            $vals,
+            [$rec->id, ...$vals],
         );
     }
 
@@ -236,6 +282,16 @@ class HlifeState
 
     public function putSetting(string $k, mixed $value): void
     {
+        if (self::onCore()) {
+            // accepted write: the version bumps, like every hlife write (last save wins)
+            $this->db()->insert(
+                'INSERT INTO `'.self::table('settings').'` (`id`, `k`, `v`, `version`) VALUES (?, ?, ?, 1)
+                 ON DUPLICATE KEY UPDATE `v` = VALUES(`v`), `version` = `version` + 1',
+                [strtolower((string) Str::ulid()), $k, json_encode($value, JSON_UNESCAPED_UNICODE)],
+            );
+
+            return;
+        }
         $this->db()->insert(
             'INSERT INTO `settings` (`k`, `v`) VALUES (?,?) ON DUPLICATE KEY UPDATE `v`=VALUES(`v`)',
             [$k, json_encode($value, JSON_UNESCAPED_UNICODE)],

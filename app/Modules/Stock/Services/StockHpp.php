@@ -70,7 +70,7 @@ class StockHpp
     private function relinkRecipes(string $from, string $to): int
     {
         $n = 0;
-        foreach (self::db()->select('SELECT id,bahan FROM hpp_resep') as $r) {
+        foreach (self::db()->select(StockSupport::q('SELECT {id} AS `id`,bahan FROM {hpp_resep}')) as $r) {
             $baris = json_decode((string) $r->bahan, true);
             if (! is_array($baris)) {
                 continue;
@@ -84,7 +84,7 @@ class StockHpp
             }
             unset($b);
             if ($ubah) {
-                self::db()->update('UPDATE hpp_resep SET bahan=? WHERE id=?', [json_encode($baris, JSON_UNESCAPED_UNICODE), $r->id]);
+                self::db()->update(StockSupport::q('UPDATE {hpp_resep} SET bahan=? WHERE {id}=?'), [json_encode($baris, JSON_UNESCAPED_UNICODE), $r->id]);
                 $n++;
             }
         }
@@ -96,11 +96,11 @@ class StockHpp
     private function moveUsage(string $from, string $to): void
     {
         $db = self::db();
-        foreach ($db->select('SELECT bulan FROM hpp_pakai WHERE bahan=?', [$from]) as $m) {
-            if ((int) $db->selectOne('SELECT COUNT(*) AS c FROM hpp_pakai WHERE bahan=? AND bulan=?', [$to, $m->bulan])->c) {
+        foreach ($db->select(StockSupport::q('SELECT bulan FROM {hpp_pakai} WHERE bahan=?'), [$from]) as $m) {
+            if ((int) $db->selectOne(StockSupport::q('SELECT COUNT(*) AS c FROM {hpp_pakai} WHERE bahan=? AND bulan=?'), [$to, $m->bulan])->c) {
                 continue;
             }
-            $db->update('UPDATE hpp_pakai SET bahan=? WHERE bahan=? AND bulan=?', [$to, $from, $m->bulan]);
+            $db->update(StockSupport::q('UPDATE {hpp_pakai} SET bahan=? WHERE bahan=? AND bulan=?'), [$to, $from, $m->bulan]);
         }
     }
 
@@ -109,7 +109,7 @@ class StockHpp
     /** hpp_setting_baca(): stored values over the defaults of the original HPP file. */
     public function settings(): array
     {
-        $row = self::db()->selectOne('SELECT data FROM hpp_setting WHERE id=1');
+        $row = self::db()->selectOne(StockSupport::q('SELECT data FROM {hpp_setting} WHERE {id}=1'));
         $d = $row ? json_decode((string) $row->data, true) : null;
         if (! is_array($d)) {
             $d = [];
@@ -154,8 +154,8 @@ class StockHpp
     public function all(): array
     {
         return [
-            'bahan' => array_map(self::ingredientRow(...), self::db()->select('SELECT * FROM hpp_bahan ORDER BY nama')),
-            'resep' => array_map(self::recipeRow(...), self::db()->select('SELECT * FROM hpp_resep ORDER BY jenis, tipe, nama')),
+            'bahan' => array_map(self::ingredientRow(...), self::db()->select(StockSupport::q('SELECT {*hpp_bahan} FROM {hpp_bahan} ORDER BY nama'))),
+            'resep' => array_map(self::recipeRow(...), self::db()->select(StockSupport::q('SELECT {*hpp_resep} FROM {hpp_resep} ORDER BY jenis, tipe, nama'))),
             'setting' => $this->settings(),
             'ts' => gmdate('c'),
         ];
@@ -165,20 +165,20 @@ class StockHpp
     public function usage(string $bulan): array
     {
         $baris = [];
-        foreach (self::db()->select('SELECT * FROM hpp_pakai WHERE bulan=? ORDER BY bahan', [$bulan]) as $r) {
+        foreach (self::db()->select(StockSupport::q('SELECT {*hpp_pakai} FROM {hpp_pakai} WHERE bulan=? ORDER BY bahan'), [$bulan]) as $r) {
             $r = (array) $r;
             foreach (['sa', 'beli', 'resep', 'spoil', 'team', 'rnd', 'comp', 'opname'] as $k) {
                 $r[$k] = (float) $r[$k];
             }
             $baris[] = $r;
         }
-        $meta = self::db()->selectOne('SELECT * FROM hpp_bulan WHERE bulan=?', [$bulan]);
+        $meta = self::db()->selectOne(StockSupport::q('SELECT {*hpp_bulan} FROM {hpp_bulan} WHERE bulan=?'), [$bulan]);
 
         return [
             'bulan' => $bulan, 'baris' => $baris,
             'penjualan' => $meta ? (float) $meta->penjualan : 0,
             'catatan' => $meta ? $meta->catatan : '',
-            'daftarBulan' => array_column(self::db()->select('SELECT bulan FROM hpp_bulan ORDER BY bulan DESC'), 'bulan'),
+            'daftarBulan' => array_column(self::db()->select(StockSupport::q('SELECT bulan FROM {hpp_bulan} ORDER BY bulan DESC')), 'bulan'),
         ];
     }
 
@@ -205,18 +205,18 @@ class StockHpp
                 if ($nama === '') {
                     continue;
                 }
-                self::db()->statement('INSERT INTO hpp_pakai (bulan,bahan,sa,beli,resep,spoil,team,rnd,comp,opname,updated_at,updated_by)
+                self::db()->statement(StockSupport::q('INSERT INTO {hpp_pakai} (bulan,bahan,sa,beli,resep,spoil,team,rnd,comp,opname,updated_at,updated_by)
                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
                      ON DUPLICATE KEY UPDATE sa=VALUES(sa), beli=VALUES(beli), resep=VALUES(resep),
                        spoil=VALUES(spoil), team=VALUES(team), rnd=VALUES(rnd), comp=VALUES(comp),
-                       opname=VALUES(opname), updated_at=VALUES(updated_at), updated_by=VALUES(updated_by)',
+                       opname=VALUES(opname), updated_at=VALUES(updated_at), updated_by=VALUES(updated_by)'),
                     [$bulan, $nama, $v('sa'), $v('beli'), $v('resep'), $v('spoil'), $v('team'), $v('rnd'), $v('comp'), $v('opname'), $ms, $ub]);
                 $n++;
             }
         }
-        self::db()->statement('INSERT INTO hpp_bulan (bulan,penjualan,catatan,updated_at,updated_by) VALUES (?,?,?,?,?)
+        self::db()->statement(StockSupport::q('INSERT INTO {hpp_bulan} (bulan,penjualan,catatan,updated_at,updated_by) VALUES (?,?,?,?,?)
              ON DUPLICATE KEY UPDATE penjualan=VALUES(penjualan), catatan=VALUES(catatan),
-               updated_at=VALUES(updated_at), updated_by=VALUES(updated_by)',
+               updated_at=VALUES(updated_at), updated_by=VALUES(updated_by)'),
             [$bulan, self::num(self::f($d, 'penjualan', 0)), self::txt(self::f($d, 'catatan'), 255), $ms, $ub]);
 
         return ['status' => 'success', 'saved' => true, 'bulan' => $bulan, 'baris' => $n];
@@ -232,13 +232,13 @@ class StockHpp
         $lama = self::txt(self::f($d, 'namaLama'), 190);
         $s = strtolower(trim(StockSupport::str(self::f($d, 'sisi_harga'))));
         $sisi = ($s === 'beli' || $s === 'resep') ? $s : (self::f($d, 'dibeli_jadi', false) ? 'beli' : '');
-        self::db()->statement('INSERT INTO hpp_bahan (nama,satuan,qty_beli,harga_beli,vendor,produk,kategori,catatan,di_purchasing,sisi_harga,updated_at,updated_by)
+        self::db()->statement(StockSupport::q('INSERT INTO {hpp_bahan} (nama,satuan,qty_beli,harga_beli,vendor,produk,kategori,catatan,di_purchasing,sisi_harga,updated_at,updated_by)
              VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
              ON DUPLICATE KEY UPDATE satuan=VALUES(satuan), qty_beli=VALUES(qty_beli),
                harga_beli=VALUES(harga_beli), vendor=VALUES(vendor), produk=VALUES(produk),
                kategori=VALUES(kategori), catatan=VALUES(catatan), di_purchasing=VALUES(di_purchasing),
                sisi_harga=VALUES(sisi_harga),
-               updated_at=VALUES(updated_at), updated_by=VALUES(updated_by)', [
+               updated_at=VALUES(updated_at), updated_by=VALUES(updated_by)'), [
             $nama,
             self::txt(self::f($d, 'satuan'), 32),
             self::num(self::f($d, 'qty_beli', 0)),
@@ -254,9 +254,9 @@ class StockHpp
         ]);
         $ikut = 0;
         if ($lama !== '' && $lama !== $nama) {
-            self::db()->delete('DELETE FROM hpp_bahan WHERE nama=?', [$lama]);
+            self::db()->delete(StockSupport::q('DELETE FROM {hpp_bahan} WHERE nama=?'), [$lama]);
             $this->moveUsage($lama, $nama);
-            self::db()->update('UPDATE hpp_bahan SET produk=? WHERE produk=?', [$nama, $lama]);
+            self::db()->update(StockSupport::q('UPDATE {hpp_bahan} SET produk=? WHERE produk=?'), [$nama, $lama]);
             $ikut = $this->relinkRecipes($lama, $nama);
         }
 
@@ -270,7 +270,7 @@ class StockHpp
         $hasil = $this->saveIngredient($d, $by);
         if (! (is_object($d) && isset($d->di_purchasing) && ! $d->di_purchasing)) {
             try {
-                if (! (int) self::db()->selectOne('SELECT COUNT(*) AS c FROM products WHERE nama=?', [$nm])->c) {
+                if (! (int) self::db()->selectOne(StockSupport::q('SELECT COUNT(*) AS c FROM {products} WHERE nama=?'), [$nm])->c) {
                     $sat = self::txt(self::f($d, 'satuan'), 32);
                     $this->catalog->saveProduct($nm, '', [], '', $sat !== '' ? [$sat] : []);
                     $hasil['purchasingBaru'] = true;
@@ -324,7 +324,7 @@ class StockHpp
             }
         }
         $yq = self::num(self::f($d, 'yield_qty', 1));
-        self::db()->statement('INSERT INTO hpp_resep (id,nama,jenis,tipe,seksi,kode,yield_qty,yield_unit,
+        self::db()->statement(StockSupport::q('INSERT INTO {hpp_resep} ({id},nama,jenis,tipe,seksi,kode,yield_qty,yield_unit,
                harga_lama,harga_baru,harga_upsize,modal_manual,catatan,bahan,aktif,di_purchasing,updated_at,updated_by)
              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
              ON DUPLICATE KEY UPDATE nama=VALUES(nama), jenis=VALUES(jenis), tipe=VALUES(tipe),
@@ -333,7 +333,7 @@ class StockHpp
                harga_upsize=VALUES(harga_upsize), modal_manual=VALUES(modal_manual),
                catatan=VALUES(catatan), bahan=VALUES(bahan),
                aktif=VALUES(aktif), di_purchasing=VALUES(di_purchasing),
-               updated_at=VALUES(updated_at), updated_by=VALUES(updated_by)', [
+               updated_at=VALUES(updated_at), updated_by=VALUES(updated_by)'), [
             $id, $nama,
             self::f($d, 'jenis', null) === 'drink' ? 'drink' : 'food',
             self::f($d, 'tipe', null) === 'dish' ? 'dish' : 'base',
@@ -362,7 +362,7 @@ class StockHpp
         if (is_object($d) && ! empty($d->di_purchasing)) {
             $nmR = self::txt(self::f($d, 'nama'), 190);
             try {
-                if ($nmR !== '' && ! (int) self::db()->selectOne('SELECT COUNT(*) AS c FROM products WHERE nama=?', [$nmR])->c) {
+                if ($nmR !== '' && ! (int) self::db()->selectOne(StockSupport::q('SELECT COUNT(*) AS c FROM {products} WHERE nama=?'), [$nmR])->c) {
                     $satR = self::txt(self::f($d, 'yield_unit'), 32);
                     $this->catalog->saveProduct($nmR, '', [], '', $satR !== '' ? [$satR] : [], null, null, null, 'ck');
                     $hasil['purchasingBaru'] = true;
@@ -378,14 +378,14 @@ class StockHpp
 
     public function deleteIngredient(mixed $nama): array
     {
-        self::db()->delete('DELETE FROM hpp_bahan WHERE nama=?', [self::txt($nama, 190)]);
+        self::db()->delete(StockSupport::q('DELETE FROM {hpp_bahan} WHERE nama=?'), [self::txt($nama, 190)]);
 
         return ['status' => 'success', 'saved' => true];
     }
 
     public function deleteRecipe(mixed $id): array
     {
-        self::db()->delete('DELETE FROM hpp_resep WHERE id=?', [self::txt($id, 48)]);
+        self::db()->delete(StockSupport::q('DELETE FROM {hpp_resep} WHERE {id}=?'), [self::txt($id, 48)]);
 
         return ['status' => 'success', 'saved' => true];
     }
@@ -401,13 +401,13 @@ class StockHpp
         if ($dari === '' || $ke === '' || $dari === $ke) {
             return ['status' => 'error', 'message' => 'Nama gabung tidak sah'];
         }
-        if (! (int) self::db()->selectOne('SELECT COUNT(*) AS c FROM hpp_bahan WHERE nama=?', [$ke])->c) {
+        if (! (int) self::db()->selectOne(StockSupport::q('SELECT COUNT(*) AS c FROM {hpp_bahan} WHERE nama=?'), [$ke])->c) {
             return ['status' => 'error', 'message' => 'Bahan tujuan "'.$ke.'" tidak ada'];
         }
         $nResep = $this->relinkRecipes($dari, $ke);
         $this->moveUsage($dari, $ke);
-        self::db()->delete('DELETE FROM hpp_pakai WHERE bahan=?', [$dari]);
-        self::db()->delete('DELETE FROM hpp_bahan WHERE nama=?', [$dari]);
+        self::db()->delete(StockSupport::q('DELETE FROM {hpp_pakai} WHERE bahan=?'), [$dari]);
+        self::db()->delete(StockSupport::q('DELETE FROM {hpp_bahan} WHERE nama=?'), [$dari]);
 
         return ['status' => 'success', 'saved' => true, 'resep' => $nResep];
     }
@@ -416,7 +416,7 @@ class StockHpp
     public function pullProducts(): array
     {
         $n = 0;
-        foreach (self::db()->select('SELECT nama, data FROM products') as $p) {
+        foreach (self::db()->select(StockSupport::q('SELECT nama, data FROM {products}')) as $p) {
             $j = json_decode((string) $p->data, true);
             $sat = is_array($j) && isset($j['satuan']) && is_array($j['satuan']) ? $j['satuan'] : [];
             if ($this->names->followAdd((string) $p->nama, $sat)) {
@@ -435,7 +435,7 @@ class StockHpp
     public function deleteShadows(): array
     {
         $dipakai = [];
-        foreach (self::db()->select('SELECT bahan FROM hpp_resep') as $row) {
+        foreach (self::db()->select(StockSupport::q('SELECT bahan FROM {hpp_resep}')) as $row) {
             $baris = json_decode((string) $row->bahan, true);
             if (! is_array($baris)) {
                 continue;
@@ -451,17 +451,17 @@ class StockHpp
             }
         }
         $nama = [];
-        foreach (self::db()->select("SELECT b.nama FROM hpp_bahan b
+        foreach (self::db()->select(StockSupport::q("SELECT b.nama FROM {hpp_bahan} b
                   WHERE b.sisi_harga = ''
-                    AND LOWER(b.nama) IN (SELECT LOWER(r.nama) FROM hpp_resep r)
-                    AND LOWER(b.nama) NOT IN (SELECT LOWER(r2.nama) FROM hpp_resep r2 WHERE r2.tipe = 'base')") as $r) {
+                    AND LOWER(b.nama) IN (SELECT LOWER(r.nama) FROM {hpp_resep} r)
+                    AND LOWER(b.nama) NOT IN (SELECT LOWER(r2.nama) FROM {hpp_resep} r2 WHERE r2.tipe = 'base')")) as $r) {
             if (isset($dipakai[mb_strtolower(trim((string) $r->nama))])) {
                 continue;
             }
             $nama[] = $r->nama;
         }
         foreach ($nama as $n) {
-            self::db()->delete('DELETE FROM hpp_bahan WHERE nama=?', [$n]);
+            self::db()->delete(StockSupport::q('DELETE FROM {hpp_bahan} WHERE nama=?'), [$n]);
         }
 
         return ['status' => 'success', 'dihapus' => count($nama), 'nama' => array_slice($nama, 0, 50)];
@@ -474,9 +474,9 @@ class StockHpp
      */
     public function alignNames(mixed $by): array
     {
-        $rows = self::db()->select("SELECT * FROM hpp_bahan WHERE produk<>'' AND produk<>'-'");
+        $rows = self::db()->select(StockSupport::q("SELECT {*hpp_bahan} FROM {hpp_bahan} WHERE produk<>'' AND produk<>'-'"));
         $ada = [];
-        foreach (self::db()->select('SELECT nama FROM hpp_bahan') as $r) {
+        foreach (self::db()->select(StockSupport::q('SELECT nama FROM {hpp_bahan}')) as $r) {
             $ada[$r->nama] = 1;
         }
         $ganti = 0;
@@ -484,7 +484,7 @@ class StockHpp
         $bentrok = [];
         foreach ($rows as $r) {
             if ($r->produk === $r->nama) {
-                self::db()->update("UPDATE hpp_bahan SET produk='' WHERE nama=?", [$r->nama]);
+                self::db()->update(StockSupport::q("UPDATE {hpp_bahan} SET produk='' WHERE nama=?"), [$r->nama]);
                 $bersih++;
 
                 continue;
@@ -508,14 +508,14 @@ class StockHpp
     /** hpp_impor(): the one-time move from Excel; refused when data exists unless $timpa (which wipes both tables). */
     public function import(mixed $d, mixed $by, bool $timpa): array
     {
-        $ada = (int) self::db()->selectOne('SELECT COUNT(*) AS c FROM hpp_resep')->c
-             + (int) self::db()->selectOne('SELECT COUNT(*) AS c FROM hpp_bahan')->c;
+        $ada = (int) self::db()->selectOne(StockSupport::q('SELECT COUNT(*) AS c FROM {hpp_resep}'))->c
+             + (int) self::db()->selectOne(StockSupport::q('SELECT COUNT(*) AS c FROM {hpp_bahan}'))->c;
         if ($ada > 0 && ! $timpa) {
             return ['status' => 'error', 'message' => 'Data HPP sudah ada ('.$ada.' baris). Impor dibatalkan.'];
         }
         if ($timpa) {
-            self::db()->delete('DELETE FROM hpp_resep');
-            self::db()->delete('DELETE FROM hpp_bahan');
+            self::db()->delete(StockSupport::q('DELETE FROM {hpp_resep}'));
+            self::db()->delete(StockSupport::q('DELETE FROM {hpp_bahan}'));
         }
         $nB = 0;
         $nR = 0;
@@ -538,7 +538,7 @@ class StockHpp
             return ['status' => 'error', 'message' => 'rows bukan array'];
         }
         $ada = [];
-        foreach (self::db()->select('SELECT id FROM hpp_resep') as $r) {
+        foreach (self::db()->select(StockSupport::q('SELECT {id} AS `id` FROM {hpp_resep}')) as $r) {
             $ada[(string) $r->id] = true;
         }
         $baru = 0;
@@ -583,7 +583,7 @@ class StockHpp
             return ['status' => 'error', 'message' => 'rows bukan array'];
         }
         $ada = [];
-        foreach (self::db()->select('SELECT nama FROM hpp_bahan') as $r) {
+        foreach (self::db()->select(StockSupport::q('SELECT nama FROM {hpp_bahan}')) as $r) {
             $ada[mb_strtolower((string) $r->nama)] = true;
         }
         $baru = 0;
@@ -636,7 +636,7 @@ class StockHpp
                 $lama[$k] = self::num($v);
             }
         }
-        self::db()->statement('INSERT INTO hpp_setting (id,data) VALUES (1,?) ON DUPLICATE KEY UPDATE data=VALUES(data)',
+        self::db()->statement(StockSupport::q('INSERT INTO {hpp_setting} ({id},data) VALUES (1,?) ON DUPLICATE KEY UPDATE data=VALUES(data)'),
             [json_encode($lama, JSON_UNESCAPED_UNICODE)]);
 
         return ['status' => 'success', 'saved' => true, 'setting' => $lama];

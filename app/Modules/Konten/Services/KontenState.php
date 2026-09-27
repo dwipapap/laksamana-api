@@ -6,6 +6,7 @@ use App\Support\Modules;
 use App\Support\NamedLock;
 use App\Support\RowSync;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Support\Str;
 use RuntimeException;
 use stdClass;
 
@@ -45,8 +46,8 @@ class KontenState
         $db = $this->db();
         $out = [];
 
-        foreach (KontenSchema::collections() as $name => $c) {
-            $order = ! empty($c['created']) ? 'created_at DESC, id DESC' : 'id ASC';
+        foreach (KontenSchema::defs() as $name => $c) {
+            $order = ! empty($c['created']) ? KontenSchema::createdOrder() : KontenSchema::idOrder();
             $rows = [];
             foreach ($db->select("SELECT data FROM `{$c['table']}` ORDER BY $order") as $row) {
                 $r = json_decode((string) $row->data, true);
@@ -59,7 +60,9 @@ class KontenState
 
         // logs: append-only, newest first (capped so the payload stays small)
         $act = [];
-        foreach ($db->select('SELECT data FROM logs ORDER BY at_ms DESC, id DESC LIMIT 1000') as $row) {
+        $logTable = KontenSchema::table('logs');
+        $logId = KontenSchema::idCol();
+        foreach ($db->select("SELECT data FROM `$logTable` ORDER BY at_ms DESC, `$logId` DESC LIMIT 1000") as $row) {
             $r = json_decode((string) $row->data, true);
             if (is_array($r)) {
                 $act[] = $r;
@@ -68,7 +71,8 @@ class KontenState
         $out['logs'] = $act;
 
         // settings + keys unknown to the backend (stored with an 'extra:' prefix)
-        foreach ($db->select('SELECT k, v FROM settings') as $row) {
+        $setTable = KontenSchema::table('settings');
+        foreach ($db->select("SELECT k, v FROM `$setTable`") as $row) {
             $v = json_decode((string) $row->v, true);
             if (str_starts_with((string) $row->k, 'extra:')) {
                 $out[substr((string) $row->k, 6)] = $v;
@@ -113,8 +117,10 @@ class KontenState
 
         $db->transaction(function () use ($db, $state, &$hitung, &$bentrok) {
             $known = ['logs', '_rev'];
+            $defs = KontenSchema::defs();
+            $idCol = KontenSchema::idCol();
 
-            foreach (KontenSchema::collections() as $name => $c) {
+            foreach ($defs as $name => $c) {
                 $known[] = $name;
                 if (! array_key_exists($name, $state)) {
                     continue; // not sent -> skip
@@ -126,15 +132,16 @@ class KontenState
             // ---- logs: append-only (the audit trail is never overwritten/deleted) ----
             if (isset($state['logs']) && is_array($state['logs'])) {
                 $hitung['logs'] = $this->appendLogs($db, $state['logs']);
-                $db->statement('DELETE FROM logs WHERE id NOT IN
-                    (SELECT id FROM (SELECT id FROM logs ORDER BY at_ms DESC, id DESC LIMIT 5000) t)');
+                $logTable = KontenSchema::table('logs');
+                $db->statement("DELETE FROM `$logTable` WHERE `$idCol` NOT IN
+                    (SELECT `$idCol` FROM (SELECT `$idCol` FROM `$logTable` ORDER BY at_ms DESC, `$idCol` DESC LIMIT 5000) t)");
             }
 
             // ---- settings & non-list keys ----
             foreach (KontenSchema::scalarKeys() as $k) {
                 $known[] = $k;
                 if (array_key_exists($k, $state)) {
-                    RowSync::putSetting($db, $k, $state[$k]);
+                    RowSync::putSetting($db, $k, $state[$k], KontenSchema::table('settings'), KontenSchema::onCore());
                 }
             }
 
@@ -145,7 +152,7 @@ class KontenState
             // ends up stored. That is the legacy behaviour, kept exactly.
             foreach ($state as $k => $v) {
                 if (! in_array($k, $known, true)) {
-                    RowSync::putSetting($db, 'extra:'.$k, $v);
+                    RowSync::putSetting($db, 'extra:'.$k, $v, KontenSchema::table('settings'), KontenSchema::onCore());
                 }
             }
         });
@@ -182,6 +189,9 @@ class KontenState
     private function upsertCollection(ConnectionInterface $db, array $def, array $rows, array &$bentrok, string $name): int
     {
         $table = $def['table'];
+        $idCol = $def['id'] ?? 'id';
+        $useUlid = ! empty($def['ulid']);
+        $versioned = ! empty($def['versioned']);
         $cols = $def['cols'];
         $hasCreated = ! empty($def['created']);
 
@@ -195,16 +205,22 @@ class KontenState
         $verServer = [];
         foreach (array_chunk($sendIds, 500) as $chunk) {
             $ph = implode(',', array_fill(0, count($chunk), '?'));
-            foreach ($db->select("SELECT id, updated_at FROM `$table` WHERE id IN ($ph)", $chunk) as $row) {
+            foreach ($db->select("SELECT `$idCol` AS id, updated_at FROM `$table` WHERE `$idCol` IN ($ph)", $chunk) as $row) {
                 $verServer[$row->id] = (int) $row->updated_at;
             }
         }
 
-        $names = array_merge(['id'], array_keys($cols), ['updated_at']);
+        $names = array_merge([$idCol], array_keys($cols), ['updated_at']);
         if ($hasCreated) {
             $names[] = 'created_at';
         }
         $names[] = 'data';
+        if ($versioned) {
+            $names[] = 'version';
+        }
+        if ($useUlid) {
+            array_unshift($names, 'id');
+        }
 
         // created_at is deliberately never overwritten: a row's birth stays.
         $upd = [];
@@ -212,6 +228,9 @@ class KontenState
             $upd[] = "`$n` = IF(VALUES(updated_at) >= updated_at, VALUES(`$n`), `$n`)";
         }
         $upd[] = '`updated_at` = IF(VALUES(updated_at) >= updated_at, VALUES(updated_at), updated_at)';
+        if ($versioned) {
+            $upd[] = '`version` = `version` + 1';
+        }
         $sql = "INSERT INTO `$table` (`".implode('`,`', $names).'`) VALUES ('
             .implode(',', array_fill(0, count($names), '?')).') ON DUPLICATE KEY UPDATE '.implode(', ', $upd);
 
@@ -265,6 +284,12 @@ class KontenState
                 $args[] = RowSync::ms($simpan['createdAt'] ?? 0);
             }
             $args[] = RowSync::enc($simpan);
+            if ($versioned) {
+                $args[] = 1;
+            }
+            if ($useUlid) {
+                array_unshift($args, strtolower((string) Str::ulid()));
+            }
             $db->statement($sql, $args);
         }
 
@@ -272,7 +297,7 @@ class KontenState
         // from the payload is deleted, including rows created after the client
         // loaded. An empty payload never empties a table (guard against an
         // accidentally empty state, e.g. the app failed to load then saved).
-        RowSync::deleteMissing($db, $table, 'id', $ids, 'notIn');
+        RowSync::deleteMissing($db, $table, $idCol, $ids, 'notIn');
 
         return count($ids);
     }
@@ -285,19 +310,34 @@ class KontenState
      */
     public function appendLogs(ConnectionInterface $db, array $logs): int
     {
+        $table = KontenSchema::table('logs');
+        $idCol = KontenSchema::idCol();
+        $onCore = KontenSchema::onCore();
         $n = 0;
         foreach ($logs as $a) {
             if (! is_array($a) || empty($a['id'])) {
                 continue;
             }
-            $db->insert('INSERT IGNORE INTO logs (id, ref_id, action, by_user, at_ms, data) VALUES (?,?,?,?,?,?)', [
-                (string) $a['id'],
-                RowSync::ambil($a, 'target', 'str'),
-                RowSync::ambil($a, 'action', 'str'),
-                RowSync::ambil($a, 'by', 'str'),
-                RowSync::ambil($a, 'at', 'ms'),
-                RowSync::enc($a),
-            ]);
+            if ($onCore) {
+                $db->insert("INSERT IGNORE INTO `$table` (id, `$idCol`, ref_id, action, by_user, at_ms, data, version) VALUES (?,?,?,?,?,?,?,1)", [
+                    strtolower((string) Str::ulid()),
+                    (string) $a['id'],
+                    RowSync::ambil($a, 'target', 'str'),
+                    RowSync::ambil($a, 'action', 'str'),
+                    RowSync::ambil($a, 'by', 'str'),
+                    RowSync::ambil($a, 'at', 'ms'),
+                    RowSync::enc($a),
+                ]);
+            } else {
+                $db->insert('INSERT IGNORE INTO logs (id, ref_id, action, by_user, at_ms, data) VALUES (?,?,?,?,?,?)', [
+                    (string) $a['id'],
+                    RowSync::ambil($a, 'target', 'str'),
+                    RowSync::ambil($a, 'action', 'str'),
+                    RowSync::ambil($a, 'by', 'str'),
+                    RowSync::ambil($a, 'at', 'ms'),
+                    RowSync::enc($a),
+                ]);
+            }
             $n++;
         }
 

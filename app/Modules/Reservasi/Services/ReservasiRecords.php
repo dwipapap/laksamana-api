@@ -36,7 +36,7 @@ class ReservasiRecords
             $a[] = $to;
         }
         $out = [];
-        foreach ($this->db()->select('SELECT data FROM reservations'.($w ? ' WHERE '.implode(' AND ', $w) : '').' ORDER BY created_at ASC, id ASC', $a) as $r) {
+        foreach ($this->db()->select('SELECT data FROM '.ReservasiState::t('reservations').($w ? ' WHERE '.implode(' AND ', $w) : '').' ORDER BY created_at ASC, '.ReservasiState::idCol().' ASC', $a) as $r) {
             $d = json_decode((string) $r->data, true);
             if (is_array($d)) {
                 $out[] = $d;
@@ -49,7 +49,7 @@ class ReservasiRecords
     /** @return array{row:array,version:int}|null */
     public function find(string $id, bool $lock = false): ?array
     {
-        $r = $this->db()->selectOne('SELECT data, updated_at FROM reservations WHERE id = ?'.($lock ? ' FOR UPDATE' : ''), [$id]);
+        $r = $this->db()->selectOne('SELECT data, updated_at FROM '.ReservasiState::t('reservations').' WHERE '.ReservasiState::idCol().' = ?'.($lock ? ' FOR UPDATE' : ''), [$id]);
         if (! $r) {
             return null;
         }
@@ -104,7 +104,7 @@ class ReservasiRecords
             if ($cur['version'] !== $base) {
                 throw new ReservasiConflict('stale', $cur);
             }
-            $this->db()->delete('DELETE FROM reservations WHERE id = ?', [$id]);
+            $this->db()->delete('DELETE FROM '.ReservasiState::t('reservations').' WHERE '.ReservasiState::idCol().' = ?', [$id]);
             $this->state->deleteRowFiles($cur['row']);
             if ($audit) {
                 $this->state->appendAudit($audit);
@@ -225,7 +225,7 @@ class ReservasiRecords
         }
 
         return $this->state->writeLocked(function () use ($value, $base) {
-            $this->db()->selectOne("SELECT v FROM settings WHERE k='_ver' FOR UPDATE");
+            $this->db()->selectOne('SELECT v FROM '.ReservasiState::t('settings')." WHERE k='_ver' FOR UPDATE");
             $cur = $this->master();
             if (! hash_equals($cur['version'], $base)) {
                 throw new ReservasiConflict('stale', ['master' => $cur['value']]);
@@ -240,7 +240,7 @@ class ReservasiRecords
     /** serialise with legacy saveAll, then lock the exact master row being edited */
     private function lockedMaster(): array
     {
-        $this->db()->selectOne("SELECT v FROM settings WHERE k='_ver' FOR UPDATE");
+        $this->db()->selectOne('SELECT v FROM '.ReservasiState::t('settings')." WHERE k='_ver' FOR UPDATE");
 
         return $this->state->readMaster(true) ?? [];
     }

@@ -64,7 +64,7 @@ Keys: `firstRun`, `mood`, `energy`, `focus`, `weeklyTarget`, `auth`, `channels`,
 
 ## Concurrency
 
-These tables have no version column. A version is the first 16 hex characters of `sha1` of the stored JSON, so a write through either surface changes it, whether that is v1 or a legacy `saveAll` from an old tab. Send it as `If-Match: "<version>"` or `?version=<version>`.
+The exposed version is the first 16 hex characters of `sha1` of the stored JSON, so a write through either surface changes it, whether that is v1 or a legacy `saveAll` from an old tab. Send it as `If-Match: "<version>"` or `?version=<version>`. (The legacy tables have no version column; on `core` (#65) each table also counts its writes in the ADR-0003 `version` column, but the contract above does not change — the hash works identically on both storages.)
 
 - missing → `428 version_required`
 - stale → `409 version_conflict`, with the live record (or setting value) in `error.details.current`

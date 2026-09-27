@@ -56,7 +56,7 @@ class AkademiRecords
         [$key, $prefix, $label, $verb] = self::RESOURCES[$name];
 
         return ['key' => $key, 'prefix' => $prefix, 'label' => $label, 'verb' => $verb,
-            'def' => AkademiSchema::collections()[$key]];
+            'def' => AkademiSchema::defs()[$key]];
     }
 
     public static function nowMs(): int
@@ -106,7 +106,7 @@ class AkademiRecords
             $where[] = '`updated_at` > ?';
             $args[] = (int) $f['updatedSince'];
         }
-        $order = ! empty($def['created']) ? 'created_at DESC, id DESC' : 'id ASC';
+        $order = ! empty($def['created']) ? AkademiSchema::createdOrder() : AkademiSchema::idOrder();
         $sql = "SELECT data FROM `{$def['table']}`".($where ? ' WHERE '.implode(' AND ', $where) : '')." ORDER BY $order";
         $out = [];
         foreach ($this->db()->select($sql, $args) as $row) {
@@ -145,7 +145,8 @@ class AkademiRecords
     public function find(string $resource, string $id): ?array
     {
         $r = self::resource($resource);
-        $row = $this->db()->selectOne("SELECT updated_at, data FROM `{$r['def']['table']}` WHERE id = ?", [$id]);
+        $idCol = AkademiSchema::idCol();
+        $row = $this->db()->selectOne("SELECT updated_at, data FROM `{$r['def']['table']}` WHERE `$idCol` = ?", [$id]);
         if (! $row) {
             return null;
         }
@@ -227,7 +228,8 @@ class AkademiRecords
             if ($cur['version'] !== $baseVersion) {
                 throw new RecordConflict('conflict', $cur['row']);
             }
-            $this->db()->delete("DELETE FROM `{$r['def']['table']}` WHERE id = ?", [$id]);
+            $idCol = AkademiSchema::idCol();
+            $this->db()->delete("DELETE FROM `{$r['def']['table']}` WHERE `$idCol` = ?", [$id]);
             $this->log($r, 'hapus', $id, $cur['row'], $by);
         });
     }
@@ -236,18 +238,30 @@ class AkademiRecords
     private function writeRow(array $def, array $row, int $stamp): void
     {
         $db = $this->db();
+        $idCol = $def['id'] ?? 'id';
+        $useUlid = ! empty($def['ulid']);
+        $versioned = ! empty($def['versioned']);
         $cols = $def['cols'];
         $hasCreated = ! empty($def['created']);
-        $names = array_merge(['id'], array_keys($cols), ['updated_at']);
+        $names = array_merge([$idCol], array_keys($cols), ['updated_at']);
         if ($hasCreated) {
             $names[] = 'created_at';
         }
         $names[] = 'data';
+        if ($versioned) {
+            $names[] = 'version';
+        }
+        if ($useUlid) {
+            array_unshift($names, 'id');
+        }
         $upd = [];
         foreach (array_merge(array_keys($cols), ['data']) as $n) {
             $upd[] = "`$n` = IF(VALUES(updated_at) >= updated_at, VALUES(`$n`), `$n`)";
         }
         $upd[] = '`updated_at` = IF(VALUES(updated_at) >= updated_at, VALUES(updated_at), updated_at)';
+        if ($versioned) {
+            $upd[] = '`version` = `version` + 1';
+        }
         $args = [(string) $row['id']];
         foreach ($cols as $col => [$field, $type]) {
             $args[] = RowSync::ambil($row, $field, $type);
@@ -257,6 +271,12 @@ class AkademiRecords
             $args[] = RowSync::ms($row['createdAt'] ?? 0);
         }
         $args[] = RowSync::enc($row);
+        if ($versioned) {
+            $args[] = 1;
+        }
+        if ($useUlid) {
+            array_unshift($args, strtolower((string) Str::ulid()));
+        }
         $db->statement(
             "INSERT INTO `{$def['table']}` (`".implode('`,`', $names).'`) VALUES ('
             .implode(',', array_fill(0, count($names), '?')).') ON DUPLICATE KEY UPDATE '.implode(', ', $upd),
@@ -269,9 +289,16 @@ class AkademiRecords
         $name = $row['title'] ?? $row['name'] ?? $id;
         $now = self::nowMs();
         $entry = ['ts' => $now, 'userId' => $by, 'action' => $verb.'_'.$r['verb'], 'detail' => is_scalar($name) ? (string) $name : $id];
-        $this->db()->insert('INSERT IGNORE INTO activity (id, ts, user_id, action, data) VALUES (?,?,?,?,?)', [
-            AkademiState::activityId($entry), $now, $by, $entry['action'], RowSync::enc($entry),
-        ]);
+        $t = AkademiSchema::table('activity');
+        if (AkademiSchema::onCore()) {
+            $this->db()->insert("INSERT IGNORE INTO `$t` (id, legacy_id, ts, user_id, action, data, version) VALUES (?,?,?,?,?,?,1)", [
+                strtolower((string) Str::ulid()), AkademiState::activityId($entry), $now, $by, $entry['action'], RowSync::enc($entry),
+            ]);
+        } else {
+            $this->db()->insert('INSERT IGNORE INTO activity (id, ts, user_id, action, data) VALUES (?,?,?,?,?)', [
+                AkademiState::activityId($entry), $now, $by, $entry['action'], RowSync::enc($entry),
+            ]);
+        }
     }
 
     // ───────────────────────────── progress (composite keys) ──
@@ -291,8 +318,9 @@ class AkademiRecords
             $where[] = 'material_id = ?';
             $args[] = $material;
         }
+        $t = AkademiSchema::table('progress');
         $rows = [];
-        foreach ($this->db()->select('SELECT user_id, material_id, updated_at, data FROM progress'
+        foreach ($this->db()->select("SELECT user_id, material_id, updated_at, data FROM `$t`"
             .($where ? ' WHERE '.implode(' AND ', $where) : '').' ORDER BY user_id, material_id', $args) as $r) {
             $d = json_decode((string) $r->data, true);
             if (is_array($d)) {
@@ -307,7 +335,8 @@ class AkademiRecords
     /** @return array{userId:string,materialId:string,version:int,entry:array}|null */
     public function progressFind(string $user, string $material): ?array
     {
-        $r = $this->db()->selectOne('SELECT user_id, material_id, updated_at, data FROM progress WHERE user_id = ? AND material_id = ?', [$user, $material]);
+        $t = AkademiSchema::table('progress');
+        $r = $this->db()->selectOne("SELECT user_id, material_id, updated_at, data FROM `$t` WHERE user_id = ? AND material_id = ?", [$user, $material]);
         if (! $r) {
             return null;
         }
@@ -358,7 +387,8 @@ class AkademiRecords
             if ($cur['version'] !== $baseVersion) {
                 throw new RecordConflict('conflict', $cur['entry']);
             }
-            $this->db()->delete('DELETE FROM progress WHERE user_id = ? AND material_id = ?', [$user, $material]);
+            $t = AkademiSchema::table('progress');
+            $this->db()->delete("DELETE FROM `$t` WHERE user_id = ? AND material_id = ?", [$user, $material]);
         });
     }
 
@@ -375,8 +405,9 @@ class AkademiRecords
                 $args[] = $v;
             }
         }
+        $t = AkademiSchema::table('progProg');
         $rows = [];
-        foreach ($this->db()->select('SELECT user_id, program_id, material_id, updated_at, data FROM prog_prog'
+        foreach ($this->db()->select("SELECT user_id, program_id, material_id, updated_at, data FROM `$t`"
             .($where ? ' WHERE '.implode(' AND ', $where) : '').' ORDER BY user_id, program_id, material_id', $args) as $r) {
             $d = json_decode((string) $r->data, true);
             if (is_array($d)) {
@@ -391,7 +422,8 @@ class AkademiRecords
     /** @return array{userId:string,programId:string,materialId:string,version:int,entry:array}|null */
     public function progProgFind(string $user, string $program, string $material): ?array
     {
-        $r = $this->db()->selectOne('SELECT user_id, program_id, material_id, updated_at, data FROM prog_prog WHERE user_id = ? AND program_id = ? AND material_id = ?',
+        $t = AkademiSchema::table('progProg');
+        $r = $this->db()->selectOne("SELECT user_id, program_id, material_id, updated_at, data FROM `$t` WHERE user_id = ? AND program_id = ? AND material_id = ?",
             [$user, $program, $material]);
         if (! $r) {
             return null;
@@ -423,7 +455,8 @@ class AkademiRecords
             }
             $entry['updatedAt'] = $stamp;
             app(AkademiState::class)->saveProgProg($this->db(), [$user => [$program => [$material => $entry]]]);
-            $row = $this->db()->selectOne('SELECT updated_at, data FROM prog_prog WHERE user_id = ? AND program_id = ? AND material_id = ?',
+            $t = AkademiSchema::table('progProg');
+            $row = $this->db()->selectOne("SELECT updated_at, data FROM `$t` WHERE user_id = ? AND program_id = ? AND material_id = ?",
                 [$user, $program, $material]);
 
             return ['userId' => $user, 'programId' => $program, 'materialId' => $material,
@@ -434,7 +467,8 @@ class AkademiRecords
     public function progProgDelete(string $user, string $program, string $material, int $baseVersion): void
     {
         NamedLock::run('akademi', 'akademi_save', function () use ($user, $program, $material, $baseVersion) {
-            $cur = $this->db()->selectOne('SELECT updated_at, data FROM prog_prog WHERE user_id = ? AND program_id = ? AND material_id = ?',
+            $t = AkademiSchema::table('progProg');
+            $cur = $this->db()->selectOne("SELECT updated_at, data FROM `$t` WHERE user_id = ? AND program_id = ? AND material_id = ?",
                 [$user, $program, $material]);
             if (! $cur) {
                 throw new RuntimeException('not_found');
@@ -442,7 +476,7 @@ class AkademiRecords
             if ((int) $cur->updated_at !== $baseVersion) {
                 throw new RecordConflict('conflict', json_decode((string) $cur->data, true));
             }
-            $this->db()->delete('DELETE FROM prog_prog WHERE user_id = ? AND program_id = ? AND material_id = ?', [$user, $program, $material]);
+            $this->db()->delete("DELETE FROM `$t` WHERE user_id = ? AND program_id = ? AND material_id = ?", [$user, $program, $material]);
         });
     }
 
@@ -461,9 +495,11 @@ class AkademiRecords
             $where[] = 'action = ?';
             $args[] = $action;
         }
+        $t = AkademiSchema::table('activity');
+        $idCol = AkademiSchema::idCol();
         $rows = array_values(array_filter(array_map(fn ($x) => json_decode((string) $x->data, true),
-            $this->db()->select('SELECT data FROM activity'.($where ? ' WHERE '.implode(' AND ', $where) : '')
-                .' ORDER BY ts DESC, id DESC LIMIT '.min(max($limit, 1), 5000), $args)), 'is_array'));
+            $this->db()->select("SELECT data FROM `$t`".($where ? ' WHERE '.implode(' AND ', $where) : '')
+                ." ORDER BY ts DESC, `$idCol` DESC LIMIT ".min(max($limit, 1), 5000), $args)), 'is_array'));
 
         return ['rows' => $rows, 'total' => count($rows)];
     }
@@ -473,11 +509,19 @@ class AkademiRecords
         return NamedLock::run('akademi', 'akademi_save', function () use ($entry, $by) {
             $now = self::nowMs();
             $row = ['ts' => $now, 'userId' => $by, 'action' => $entry['action'] ?? 'catatan', 'detail' => $entry['detail'] ?? ''];
-            $this->db()->insert('INSERT IGNORE INTO activity (id, ts, user_id, action, data) VALUES (?,?,?,?,?)', [
-                AkademiState::activityId($row), $now, $by, $row['action'], RowSync::enc($row),
-            ]);
-            $this->db()->statement('DELETE FROM activity WHERE id NOT IN
-                (SELECT id FROM (SELECT id FROM activity ORDER BY ts DESC, id DESC LIMIT 5000) t)');
+            $t = AkademiSchema::table('activity');
+            $idCol = AkademiSchema::idCol();
+            if (AkademiSchema::onCore()) {
+                $this->db()->insert("INSERT IGNORE INTO `$t` (id, legacy_id, ts, user_id, action, data, version) VALUES (?,?,?,?,?,?,1)", [
+                    strtolower((string) Str::ulid()), AkademiState::activityId($row), $now, $by, $row['action'], RowSync::enc($row),
+                ]);
+            } else {
+                $this->db()->insert('INSERT IGNORE INTO activity (id, ts, user_id, action, data) VALUES (?,?,?,?,?)', [
+                    AkademiState::activityId($row), $now, $by, $row['action'], RowSync::enc($row),
+                ]);
+            }
+            $this->db()->statement("DELETE FROM `$t` WHERE `$idCol` NOT IN
+                (SELECT `$idCol` FROM (SELECT `$idCol` FROM `$t` ORDER BY ts DESC, `$idCol` DESC LIMIT 5000) t)");
 
             return ['row' => $row];
         });
@@ -497,7 +541,8 @@ class AkademiRecords
     /** @return array{value:mixed,version:string} version = sha1 of the stored JSON */
     public function document(string $doc): array
     {
-        $row = $this->db()->selectOne('SELECT v FROM settings WHERE k = ?', [self::documentKey($doc)]);
+        $t = AkademiSchema::table('settings');
+        $row = $this->db()->selectOne("SELECT v FROM `$t` WHERE k = ?", [self::documentKey($doc)]);
         $raw = $row ? (string) $row->v : 'null';
 
         return ['value' => json_decode($raw, true), 'version' => sha1($raw)];
@@ -510,7 +555,8 @@ class AkademiRecords
             if ($cur['version'] !== $baseVersion) {
                 throw new RecordConflict('conflict', ['value' => $cur['value'], 'version' => $cur['version']]);
             }
-            RowSync::putSetting($this->db(), self::documentKey($doc), $value);
+            RowSync::putSetting($this->db(), self::documentKey($doc), $value,
+                AkademiSchema::table('settings'), AkademiSchema::onCore());
 
             return $this->document($doc);
         });

@@ -5,6 +5,7 @@ namespace App\Modules\Finance\Http\V1;
 use App\Auth\OfficeAccess;
 use App\Modules\Finance\Services\Brankas;
 use App\Modules\Finance\Services\FinanceConflict;
+use App\Modules\Finance\Services\KasKecil;
 use App\Modules\Finance\Services\KasKecilRecords;
 use App\Modules\Finance\Services\VaultMiss;
 use App\Support\Api\ApiResponse;
@@ -181,7 +182,7 @@ class VaultController
         }
 
         return $this->brankas->db()->transaction(function () use ($r, $base) {
-            $this->brankas->db()->select('SELECT `id` FROM `bk_akses` FOR UPDATE');
+            $this->brankas->db()->select('SELECT '.KasKecil::idCol().' FROM `'.KasKecil::t('bk_akses').'` FOR UPDATE');
             $cur = $this->brankas->akses();
             if (! hash_equals(KasKecilRecords::version($cur), $base)) {
                 return ApiResponse::error('version_conflict', 'Changed by someone else. Reload and apply your change again.', 409, ['current' => $cur]);
@@ -204,7 +205,7 @@ class VaultController
         }
 
         return $this->brankas->db()->transaction(function () use ($r, $userId, $base) {
-            $cur = $this->brankas->db()->selectOne('SELECT `peran` FROM `bk_peran` WHERE `kunci`=? FOR UPDATE', ['#'.$userId]);
+            $cur = $this->brankas->db()->selectOne('SELECT `peran` FROM `'.KasKecil::t('bk_peran').'` WHERE `kunci`=? FOR UPDATE', ['#'.$userId]);
             $cur = $cur ? (string) $cur->peran : null;
             if (! hash_equals(KasKecilRecords::version($cur), $base)) {
                 return ApiResponse::error('version_conflict', 'Changed by someone else. Reload and apply your change again.', 409, ['current' => $cur]);

@@ -26,7 +26,7 @@ class StockHppNames
         if (! array_key_exists($name, $this->tables)) {
             try {
                 $this->tables[$name] = (bool) (int) StockSupport::db()->selectOne(
-                    'SELECT COUNT(*) AS c FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?', [$name])->c;
+                    'SELECT COUNT(*) AS c FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?', [StockSupport::table($name)])->c;
             } catch (Throwable $e) {
                 Log::warning('[stock/hpp-nama] cek tabel '.$name.' gagal: '.$e->getMessage());
                 $this->tables[$name] = false;
@@ -45,12 +45,12 @@ class StockHppNames
         }
         try {
             $db = StockSupport::db();
-            if ((int) $db->selectOne('SELECT COUNT(*) AS c FROM hpp_bahan WHERE nama = ?', [$nama])->c) {
+            if ((int) $db->selectOne(StockSupport::q('SELECT COUNT(*) AS c FROM {hpp_bahan} WHERE nama = ?'), [$nama])->c) {
                 return false;
             }
             $sat = (is_array($satuan) && count($satuan)) ? mb_substr(trim(StockSupport::str($satuan[0])), 0, 32) : '';
-            $db->insert("INSERT INTO hpp_bahan (nama,satuan,qty_beli,harga_beli,vendor,produk,kategori,catatan,updated_at,updated_by)
-                         VALUES (?,?,0,0,'','','',?,?,'purchasing')",
+            $db->insert(StockSupport::q("INSERT INTO {hpp_bahan} (nama,satuan,qty_beli,harga_beli,vendor,produk,kategori,catatan,updated_at,updated_by)
+                         VALUES (?,?,0,0,'','','',?,?,'purchasing')"),
                 [$nama, $sat, 'Dibuat otomatis dari Purchasing — harga belum diisi.', (int) (microtime(true) * 1000)]);
 
             return true;
@@ -72,31 +72,31 @@ class StockHppNames
         }
         $db = StockSupport::db();
         try {
-            if (! (int) $db->selectOne('SELECT COUNT(*) AS c FROM hpp_bahan WHERE nama = ?', [$lama])->c) {
+            if (! (int) $db->selectOne(StockSupport::q('SELECT COUNT(*) AS c FROM {hpp_bahan} WHERE nama = ?'), [$lama])->c) {
                 return $out;
             }
-            if ((int) $db->selectOne('SELECT COUNT(*) AS c FROM hpp_bahan WHERE nama = ?', [$baru])->c) {
+            if ((int) $db->selectOne(StockSupport::q('SELECT COUNT(*) AS c FROM {hpp_bahan} WHERE nama = ?'), [$baru])->c) {
                 $out['lewat'] = 'nama "'.$baru.'" sudah dipakai bahan HPP lain';
 
                 return $out;
             }
-            $db->update('UPDATE hpp_bahan SET nama = ? WHERE nama = ?', [$baru, $lama]);
+            $db->update(StockSupport::q('UPDATE {hpp_bahan} SET nama = ? WHERE nama = ?'), [$baru, $lama]);
             $out['bahan'] = 1;
-            $db->update('UPDATE hpp_bahan SET produk = ? WHERE produk = ?', [$baru, $lama]);
+            $db->update(StockSupport::q('UPDATE {hpp_bahan} SET produk = ? WHERE produk = ?'), [$baru, $lama]);
 
             if ($this->tableExists('hpp_pakai')) {
-                foreach ($db->select('SELECT bulan FROM hpp_pakai WHERE bahan = ?', [$lama]) as $r) {
-                    if ((int) $db->selectOne('SELECT COUNT(*) AS c FROM hpp_pakai WHERE bahan = ? AND bulan = ?', [$baru, $r->bulan])->c) {
+                foreach ($db->select(StockSupport::q('SELECT bulan FROM {hpp_pakai} WHERE bahan = ?'), [$lama]) as $r) {
+                    if ((int) $db->selectOne(StockSupport::q('SELECT COUNT(*) AS c FROM {hpp_pakai} WHERE bahan = ? AND bulan = ?'), [$baru, $r->bulan])->c) {
                         continue; // that month already has the new name: never overwrite someone's count
                     }
-                    $db->update('UPDATE hpp_pakai SET bahan = ? WHERE bahan = ? AND bulan = ?', [$baru, $lama, $r->bulan]);
+                    $db->update(StockSupport::q('UPDATE {hpp_pakai} SET bahan = ? WHERE bahan = ? AND bulan = ?'), [$baru, $lama, $r->bulan]);
                     $out['pakai']++;
                 }
             }
 
             if ($this->tableExists('hpp_resep')) {
                 $like = '%'.str_replace(['%', '_'], ['\\%', '\\_'], $lama).'%';
-                foreach ($db->select('SELECT id, bahan FROM hpp_resep WHERE bahan LIKE ?', [$like]) as $r) {
+                foreach ($db->select(StockSupport::q('SELECT {id} AS `id`, bahan FROM {hpp_resep} WHERE bahan LIKE ?'), [$like]) as $r) {
                     $baris = json_decode((string) $r->bahan, true);
                     if (! is_array($baris)) {
                         continue;
@@ -110,7 +110,7 @@ class StockHppNames
                     }
                     unset($ln);
                     if ($ubah) {
-                        $db->update('UPDATE hpp_resep SET bahan = ? WHERE id = ?', [json_encode($baris, JSON_UNESCAPED_UNICODE), $r->id]);
+                        $db->update(StockSupport::q('UPDATE {hpp_resep} SET bahan = ? WHERE {id} = ?'), [json_encode($baris, JSON_UNESCAPED_UNICODE), $r->id]);
                         $out['resep']++;
                     }
                 }

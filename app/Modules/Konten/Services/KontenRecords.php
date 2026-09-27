@@ -59,7 +59,7 @@ class KontenRecords
         [$key, $prefix, $label] = self::RESOURCES[$name];
 
         return ['key' => $key, 'prefix' => $prefix, 'label' => $label,
-            'def' => KontenSchema::collections()[$key]];
+            'def' => KontenSchema::defs()[$key]];
     }
 
     public static function nowMs(): int
@@ -109,7 +109,7 @@ class KontenRecords
             $where[] = '`updated_at` > ?';
             $args[] = (int) $f['updatedSince'];
         }
-        $order = ! empty($def['created']) ? 'created_at DESC, id DESC' : 'id ASC';
+        $order = ! empty($def['created']) ? KontenSchema::createdOrder() : KontenSchema::idOrder();
         $sql = "SELECT data FROM `{$def['table']}`".($where ? ' WHERE '.implode(' AND ', $where) : '')." ORDER BY $order";
         $out = [];
         foreach ($this->db()->select($sql, $args) as $row) {
@@ -141,7 +141,8 @@ class KontenRecords
     public function find(string $resource, string $id): ?array
     {
         $r = self::resource($resource);
-        $row = $this->db()->selectOne("SELECT data FROM `{$r['def']['table']}` WHERE id = ?", [$id]);
+        $idCol = KontenSchema::idCol();
+        $row = $this->db()->selectOne("SELECT data FROM `{$r['def']['table']}` WHERE `$idCol` = ?", [$id]);
         $d = $row ? json_decode((string) $row->data, true) : null;
 
         return is_array($d) ? $d : null;
@@ -219,7 +220,8 @@ class KontenRecords
             if (self::versionOf($cur) !== $baseVersion) {
                 throw new RecordConflict('conflict', $cur);
             }
-            $this->db()->delete("DELETE FROM `{$r['def']['table']}` WHERE id = ?", [$id]);
+            $idCol = KontenSchema::idCol();
+            $this->db()->delete("DELETE FROM `{$r['def']['table']}` WHERE `$idCol` = ?", [$id]);
             $this->log($r, $id, $cur, 'dihapus', $by);
         });
     }
@@ -256,18 +258,30 @@ class KontenRecords
     private function writeRow(array $def, array $row): void
     {
         $db = $this->db();
+        $idCol = $def['id'] ?? 'id';
+        $useUlid = ! empty($def['ulid']);
+        $versioned = ! empty($def['versioned']);
         $cols = $def['cols'];
         $hasCreated = ! empty($def['created']);
-        $names = array_merge(['id'], array_keys($cols), ['updated_at']);
+        $names = array_merge([$idCol], array_keys($cols), ['updated_at']);
         if ($hasCreated) {
             $names[] = 'created_at';
         }
         $names[] = 'data';
+        if ($versioned) {
+            $names[] = 'version';
+        }
+        if ($useUlid) {
+            array_unshift($names, 'id');
+        }
         $upd = [];
         foreach (array_merge(array_keys($cols), ['data']) as $n) {
             $upd[] = "`$n` = IF(VALUES(updated_at) >= updated_at, VALUES(`$n`), `$n`)";
         }
         $upd[] = '`updated_at` = IF(VALUES(updated_at) >= updated_at, VALUES(updated_at), updated_at)';
+        if ($versioned) {
+            $upd[] = '`version` = `version` + 1';
+        }
         $args = [(string) $row['id']];
         foreach ($cols as $col => [$field, $type]) {
             $args[] = RowSync::ambil($row, $field, $type);
@@ -277,6 +291,12 @@ class KontenRecords
             $args[] = RowSync::ms($row['createdAt'] ?? 0);
         }
         $args[] = RowSync::enc($row);
+        if ($versioned) {
+            $args[] = 1;
+        }
+        if ($useUlid) {
+            array_unshift($args, strtolower((string) Str::ulid()));
+        }
         $db->transaction(fn () => $db->statement(
             "INSERT INTO `{$def['table']}` (`".implode('`,`', $names).'`) VALUES ('
             .implode(',', array_fill(0, count($names), '?')).') ON DUPLICATE KEY UPDATE '.implode(', ', $upd),
@@ -302,12 +322,14 @@ class KontenRecords
     public function logs(?string $refId, int $limit): array
     {
         $args = [];
-        $sql = 'SELECT data FROM logs';
+        $t = KontenSchema::table('logs');
+        $idCol = KontenSchema::idCol();
+        $sql = "SELECT data FROM `$t`";
         if ($refId !== null && $refId !== '') {
             $sql .= ' WHERE ref_id = ?';
             $args[] = $refId;
         }
-        $sql .= ' ORDER BY at_ms DESC, id DESC LIMIT '.min(max($limit, 1), 5000);
+        $sql .= " ORDER BY at_ms DESC, `$idCol` DESC LIMIT ".min(max($limit, 1), 5000);
         $rows = array_values(array_filter(array_map(fn ($x) => json_decode((string) $x->data, true),
             $this->db()->select($sql, $args)), 'is_array'));
 
@@ -320,8 +342,10 @@ class KontenRecords
             $now = self::nowMs();
             $row = $entry + ['id' => 'lg_'.strtolower(Str::random(10)), 'by' => $by, 'at' => $now];
             app(KontenState::class)->appendLogs($this->db(), [$row]);
-            $this->db()->statement('DELETE FROM logs WHERE id NOT IN
-                (SELECT id FROM (SELECT id FROM logs ORDER BY at_ms DESC, id DESC LIMIT 5000) t)');
+            $t = KontenSchema::table('logs');
+            $idCol = KontenSchema::idCol();
+            $this->db()->statement("DELETE FROM `$t` WHERE `$idCol` NOT IN
+                (SELECT `$idCol` FROM (SELECT `$idCol` FROM `$t` ORDER BY at_ms DESC, `$idCol` DESC LIMIT 5000) t)");
 
             return ['row' => $row];
         });
@@ -341,7 +365,8 @@ class KontenRecords
     /** @return array{value:mixed,version:string} version = sha1 of the stored JSON */
     public function document(string $doc): array
     {
-        $row = $this->db()->selectOne('SELECT v FROM settings WHERE k = ?', [self::documentKey($doc)]);
+        $t = KontenSchema::table('settings');
+        $row = $this->db()->selectOne("SELECT v FROM `$t` WHERE k = ?", [self::documentKey($doc)]);
         $raw = $row ? (string) $row->v : 'null';
 
         return ['value' => json_decode($raw, true), 'version' => sha1($raw)];
@@ -354,7 +379,8 @@ class KontenRecords
             if ($cur['version'] !== $baseVersion) {
                 throw new RecordConflict('conflict', ['value' => $cur['value'], 'version' => $cur['version']]);
             }
-            RowSync::putSetting($this->db(), self::documentKey($doc), $value);
+            RowSync::putSetting($this->db(), self::documentKey($doc), $value,
+                KontenSchema::table('settings'), KontenSchema::onCore());
 
             return $this->document($doc);
         });

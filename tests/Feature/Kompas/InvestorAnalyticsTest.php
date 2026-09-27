@@ -1,5 +1,9 @@
 <?php
 
+require_once __DIR__.'/helpers.php';
+
+use App\Modules\Finance\Services\Brankas;
+use App\Modules\Kompas\Services\KompasState;
 use App\Support\Modules;
 use Illuminate\Testing\TestResponse;
 
@@ -20,10 +24,12 @@ function iaPdf(): string
 }
 
 it('investorRingkas sums from the daily map and reads dividends from Brankas in-process', function () {
-    $fin = Modules::db('finance');
-    $blob = json_decode($fin->selectOne('SELECT data FROM bk_state WHERE id=1')->data, true);
+    // seed the vault through finance's own writer: kompas reads it via the Brankas
+    // service (InvestorAnalytics), so the fixture must not touch bk_state directly
+    $brankas = app(Brankas::class);
+    $blob = $brankas->read()['data'];
     $blob['investor'] = [['name' => 'Inv A', 'capital' => '100.000.000', 'returns' => [['date' => '2026-09-01', 'amount' => 5000000], ['date' => 'x', 'amount' => 1]]]];
-    $fin->update('UPDATE bk_state SET data=? WHERE id=1', [json_encode($blob)]);
+    $brankas->save($blob, 'investor test');
 
     $res = iaPost(['action' => 'investorRingkas', 'sesi' => legacySesi(officeUser('u-dwipa'))])->assertOk()->assertJsonPath('ok', true);
     expect($res->json('data.dividen'))->toMatchArray(['gagal' => false, 'total' => 5000000, 'modal' => 100000000, 'investor' => 1])
@@ -49,7 +55,7 @@ it('an admin uploads, replaces and deletes a report; the file streams back', fun
     $sesi = legacySesi(officeUser('u-wandi'));
     iaPost(['action' => 'investorLaporUpload', 'sesi' => $sesi, 'bulan' => '2026-08', 'berkas' => ['balance' => ['dataBase64' => iaPdf(), 'fileName' => 'B.pdf'], 'ledger' => ['dataBase64' => base64_encode('nope')]]])
         ->assertJsonPath('ok', true)->assertJsonPath('data.tersimpan', ['balance'])->assertJsonPath('data.galat', ['ledger: berkasnya bukan PDF']);
-    $first = Modules::db('kompas')->selectOne("SELECT kunci FROM inv_lapor WHERE bulan='2026-08' AND jenis='balance'")->kunci;
+    $first = Modules::db('kompas')->selectOne('SELECT `kunci` FROM `'.KompasState::t('inv_lapor')."` WHERE bulan='2026-08' AND jenis='balance'")->kunci;
     iaPost(['action' => 'investorLaporUpload', 'sesi' => $sesi, 'bulan' => '2026-08', 'berkas' => ['balance' => ['dataBase64' => iaPdf()]]])->assertJsonPath('ok', true);
     expect(is_file(storage_path('framework/testing/kompas-db/lapor/'.$first)))->toBeFalse(); // old file removed after the new one
 

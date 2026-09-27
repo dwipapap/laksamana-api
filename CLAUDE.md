@@ -30,6 +30,10 @@ root without password. PHP: `C:\Users\dwip\.config\herd-lite\bin\php.exe` (8.4) 
 Writing CODE that deletes is fine; executing deletes happens only on local copies.
 Laravel migrations run ONLY on the `core` connection. Never create a migration for a legacy table.
 
+`../laksamana-office` is READ-ONLY for this project: it is the old app, still in use and
+maintained by other developers. Read it as the spec; never edit, commit, branch or open PRs
+there. If a fix would need a change on that side, say so in the issue and stop.
+
 ---
 
 ## 1. Layout
@@ -70,6 +74,10 @@ hlife hr jadwal kompas konten marketing reservasi stock. event+ticketing share `
    Use `Modules::db('<key>')` + parameterised SQL (EMULATE_PREPARES=false — each `?`/name once).
    Do NOT port runtime DDL (`*_pastikan`, ALTER): tables already exist live. If code must
    tolerate a missing optional column, check `information_schema` read-only and degrade.
+   **Exception — legacy bugs the owner decided to fix:** when an issue carries an
+   "Owner decision (…): fix it" comment, fix that behaviour instead of reproducing it.
+   Remove the parity case that pinned the old behaviour, pin the new one with a Pest test,
+   and note the change in `docs/modules/<module>.md`. Everything else stays identical.
 3. `Http/Legacy/<Name>LegacyController` — `match ($req->action)` → service → exact legacy
    envelope (Envelope::okData / error / flat / statusError / raw streams). Keep open
    endpoints open (ping, stats, cross-module reads like shiftHari, headIds, jadwalDW, eventsHari,
@@ -91,7 +99,7 @@ hlife hr jadwal kompas konten marketing reservasi stock. event+ticketing share `
    so tests may write. Use real rows from the restored DB. One HTTP request per auth identity
    per test (guards cache the user within a test).
 7. `tools/parity/cases/<module>.json` — reads for every action + the important write paths.
-   `node tools/parity/parity.mjs <module>` must print `N/N identical`. Ignore only
+   `node tools/parity/parity.mjs <module>` should print `N/N identical` (optional, see §4 pass criteria). Ignore only
    volatile fields (ts, backend, generated ids/tokens) — never ignore real behaviour.
 8. **Milestone.** Finishing a module = commit + annotated tag (`git tag -a m<N>-<name>`) + a row in
    `docs/MILESTONES.md` + status tables in `docs/modules/README.md` and §5 below.
@@ -118,6 +126,45 @@ CI (`.github/workflows/ci.yml`) runs on every push and PR: `php -l`, Pint `--tes
 the DB-free Unit suite (`php artisan test --testsuite=Unit`), and `route:list`.
 Feature tests need the restored dumps (§0), so CI skips them explicitly until
 the anonymised set from #9 can be restored in CI.
+
+### Pass criteria — keep them LOW (owner's call, 2026-09-26, tightened 2026-09-27)
+
+Speed beats exhaustive local verification. The bar to merge a PR is:
+**CI green** (lint, Pint, Unit, routes) **plus the touched module's tests green locally**.
+Nothing else is required.
+
+- **Required:** before opening a PR, run the touched module's folder once
+  (`php artisan test tests/Feature/<Name>`) and report the `Tests:` line in the PR.
+  For a cutover, run it on legacy AND with `DB_<NAME>_CONNECTION=core`, plus
+  `tests/Feature/Core/<Name>*`. CI runs no feature tests, so this is the only check
+  that the module still works. Seconds, not minutes.
+- **Never** run the full suite, never run it once per connection, never chunk it,
+  never re-run it after a rebase. Never run two suites at once.
+- Parity (`parity.mjs`) is optional; run it for the one module you changed, only if
+  you changed a legacy wire shape.
+- "Pest is green" in an issue means the module's own tests, not the full suite.
+- A slow test run is a bug in the harness to report, not a reason to split the run.
+
+The test harness (`tests/TestCase.php`) skips `migrate:fresh` when the migration files
+are unchanged (stamp in `test_schema_stamp`) and runs `core:import` once per process,
+so a module folder takes seconds after the first run.
+
+### Worktrees — one per issue, verified
+
+```bash
+node tools/agent-worktree.mjs <issue> <slug>    # -> ../wt-<issue>-<slug>, from origin/main
+node tools/agent-worktree.mjs --check <path>    # re-verify an existing worktree
+```
+
+Never symlink or junction a whole `vendor/` into a worktree. Composer bakes
+`$baseDir = dirname($vendorDir)` into `vendor/composer/autoload_*.php`, so a linked
+vendor makes PHP load **this** checkout's `app/**` and `tests/**`: `php -l` passes
+and your edits look ignored by `artisan`, Pest and `tools/parity`, with no warning
+(`core:import --list` not showing your importer is the tell). The script copies
+`vendor/autoload.php` + `vendor/composer/` for real, links only the package
+directories, and proves with a PHP reflection probe that `App\…` resolves inside
+the new worktree. Worktree names come from the **issue**, never an agent label, so
+two agents cannot end up sharing a checkout. Details: `docs/agents/worktrees.md`.
 
 ## 5. Status
 

@@ -19,14 +19,14 @@ class StockSettings
     public function available(): bool
     {
         return (bool) StockSupport::db()->selectOne(
-            "SELECT COUNT(*) c FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'stock_settings'"
+            'SELECT COUNT(*) c FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?', [StockSupport::table('stock_settings')]
         )->c;
     }
 
     /** compat ordering-settings.php — a missing table throws into serve()'s 500. */
     public function perms(string $module): stdClass
     {
-        $r = StockSupport::db()->selectOne('SELECT `data` FROM `stock_settings` WHERE `modul` = ?', [$module]);
+        $r = StockSupport::db()->selectOne(StockSupport::q('SELECT `data` FROM {stock_settings} WHERE `modul` = ?'), [$module]);
 
         return $r ? $this->object($r->data) : new stdClass;
     }
@@ -94,7 +94,7 @@ class StockSettings
         }
 
         return StockSupport::db()->transaction(function () use ($module, $fields, $version) {
-            StockSupport::db()->selectOne('SELECT `modul` FROM `stock_settings` WHERE `modul` = ? FOR UPDATE', [$module]);
+            StockSupport::db()->selectOne(StockSupport::q('SELECT `modul` FROM {stock_settings} WHERE `modul` = ? FOR UPDATE'), [$module]);
             $cur = $this->readV1($module);
             if (! hash_equals($cur['version'], $version)) {
                 throw new StockConflict('stale', $cur['record']);
@@ -114,8 +114,8 @@ class StockSettings
 
     private function write(string $module, stdClass $data): array
     {
-        StockSupport::db()->insert('INSERT INTO `stock_settings` (`modul`,`data`) VALUES (?,?)
-            ON DUPLICATE KEY UPDATE `data`=VALUES(`data`)', [$module, StockSupport::enc($data)]);
+        StockSupport::db()->insert(StockSupport::q('INSERT INTO {stock_settings} (`modul`,`data`) VALUES (?,?)
+            ON DUPLICATE KEY UPDATE `data`=VALUES(`data`)'), [$module, StockSupport::enc($data)]);
 
         return ['status' => 'success'];
     }

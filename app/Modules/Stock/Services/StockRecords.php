@@ -53,7 +53,7 @@ class StockRecords
         $table = $kind === 'products' ? 'products' : 'vendors';
         $map = $kind === 'products' ? $this->catalog->products() : $this->catalog->vendors();
         $raw = [];
-        foreach (StockSupport::db()->select("SELECT `nama`, `data` FROM `$table`") as $r) {
+        foreach (StockSupport::db()->select(StockSupport::q("SELECT `nama`, `data` FROM {{$table}}")) as $r) {
             $raw[(string) $r->nama] = (string) $r->data;
         }
         $out = [];
@@ -68,7 +68,7 @@ class StockRecords
     public function catalogFind(string $kind, string $nama, bool $lock = false): ?array
     {
         $table = $kind === 'products' ? 'products' : 'vendors';
-        $r = StockSupport::db()->selectOne("SELECT `nama`, `data` FROM `$table` WHERE `nama` = ?".($lock ? ' FOR UPDATE' : ''), [$nama]);
+        $r = StockSupport::db()->selectOne(StockSupport::q("SELECT `nama`, `data` FROM {{$table}} WHERE `nama` = ?").($lock ? ' FOR UPDATE' : ''), [$nama]);
         if (! $r) {
             return null;
         }
@@ -143,7 +143,7 @@ class StockRecords
     public function orderList(array $f): array
     {
         $map = ['status' => 'status', 'tim' => 'tim', 'batchId' => 'batch_id', 'tglDatang' => 'tgl_datang', 'kedatangan' => 'kedatangan', 'item' => 'item'];
-        $sql = 'SELECT * FROM `orders` WHERE 1=1';
+        $sql = StockSupport::q('SELECT {*orders} FROM {orders} WHERE 1=1');
         $par = [];
         foreach ($map as $k => $col) {
             if (isset($f[$k]) && is_string($f[$k])) {
@@ -169,7 +169,7 @@ class StockRecords
     /** @return array{record:stdClass, version:string}|null */
     public function orderFind(string $nomor, bool $lock = false): ?array
     {
-        $r = StockSupport::db()->selectOne('SELECT * FROM `orders` WHERE `nomor_order` = ?'.($lock ? ' FOR UPDATE' : ''), [$nomor]);
+        $r = StockSupport::db()->selectOne(StockSupport::q('SELECT {*orders} FROM {orders} WHERE `nomor_order` = ?').($lock ? ' FOR UPDATE' : ''), [$nomor]);
         if (! $r) {
             return null;
         }
@@ -239,7 +239,7 @@ class StockRecords
     public function replaceStockToday(stdClass $stock, mixed $asOf, string $version): array
     {
         return StockSupport::db()->transaction(function () use ($stock, $asOf, $version) {
-            StockSupport::db()->select('SELECT `nama` FROM `stock` FOR UPDATE');
+            StockSupport::db()->select(StockSupport::q('SELECT `nama` FROM {stock} FOR UPDATE'));
             $cur = $this->stockToday();
             if (! hash_equals($cur['version'], $version)) {
                 throw new StockConflict('stale', $cur['record']);

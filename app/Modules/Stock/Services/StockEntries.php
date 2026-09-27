@@ -37,7 +37,7 @@ class StockEntries
             return null;
         }
         if ($id !== null) {
-            $sql .= ' AND `id` = ?';
+            $sql .= StockSupport::q(' AND {id} = ?');
             $par[] = $id;
         }
         StockSupport::dateFilter($sql, $par, $dari, $ke);
@@ -57,14 +57,14 @@ class StockEntries
 
     private static function deleteRow(string $table, mixed $id): array
     {
-        $n = StockSupport::db()->delete("DELETE FROM `$table` WHERE `id`=?", [StockSupport::str($id)]);
+        $n = StockSupport::db()->delete(StockSupport::q("DELETE FROM {{$table}} WHERE {id}=?"), [StockSupport::str($id)]);
 
         return $n ? ['status' => 'success'] : ['status' => 'error', 'message' => 'tidak ditemukan'];
     }
 
     private static function photo(string $table, string $id): array
     {
-        $r = StockSupport::db()->selectOne("SELECT `foto`,`foto_nama` FROM `$table` WHERE `id`=? LIMIT 1", [$id]);
+        $r = StockSupport::db()->selectOne(StockSupport::q("SELECT `foto`,`foto_nama` FROM {{$table}} WHERE {id}=? LIMIT 1"), [$id]);
         if (! $r || $r->foto === '') {
             return ['status' => 'error', 'message' => 'foto tidak ada'];
         }
@@ -77,7 +77,7 @@ class StockEntries
     public function usageList(?array $teams, string $dari = '', string $ke = '', ?string $id = null): array
     {
         $out = [];
-        foreach (self::select('SELECT * FROM `usage_events` WHERE 1=1', $teams, $dari, $ke, $id) ?? [] as $r) {
+        foreach (self::select(StockSupport::q('SELECT {*usage_events} FROM {usage_events} WHERE 1=1'), $teams, $dari, $ke, $id) ?? [] as $r) {
             $d = StockSupport::obj($r->data);
             $out[] = [
                 'id' => $r->id, 'tanggal' => $r->tanggal, 'jenis' => $r->jenis, 'namaEvent' => $r->nama_event,
@@ -128,9 +128,9 @@ class StockEntries
         $db = StockSupport::db();
 
         if ($id !== '') {
-            $db->update('UPDATE `usage_events`
+            $db->update(StockSupport::q('UPDATE {usage_events}
                 SET `tanggal`=?, `jenis`=?, `nama_event`=?, `status`=?, `pic`=?, `tim`=?, `data`=?
-                WHERE `id`=?', [$tanggal, $jenis, $nama, $status, $pic, $tim, $json, $id]);
+                WHERE {id}=?'), [$tanggal, $jenis, $nama, $status, $pic, $tim, $json, $id]);
             if (! $verified && ! StockSupport::exists('usage_events', $id)) {
                 return ['status' => 'error', 'message' => 'catatan tidak ditemukan'];
             }
@@ -138,9 +138,9 @@ class StockEntries
             return ['status' => 'success', 'id' => $id];
         }
         $id = StockSupport::uid('USE');
-        $db->insert('INSERT INTO `usage_events`
-            (`id`,`tanggal`,`jenis`,`nama_event`,`status`,`pic`,`tim`,`waktu`,`data`)
-            VALUES (?,?,?,?,?,?,?,?,?)', [$id, $tanggal, $jenis, $nama, $status, $pic, $tim, StockSupport::now(), $json]);
+        $db->insert(StockSupport::q('INSERT INTO {usage_events}
+            ({id},`tanggal`,`jenis`,`nama_event`,`status`,`pic`,`tim`,`waktu`,`data`)
+            VALUES (?,?,?,?,?,?,?,?,?)'), [$id, $tanggal, $jenis, $nama, $status, $pic, $tim, StockSupport::now(), $json]);
 
         return ['status' => 'success', 'id' => $id];
     }
@@ -149,7 +149,7 @@ class StockEntries
     {
         $id = StockSupport::str($id);
         $status = $status === 'Selesai' ? 'Selesai' : 'Rencana';
-        StockSupport::db()->update('UPDATE `usage_events` SET `status`=? WHERE `id`=?', [$status, $id]);
+        StockSupport::db()->update(StockSupport::q('UPDATE {usage_events} SET `status`=? WHERE {id}=?'), [$status, $id]);
         if (! StockSupport::exists('usage_events', $id)) {
             return ['status' => 'error', 'message' => 'tidak ditemukan'];
         }
@@ -167,9 +167,9 @@ class StockEntries
     public function wasteList(?array $teams, string $dari = '', string $ke = '', ?string $id = null): array
     {
         $out = [];
-        $sql = "SELECT `id`,`tanggal`,`item`,`qty`,`unit`,`sebab`,`pic`,`tim`,`waktu`,
+        $sql = StockSupport::q("SELECT {id} AS `id`,`tanggal`,`item`,`qty`,`unit`,`sebab`,`pic`,`tim`,`waktu`,
                        `foto_nama`, (`foto` <> '') AS ada_foto, `data`
-                  FROM `waste` WHERE 1=1";
+                  FROM {waste} WHERE 1=1");
         foreach (self::select($sql, $teams, $dari, $ke, $id) ?? [] as $r) {
             $d = StockSupport::obj($r->data);
             $out[] = [
@@ -213,13 +213,13 @@ class StockEntries
 
         if ($id !== '') {
             if ($fotoBaru === null) {
-                $db->update('UPDATE `waste`
+                $db->update(StockSupport::q('UPDATE {waste}
                     SET `tanggal`=?,`item`=?,`qty`=?,`unit`=?,`sebab`=?,`pic`=?,`tim`=?,`data`=?
-                    WHERE `id`=?', [$tanggal, $item, $qty, $unit, $sebab, $pic, $tim, $json, $id]);
+                    WHERE {id}=?'), [$tanggal, $item, $qty, $unit, $sebab, $pic, $tim, $json, $id]);
             } else {
-                $db->update('UPDATE `waste`
+                $db->update(StockSupport::q('UPDATE {waste}
                     SET `tanggal`=?,`item`=?,`qty`=?,`unit`=?,`sebab`=?,`pic`=?,`tim`=?,`data`=?,`foto`=?,`foto_nama`=?
-                    WHERE `id`=?', [$tanggal, $item, $qty, $unit, $sebab, $pic, $tim, $json,
+                    WHERE {id}=?'), [$tanggal, $item, $qty, $unit, $sebab, $pic, $tim, $json,
                     StockSupport::str($fotoBaru), self::s($b->fotoNama ?? ''), $id]);
             }
             if (! $verified && ! StockSupport::exists('waste', $id)) {
@@ -229,9 +229,9 @@ class StockEntries
             return ['status' => 'success', 'id' => $id];
         }
         $id = StockSupport::uid('WST');
-        $db->insert('INSERT INTO `waste`
-            (`id`,`tanggal`,`item`,`qty`,`unit`,`sebab`,`pic`,`tim`,`waktu`,`foto`,`foto_nama`,`data`)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)', [$id, $tanggal, $item, $qty, $unit, $sebab, $pic, $tim, StockSupport::now(),
+        $db->insert(StockSupport::q('INSERT INTO {waste}
+            ({id},`tanggal`,`item`,`qty`,`unit`,`sebab`,`pic`,`tim`,`waktu`,`foto`,`foto_nama`,`data`)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'), [$id, $tanggal, $item, $qty, $unit, $sebab, $pic, $tim, StockSupport::now(),
             StockSupport::str($fotoBaru ?? ''), self::s($b->fotoNama ?? ''), $json]);
 
         return ['status' => 'success', 'id' => $id];
@@ -247,9 +247,9 @@ class StockEntries
     public function handoverList(?array $teams, string $dari = '', string $ke = '', ?string $id = null): array
     {
         $out = [];
-        $sql = "SELECT `id`,`tanggal`,`tujuan`,`penerima`,`pic`,`tim`,`waktu`,
+        $sql = StockSupport::q("SELECT {id} AS `id`,`tanggal`,`tujuan`,`penerima`,`pic`,`tim`,`waktu`,
                        `foto_nama`, (`foto` <> '') AS ada_foto, `data`
-                  FROM `serah_terima` WHERE 1=1";
+                  FROM {serah_terima} WHERE 1=1");
         foreach (self::select($sql, $teams, $dari, $ke, $id) ?? [] as $r) {
             $d = StockSupport::obj($r->data);
             $out[] = [
@@ -307,12 +307,12 @@ class StockEntries
 
         if ($id !== '') {
             if ($fotoBaru === null) {
-                $db->update('UPDATE `serah_terima`
-                    SET `tanggal`=?,`tujuan`=?,`penerima`=?,`pic`=?,`tim`=?,`data`=? WHERE `id`=?',
+                $db->update(StockSupport::q('UPDATE {serah_terima}
+                    SET `tanggal`=?,`tujuan`=?,`penerima`=?,`pic`=?,`tim`=?,`data`=? WHERE {id}=?'),
                     [$tanggal, $tujuan, $penerima, $pic, $tim, $json, $id]);
             } else {
-                $db->update('UPDATE `serah_terima`
-                    SET `tanggal`=?,`tujuan`=?,`penerima`=?,`pic`=?,`tim`=?,`data`=?,`foto`=?,`foto_nama`=? WHERE `id`=?',
+                $db->update(StockSupport::q('UPDATE {serah_terima}
+                    SET `tanggal`=?,`tujuan`=?,`penerima`=?,`pic`=?,`tim`=?,`data`=?,`foto`=?,`foto_nama`=? WHERE {id}=?'),
                     [$tanggal, $tujuan, $penerima, $pic, $tim, $json, StockSupport::str($fotoBaru), self::s($b->fotoNama ?? ''), $id]);
             }
             if (! $verified && ! StockSupport::exists('serah_terima', $id)) {
@@ -326,9 +326,9 @@ class StockEntries
             return ['status' => 'error', 'message' => 'foto bukti wajib diunggah'];
         }
         $id = StockSupport::uid('SRH');
-        $db->insert('INSERT INTO `serah_terima`
-            (`id`,`tanggal`,`tujuan`,`penerima`,`pic`,`tim`,`waktu`,`foto`,`foto_nama`,`data`)
-            VALUES (?,?,?,?,?,?,?,?,?,?)', [$id, $tanggal, $tujuan, $penerima, $pic, $tim, StockSupport::now(),
+        $db->insert(StockSupport::q('INSERT INTO {serah_terima}
+            ({id},`tanggal`,`tujuan`,`penerima`,`pic`,`tim`,`waktu`,`foto`,`foto_nama`,`data`)
+            VALUES (?,?,?,?,?,?,?,?,?,?)'), [$id, $tanggal, $tujuan, $penerima, $pic, $tim, StockSupport::now(),
             StockSupport::str($fotoBaru), self::s($b->fotoNama ?? ''), $json]);
 
         return ['status' => 'success', 'id' => $id];
@@ -345,7 +345,7 @@ class StockEntries
     public function opnameList(string $dari = '', string $ke = '', ?string $id = null): array
     {
         $out = [];
-        foreach (self::select('SELECT * FROM `opname` WHERE 1=1', null, $dari, $ke, $id) as $r) {
+        foreach (self::select(StockSupport::q('SELECT {*opname} FROM {opname} WHERE 1=1'), null, $dari, $ke, $id) as $r) {
             $d = StockSupport::obj($r->data);
             $out[] = [
                 'id' => $r->id, 'tanggal' => $r->tanggal, 'pic' => $r->pic, 'tim' => $r->tim,
@@ -394,7 +394,7 @@ class StockEntries
         $db = StockSupport::db();
 
         if ($id !== '') {
-            $db->update('UPDATE `opname` SET `tanggal`=?,`pic`=?,`tim`=?,`status`=?,`data`=? WHERE `id`=?',
+            $db->update(StockSupport::q('UPDATE {opname} SET `tanggal`=?,`pic`=?,`tim`=?,`status`=?,`data`=? WHERE {id}=?'),
                 [$tanggal, $pic, $tim, $status, $json, $id]);
             if (! $verified && ! StockSupport::exists('opname', $id)) {
                 return ['status' => 'error', 'message' => 'opname tidak ditemukan'];
@@ -403,7 +403,7 @@ class StockEntries
             return ['status' => 'success', 'id' => $id];
         }
         $id = StockSupport::uid('OPN');
-        $db->insert('INSERT INTO `opname` (`id`,`tanggal`,`pic`,`tim`,`status`,`waktu`,`data`) VALUES (?,?,?,?,?,?,?)',
+        $db->insert(StockSupport::q('INSERT INTO {opname} ({id},`tanggal`,`pic`,`tim`,`status`,`waktu`,`data`) VALUES (?,?,?,?,?,?,?)'),
             [$id, $tanggal, $pic, $tim, $status, StockSupport::now(), $json]);
 
         return ['status' => 'success', 'id' => $id];

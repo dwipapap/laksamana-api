@@ -168,13 +168,14 @@ class VoidBriController
         if ($v === null) {
             return self::versionRequired();
         }
-        $row = $this->vb->db()->selectOne("SELECT `diubah` FROM `$table` WHERE `id`=?", [$id]);
-        if (! $row) {
+        // the row's version on whichever storage the Modul is on (#69)
+        $row = $this->vb->rowVersion($table, $id);
+        if ($row === null) {
             return ApiResponse::error('not_found', 'Not found.', 404);
         }
 
-        return (int) $row->diubah === $v ? null
-            : ApiResponse::error('version_conflict', 'The row was changed by someone else. Reload it and apply your change again.', 409, ['version' => (int) $row->diubah]);
+        return $row === $v ? null
+            : ApiResponse::error('version_conflict', 'The row was changed by someone else. Reload it and apply your change again.', 409, ['version' => $row]);
     }
 
     /** @return array{0:string,1:string} [name, id] of the session user */
