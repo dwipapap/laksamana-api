@@ -2,6 +2,8 @@
 
 use App\Support\Modules;
 
+require_once __DIR__.'/helpers.php';
+
 /* u-andry holds module `akademi`; u-lusi does not. u-rizkiarfan admins it. */
 
 beforeEach(function () {
@@ -40,10 +42,10 @@ it('creates a division, stamps a version and logs the activity', function () {
     $id = $res->json('data.id');
     expect($id)->toStartWith('d_')->and($res->json('meta.version'))->toBeGreaterThan(0);
 
-    $row = Modules::db('akademi')->selectOne('SELECT name, updated_at FROM divisions WHERE id = ?', [$id]);
+    $row = Modules::db('akademi')->selectOne(akSql('SELECT name, updated_at FROM divisions WHERE id = ?'), [$id]);
     expect($row->name)->toBe('Divisi API')->and((int) $row->updated_at)->toBe($res->json('meta.version'));
 
-    $act = Modules::db('akademi')->selectOne('SELECT action, user_id FROM activity WHERE action = ? ORDER BY ts DESC LIMIT 1', ['tambah_divisi']);
+    $act = Modules::db('akademi')->selectOne(akSql('SELECT action, user_id FROM activity WHERE action = ? ORDER BY ts DESC LIMIT 1'), ['tambah_divisi']);
     expect($act->user_id)->toBe('u-rizkiarfan');
 });
 
@@ -93,7 +95,7 @@ it('stays compatible with old laksamana-office tabs: the v1 version is a valid b
     $id = $this->withToken($token)->postJson('/api/v1/akademi/divisions', ['name' => 'Kompat'])->assertCreated()->json('data.id');
     $v = $this->withToken($token)->getJson('/api/v1/akademi/divisions/'.$id)->json('meta.version');
 
-    $row = json_decode(Modules::db('akademi')->selectOne('SELECT data FROM divisions WHERE id = ?', [$id])->data, true);
+    $row = json_decode(Modules::db('akademi')->selectOne(akSql('SELECT data FROM divisions WHERE id = ?'), [$id])->data, true);
     $row['name'] = 'Kompat legacy';
     $row['baseUpdatedAt'] = $v; // what the old frontend reads back
     $row['updatedAt'] = $v + 5;
