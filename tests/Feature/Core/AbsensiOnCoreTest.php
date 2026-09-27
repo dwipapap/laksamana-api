@@ -48,6 +48,14 @@ it('saves settings and locations to the core tables with legacy ids', function (
     expect(absCore('abs_lokasi', $id))->toBeNull();
 });
 
+it('truncates an over-long value on strict core like non-strict production (#97)', function () {
+    $svc = app(AbsensiService::class);
+    $long = str_repeat('L', 200);
+    $id = $svc->saveLocation(['nama' => $long, 'lat' => 0, 'lng' => 0, 'radius' => 120, 'aktif' => 1], 'uji');
+
+    expect(absCore('abs_lokasi', $id)['nama'])->toBe(str_repeat('L', 120));
+});
+
 it('registers, lists and deletes faces on core without descriptors', function () {
     $svc = app(AbsensiService::class);
     $desc = array_fill(0, 128, 0.5);
