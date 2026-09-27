@@ -5,6 +5,7 @@ namespace App\Modules\Ticketing\Services;
 use App\Modules\Event\Services\EventState;
 use App\Support\Modules;
 use App\Support\NamedLock;
+use App\Support\RowSync;
 use Exception;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\QueryException;
@@ -547,7 +548,10 @@ class TicketShop
                 // ON DUPLICATE never takes over someone else's hold; only our own is extended
                 if (TicketSchema::onCore()) {
                     // core: a fresh ULID `id` (the legacy id moves to legacy_id) and version = 1
-                    $this->db()->insert('INSERT INTO `'.TicketSchema::table('seat_holds').'` (id,legacy_id,event_id,seat_id,hold_token,expires_at,created_at,version)
+                    $holdTable = TicketSchema::table('seat_holds');
+                    $eid = RowSync::fit($this->db(), $holdTable, 'event_id', $eid);
+                    $holdToken = RowSync::fit($this->db(), $holdTable, 'hold_token', $holdToken);
+                    $this->db()->insert('INSERT INTO `'.$holdTable.'` (id,legacy_id,event_id,seat_id,hold_token,expires_at,created_at,version)
                         VALUES (?,?,?,?,?,?,?,1)
                         ON DUPLICATE KEY UPDATE
                           hold_token = IF(hold_token = VALUES(hold_token), hold_token, hold_token),
