@@ -282,9 +282,11 @@ class KontenRecords
         if ($versioned) {
             $upd[] = '`version` = `version` + 1';
         }
+        $core = KontenSchema::onCore();
         $args = [(string) $row['id']];
         foreach ($cols as $col => [$field, $type]) {
-            $args[] = RowSync::ambil($row, $field, $type);
+            $v = RowSync::ambil($row, $field, $type);
+            $args[] = $core ? RowSync::fit($db, $def['table'], $col, $v) : $v;
         }
         $args[] = RowSync::ms($row['updatedAt'] ?? 0);
         if ($hasCreated) {

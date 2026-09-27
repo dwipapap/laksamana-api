@@ -275,9 +275,11 @@ class KontenState
                 $ua = $verServer[$id] + 1;
             }
 
+            $core = KontenSchema::onCore();
             $args = [$id];
             foreach ($cols as $col => [$field, $type]) {
-                $args[] = RowSync::ambil($simpan, $field, $type);
+                $v = RowSync::ambil($simpan, $field, $type);
+                $args[] = $core ? RowSync::fit($db, $table, $col, $v) : $v;
             }
             $args[] = $ua;
             if ($hasCreated) {
@@ -322,9 +324,9 @@ class KontenState
                 $db->insert("INSERT IGNORE INTO `$table` (id, `$idCol`, ref_id, action, by_user, at_ms, data, version) VALUES (?,?,?,?,?,?,?,1)", [
                     strtolower((string) Str::ulid()),
                     (string) $a['id'],
-                    RowSync::ambil($a, 'target', 'str'),
-                    RowSync::ambil($a, 'action', 'str'),
-                    RowSync::ambil($a, 'by', 'str'),
+                    RowSync::fit($db, $table, 'ref_id', RowSync::ambil($a, 'target', 'str')),
+                    RowSync::fit($db, $table, 'action', RowSync::ambil($a, 'action', 'str')),
+                    RowSync::fit($db, $table, 'by_user', RowSync::ambil($a, 'by', 'str')),
                     RowSync::ambil($a, 'at', 'ms'),
                     RowSync::enc($a),
                 ]);
