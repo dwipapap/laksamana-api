@@ -3,6 +3,8 @@
 use App\Modules\Absensi\Services\AbsensiService;
 use App\Support\Modules;
 
+require_once __DIR__.'/helpers.php';
+
 /*
  * Legacy /absensi/api/api.php (and /api/api.php on the subdomain) — the whole
  * PWA backend: masuk/konteks, absen, faces, antrean/putusAbsen, rekap,
@@ -282,13 +284,13 @@ it('validates locations and clamps the radius', function () {
         'row' => ['nama' => 'Pos', 'lat' => -6.2, 'lng' => 106.8, 'radius' => 5, 'aktif' => 1], 'sesi' => $sesi]);
     $id = $r['data']['id'];
     expect($id)->not->toBe('');
-    $row = Modules::db('absensi')->selectOne('SELECT * FROM `abs_lokasi` WHERE `id` = ?', [$id]);
+    $row = Modules::db('absensi')->selectOne(absSql('SELECT * FROM `abs_lokasi` WHERE `id` = ?'), [$id]);
     expect((int) $row->radius_m)->toBe(30);
 
     $r = absPost(['action' => 'simpanLokasi',
         'row' => ['id' => $id, 'nama' => 'Pos', 'lat' => -6.2, 'lng' => 106.8, 'radius' => 5000, 'aktif' => 1], 'sesi' => $sesi]);
     expect($r['data']['id'])->toBe($id);
-    $row = Modules::db('absensi')->selectOne('SELECT * FROM `abs_lokasi` WHERE `id` = ?', [$id]);
+    $row = Modules::db('absensi')->selectOne(absSql('SELECT * FROM `abs_lokasi` WHERE `id` = ?'), [$id]);
     expect((int) $row->radius_m)->toBe(2000);
 
     expect(absPost(['action' => 'hapusLokasi', 'id' => $id, 'sesi' => $sesi])['data'])->toBe(['hapus' => 1]);
@@ -314,8 +316,8 @@ it('dates a night-shift PULANG on the MASUK day', function () {
     $kemarin = absYesterday();
     $now = (int) (microtime(true) * 1000);
     Modules::db('absensi')->statement(
-        'INSERT INTO `abs_punch` (`id`,`subjek_tipe`,`subjek_id`,`nama`,`tgl`,`arah`,`waktu`,`jam`,'.
-        '`status`,`sebab`,`dibuat_at`) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+        absSql('INSERT INTO `abs_punch` (`id`,`subjek_tipe`,`subjek_id`,`nama`,`tgl`,`arah`,`waktu`,`jam`,'.
+        '`status`,`sebab`,`dibuat_at`) VALUES (?,?,?,?,?,?,?,?,?,?,?)'),
         ['abuji0001', 'USER', 'u-dwipa', 'Dwipa', $kemarin, 'MASUK', $now - 2 * 3600 * 1000, '22:05',
             'VALID', '', $now]
     );
