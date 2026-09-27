@@ -12,12 +12,13 @@ This module is the Office SSO: users, which modules each user may open (grants),
 | Old 64-hex session tokens | `app/Auth/LegacySessions.php` |
 | Business rules (every `aksi_*`) | `app/Modules/Account/Services/AccountService.php` |
 | Compatibility controller | `app/Modules/Account/Http/Legacy/AccountLegacyController.php`, exposing all 25 legacy actions |
-| New API | `app/Modules/Account/Http/V1/*`: `auth/login`, `auth/logout`, `me`, `me/pin`, `me/username`, `account/roster`, `account/modules/{m}/members`, `account/roster` (for roster managers), `account/users*` (superadmin), `account/modules` |
+| New API | `app/Modules/Account/Http/V1/*`: `auth/login`, `auth/logout`, `me`, `me/pin`, `me/username`, `account/roster`, `account/modules/{m}/members`, `account/roster*` (Pengelola Roster: save / patch / active / delete), `account/users*` + `account/users/bulk` + `account/import` (superadmin), `account/modules` (`GET`, `POST` sync, `PATCH {key}`). Full contract: `docs/api/account.md`. |
 
 ## Verification
 
 - Parity: `tools/parity/cases/account.json`, 139/139 identical.
-- Tests: `tests/Feature/Account/AuthTest.php`.
+- Tests: `tests/Feature/Account/AuthTest.php`, `tests/Feature/Account/AccountAdminV1Test.php` (v1 back-fill, #6).
+- Contract: `docs/api/account.md`.
 
 ## Known differences
 

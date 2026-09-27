@@ -376,7 +376,13 @@ class AccountService
         if (! $this->superadmin($body)) {
             return ['ok' => false, 'error' => 'forbidden'];
         }
-        $rows = is_array($body['users'] ?? null) ? $body['users'] : [];
+
+        return $this->saveUsersCore(is_array($body['users'] ?? null) ? $body['users'] : []);
+    }
+
+    /** Bulk saveUser WITHOUT the callerName+callerPin gate (v1 route already holds it). */
+    public function saveUsersCore(array $rows): array
+    {
         if (! count($rows)) {
             return ['ok' => false, 'error' => 'empty'];
         }
@@ -390,9 +396,7 @@ class AccountService
             $r = (array) $r;
             $baris = (int) ($r['_baris'] ?? 0);
             unset($r['_baris']);
-            $r['callerName'] = $body['callerName'] ?? '';
-            $r['callerPin'] = $body['callerPin'] ?? '';
-            $h = $this->saveUser($r);
+            $h = $this->saveUserCore($r);
             if (! empty($h['ok'])) {
                 $ok++;
             } else {
@@ -553,7 +557,13 @@ class AccountService
         if (! $this->superadmin($body)) {
             return ['ok' => false, 'error' => 'forbidden'];
         }
-        $incoming = is_array($body['modules'] ?? null) ? $body['modules'] : [];
+
+        return $this->syncModulesCore(is_array($body['modules'] ?? null) ? $body['modules'] : []);
+    }
+
+    /** syncModules WITHOUT the callerName+callerPin gate (v1 route already holds it). */
+    public function syncModulesCore(array $incoming): array
+    {
         $urut = $this->users->maxModuleUrut();
         $added = [];
         foreach ($incoming as $m) {
@@ -576,18 +586,26 @@ class AccountService
         if (! $this->superadmin($body)) {
             return ['ok' => false, 'error' => 'forbidden'];
         }
-        $key = self::s($body['key'] ?? '');
+
+        return $this->saveModuleCore(self::s($body['key'] ?? ''),
+            isset($body['label']) ? $body['label'] : null,
+            isset($body['active']) ? $body['active'] : null);
+    }
+
+    /** saveModule WITHOUT the callerName+callerPin gate. null = field not sent (legacy `isset`). */
+    public function saveModuleCore(string $key, mixed $label, mixed $active): array
+    {
         if ($key === '') {
             return ['ok' => false, 'error' => 'missing_key'];
         }
         if (! $this->users->moduleExists($key)) {
             return ['ok' => false, 'error' => 'not_found'];
         }
-        if (isset($body['label'])) {
-            $this->users->updateModuleLabel($key, self::s($body['label']));
+        if ($label !== null) {
+            $this->users->updateModuleLabel($key, self::s($label));
         }
-        if (isset($body['active'])) {
-            $this->users->updateModuleActive($key, self::truthy($body['active']));
+        if ($active !== null) {
+            $this->users->updateModuleActive($key, self::truthy($active));
         }
 
         return ['ok' => true];
@@ -763,6 +781,13 @@ class AccountService
         if (! $this->superadmin($body)) {
             return ['ok' => false, 'error' => 'forbidden'];
         }
+
+        return $this->importCore($body);
+    }
+
+    /** import WITHOUT the callerName+callerPin gate. Idempotent, upserts users/modules/grants. */
+    public function importCore(array $body): array
+    {
         $n = ['users' => 0, 'modules' => 0, 'grants' => 0, 'admins' => 0];
         $bool = function ($v, $default = true) {
             if ($v === null || $v === '') {

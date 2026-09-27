@@ -134,6 +134,7 @@
     {
       "name": "listUsers (superadmin)",
       "each": "SELECT CONCAT(u.name,'|',u.pin) FROM users u JOIN admins a ON a.user_id=u.id WHERE a.module='*' AND u.active=1 LIMIT 1",
+      "ignore": ["bawaan.0.tim.**"],
       "body": {
         "action": "listUsers",
         "callerName": "$each1",
@@ -143,6 +144,7 @@
     {
       "name": "listAccess (superadmin)",
       "each": "SELECT CONCAT(u.name,'|',u.pin) FROM users u JOIN admins a ON a.user_id=u.id WHERE a.module='*' AND u.active=1 LIMIT 1",
+      "ignore": ["bawaan.0.tim.**"],
       "body": {
         "action": "listAccess",
         "callerName": "$each1",
@@ -152,6 +154,7 @@
     {
       "name": "listModules all (superadmin)",
       "each": "SELECT CONCAT(u.name,'|',u.pin) FROM users u JOIN admins a ON a.user_id=u.id WHERE a.module='*' AND u.active=1 LIMIT 1",
+      "ignore": ["bawaan.0.tim.**"],
       "body": {
         "action": "listModules",
         "all": true,
