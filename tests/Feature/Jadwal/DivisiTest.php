@@ -6,6 +6,14 @@ use App\Modules\Jadwal\Services\JadwalService;
 use App\Support\Divisi;
 use App\Support\JsonDoc;
 
+// jadwal on core implies identity on core (see JadwalTest): re-apply the
+// connection per test because the application is rebuilt between tests (#156).
+beforeEach(function () {
+    if (JadwalService::onCore() && ! AccountRepository::onCore()) {
+        config(['laksamana.modules.account.connection' => 'core']);
+    }
+});
+
 /*
  * The Divisi service (App\Support\Divisi) is the single copy of Divisi
  * resolution, the heads list and the Tim word lists, used by account
