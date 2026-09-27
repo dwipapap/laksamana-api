@@ -1,6 +1,6 @@
 # laksamana-api runs on api.laksamanamuda.id, on the same cPanel, for new apps only
 
-Production runs laksamana-api on the **same Rumahweb cPanel account** as laksamana-office, on its own subdomain **`api.laksamanamuda.id`** (dev: **`dev-api.laksamanamuda.id`**), whose document root is the app's `public/`. It is deployed like laksamana-office: GitHub Actions builds it (`composer install --no-dev`, config/route caches) and uploads it by FTP, `develop` → dev, `main` → production, dev first.
+Production runs laksamana-api on the **same Rumahweb cPanel account** as laksamana-office, on its own subdomain **`api.laksamanamuda.id`** (dev: **`dev-api.laksamanamuda.id`**), whose document root is the app's `public/`. It is deployed like laksamana-office: GitHub Actions builds it (`composer install --no-dev`; no artisan caches, which would bake the runner's paths) and uploads it by FTP. Every `main` that passes CI goes to dev automatically; production deploys only when the owner runs the workflow by hand (runbook: `docs/deploy.md`).
 
 **Only new apps use it** (laksamana-office-vue and later clients, through `/api/v1`). The old laksamana-office screens keep calling their own PHP backends through their relative `../<module>-api-mysql/api.php` URLs; nothing routes them to Laravel, and laksamana-office is not changed (it is read-only for this project).
 
@@ -12,7 +12,7 @@ Because the old PHP backends keep writing the **legacy databases**, production L
 - The per-Modul production cutovers (#46–#74) wait until that Modul's old screens are retired; the dev rehearsals can still run against dev.
 - New apps call `api.` from another origin, so CORS must allow exactly their origins (not `*`) before the first new app goes live.
 - Server access beyond FTP (SSH / cPanel Terminal) is unconfirmed. Until it is, nothing runs `php artisan` on the server: caches are built in CI, and `core` migrations go through phpMyAdmin as ADR-0004 describes. If a shell exists, ADR-0004's import steps can be revisited.
-- The cPanel account must offer PHP ≥ 8.2 (8.4 preferred, as developed) for the subdomain, with `pdo_mysql`, `mbstring`, `openssl`, `fileinfo`, `gd` (ticketing QR/PDF) and outbound SMTP for the ticketing mailer.
+- The cPanel account must offer PHP ≥ 8.3 (the locked packages require it; 8.4 preferred, as developed) for the subdomain, with `pdo_mysql`, `mbstring`, `openssl`, `fileinfo`, `gd` (ticketing QR/PDF) and outbound SMTP for the ticketing mailer.
 
 ## Considered Options
 
