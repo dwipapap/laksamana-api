@@ -30,6 +30,10 @@ root without password. PHP: `C:\Users\dwip\.config\herd-lite\bin\php.exe` (8.4) 
 Writing CODE that deletes is fine; executing deletes happens only on local copies.
 Laravel migrations run ONLY on the `core` connection. Never create a migration for a legacy table.
 
+`../laksamana-office` is READ-ONLY for this project: it is the old app, still in use and
+maintained by other developers. Read it as the spec; never edit, commit, branch or open PRs
+there. If a fix would need a change on that side, say so in the issue and stop.
+
 ---
 
 ## 1. Layout
