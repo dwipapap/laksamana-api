@@ -103,6 +103,13 @@ abstract class TestCase extends BaseTestCase
      */
     private function importCoreModules(): void
     {
+        // jadwal's core tables FK `user` and take heads/Penempatan Divisi from
+        // identity, so serving jadwal from core is always an identity-on-core
+        // run too (docs/db/jadwal.md: "after both imports"). Encode that here so
+        // DB_JADWAL_CONNECTION=core alone is a valid, testable combination (#156).
+        if (JadwalService::onCore() && ! AccountRepository::onCore()) {
+            config(['laksamana.modules.account.connection' => 'core']);
+        }
         if (AccountRepository::onCore()) {
             Artisan::call('core:import', ['module' => 'account']);
         }
