@@ -75,9 +75,6 @@
     { "name": "saveAll null settings are skipped", "body": { "action": "saveAll", "data": {
       "role": null, "layoutTemplates": { "a": 1 }
     } } },
-    { "name": "saveAll reused QR token lands on the other ticket, then the bounded delete removes it", "body": { "action": "saveAll", "data": {
-      "tickets": [{ "id": "tk_par2", "qr_token": "qr_parity_1", "status": "valid", "updatedAt": 1790100000900 }]
-    } } },
     { "name": "getAll after writes", "method": "GET", "query": { "action": "getAll" } },
     { "name": "stats after writes", "method": "GET", "query": { "action": "stats" } },
 

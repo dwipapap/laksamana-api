@@ -1,5 +1,6 @@
 <?php
 
+use App\Modules\Event\Services\EventSchema;
 use App\Support\Modules;
 use App\Support\RowSync;
 use Illuminate\Testing\TestResponse;
@@ -94,20 +95,20 @@ it('rejects a bad payload with the legacy message', function () {
     evPost(['action' => 'saveAll', 'data' => 'x'])->assertExactJson(['ok' => false, 'error' => 'Payload data kosong/invalid']);
 });
 
-it('keeps the legacy upsert on a reused QR token: it lands on the OTHER ticket row, guarded by updated_at', function () {
-    $t = evDb()->selectOne('SELECT id, qr_token, updated_at, data FROM tickets WHERE qr_token IS NOT NULL LIMIT 1');
+it('refuses a saveAll whose ticket qr_token already belongs to another ticket (#100)', function () {
+    $t = evDb()->selectOne('SELECT '.EventSchema::idCol().' AS id, qr_token, updated_at FROM '.EventSchema::table('tickets').' WHERE qr_token IS NOT NULL LIMIT 1');
 
-    // older stamp: the guard keeps the existing ticket as it was, no new row
-    evPost(['action' => 'saveAll', 'data' => ['tickets' => [['id' => 'tk_dupe', 'qr_token' => $t->qr_token, 'updatedAt' => 1]]]])
-        ->assertJsonPath('ok', true);
-    expect(evDb()->selectOne("SELECT id FROM tickets WHERE id='tk_dupe'"))->toBeNull()
-        ->and(evDb()->selectOne('SELECT data FROM tickets WHERE id = ?', [$t->id])->data)->toBe($t->data);
-
-    // newer stamp: ON DUPLICATE KEY UPDATE rewrites the OTHER ticket's row (its id kept),
-    // then the bounded delete removes that row as "not in the payload": both are gone.
+    // the whole save is refused, nothing is written: no new row and the other
+    // ticket keeps its token (legacy silently rewrote, then bounded-deleted it)
     evPost(['action' => 'saveAll', 'data' => ['tickets' => [['id' => 'tk_dupe', 'qr_token' => $t->qr_token, 'status' => 'x', 'updatedAt' => (int) $t->updated_at + 1]]]])
-        ->assertJsonPath('ok', true)->assertJsonPath('data.jumlah.tickets', 1);
-    expect(evDb()->selectOne('SELECT id FROM tickets WHERE id IN (?, ?)', [$t->id, 'tk_dupe']))->toBeNull();
+        ->assertExactJson(['ok' => false, 'error' => 'qr_token ganda: '.$t->qr_token]);
+    expect(evDb()->selectOne('SELECT '.EventSchema::idCol().' AS id FROM '.EventSchema::table('tickets').' WHERE '.EventSchema::idCol().' = ?', ['tk_dupe']))->toBeNull()
+        ->and(evDb()->selectOne('SELECT '.EventSchema::idCol().' AS id FROM '.EventSchema::table('tickets').' WHERE qr_token = ?', [$t->qr_token])->id)->toBe($t->id);
+
+    // its own token is not a conflict: the ticket saves normally
+    evPost(['action' => 'saveAll', 'data' => ['tickets' => [['id' => $t->id, 'qr_token' => $t->qr_token, 'status' => 'reuse-ok', 'updatedAt' => (int) $t->updated_at + 2]]]])
+        ->assertJsonPath('data.saved', true);
+    expect(evDb()->selectOne('SELECT status FROM '.EventSchema::table('tickets').' WHERE '.EventSchema::idCol().' = ?', [$t->id])->status)->toBe('reuse-ok');
 });
 
 it('answers eventsHari with the drop-list filter and createdBy from the blob', function () {

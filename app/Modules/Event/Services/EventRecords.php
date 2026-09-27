@@ -225,8 +225,8 @@ class EventRecords
     private function upsert(array $def, array $row): void
     {
         // tickets.qr_token is UNIQUE, and the upsert's ON DUPLICATE KEY UPDATE fires on
-        // ANY unique key: a reused token would silently rewrite ANOTHER ticket's row
-        // (legacy saveAll does exactly that). v1 refuses it up front.
+        // ANY unique key: a reused token would silently rewrite ANOTHER ticket's row.
+        // v1 refuses it up front; compat saveAll refuses the whole save too (#100).
         if ($def['key'] === 'tickets' && ($qr = RowSync::strRaw($row['qr_token'] ?? null)) !== null
             && $this->db()->selectOne("SELECT `{$def['id']}` AS id FROM `{$def['table']}` WHERE qr_token = ? AND `{$def['id']}` <> ?", [$qr, (string) $row['id']])) {
             throw new EventConflict('duplicate');
