@@ -61,7 +61,7 @@ const PHP = process.env.PHP_BIN || 'php';
 const HOST = process.env.MYSQL_HOST || '127.0.0.1';
 // Parallel runs (several agents at once) need distinct ports and DB names.
 const BASE = parseInt(process.env.PARITY_PORT_BASE || '8900', 10);
-const ACC_PORT = BASE, OLD_PORT = BASE + 1, NEW_PORT = BASE + 2;
+const ACC_PORT = BASE, OLD_PORT = BASE + 1, NEW_PORT = BASE + 2, JADWAL_PORT = BASE + 3;
 const TAG = (process.env.PARITY_TAG || '').replace(/[^a-z0-9]/gi, '');
 const P = TAG ? `parity_${TAG}` : 'parity';
 
@@ -103,7 +103,7 @@ define('DB_USER','root'); define('DB_PASS',''); define('DB_CHARSET','utf8mb4');
 define('ENV_LABEL','lokal'); define('API_TOKEN','');
 define('DATA_DIR', ${JSON.stringify(dataDir)}); define('TRAINING_DIR', ${JSON.stringify(dataDir)});
 define('ACCOUNT_API_URL','${acc}');
-define('JADWAL_API_URL','http://127.0.0.1:${ACC_PORT}/jadwal-api-mysql/api.php');
+define('JADWAL_API_URL','http://127.0.0.1:${JADWAL_PORT}/jadwal-api-mysql/api.php');
 define('DW_API_URL','http://127.0.0.1:${ACC_PORT}/dw-api-mysql/api.php');
 ${Object.entries(spec.legacyDefines || {}).map(([k, v]) => `define('${k}', ${JSON.stringify(v)});
 `).join('')}`;
@@ -117,10 +117,13 @@ function stageLegacy(dir, urlPrefix, dbName, docroot) {
   fs.writeFileSync(path.join(dst, 'config.php'), legacyConfig(dbName, dataDir));
   try { fs.rmSync(path.join(dst, 'config.local.php')); } catch {}
 }
-const oldRoot = path.join(scratch, 'old'), accRoot = path.join(scratch, 'acc');
+const oldRoot = path.join(scratch, 'old'), accRoot = path.join(scratch, 'acc'), jadwalRoot = path.join(scratch, 'jadwal');
 stageLegacy(spec.dir, spec.legacyPath, `${P}_old_${spec.db}`, oldRoot);
 stageLegacy('account-mysql', 'account-api-mysql', `${P}_old_lakk5493_db_account`, accRoot);
-stageLegacy('jadwal-mysql', 'jadwal-api-mysql', `${P}_old_lakk5493_db_jadwal`, accRoot);
+// jadwal gets its OWN server (JADWAL_PORT): the legacy account lib resolves the
+// heads over JADWAL_API_URL while answering a request, and a single-threaded
+// `php -S` cannot serve that nested call on the port it is already busy with.
+stageLegacy('jadwal-mysql', 'jadwal-api-mysql', `${P}_old_lakk5493_db_jadwal`, jadwalRoot);
 // Other old backends this one calls over HTTP. root "acc" (default) = the helper server that
 // ACCOUNT/JADWAL/DW_API_URL point at; root "old" = same host as the module (SERVER_NAME-derived URLs).
 for (const x of spec.extraLegacy || []) {
@@ -135,6 +138,7 @@ function start(cmd, argv, opts) {
 }
 start(PHP, ['-S', `127.0.0.1:${OLD_PORT}`, '-t', oldRoot], { cwd: oldRoot });
 start(PHP, ['-S', `127.0.0.1:${ACC_PORT}`, '-t', accRoot], { cwd: accRoot });
+start(PHP, ['-S', `127.0.0.1:${JADWAL_PORT}`, '-t', jadwalRoot], { cwd: jadwalRoot });
 
 // ---- laravel side ----------------------------------------------------------
 const env = { ...process.env, LAKSAMANA_ENV_LABEL: 'lokal', CACHE_STORE: 'array', ...(spec.laravelEnv || {}) };
@@ -247,6 +251,7 @@ async function call(port, prefix, c, each, side) {
 (async () => {
   await waitUp(`http://127.0.0.1:${OLD_PORT}/`);
   await waitUp(`http://127.0.0.1:${ACC_PORT}/`);
+  await waitUp(`http://127.0.0.1:${JADWAL_PORT}/`);
   await waitUp(`http://127.0.0.1:${NEW_PORT}/up`);
   await loginBoth();
   let fails = 0, runs = 0;
