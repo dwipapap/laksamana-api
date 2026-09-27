@@ -22,24 +22,25 @@
 */
 
 $modules = [
-    'account' => ['env' => 'ACCOUNT',   'database' => 'lakk5493_db_account',   'legacy' => 'account-api-mysql'],
-    'absensi' => ['env' => 'ABSENSI',   'database' => 'lakk5493_db_absensi',   'legacy' => 'absensi/api'],
-    'akademi' => ['env' => 'AKADEMI',   'database' => 'lakk5493_db_akademi',   'legacy' => 'akademi-api-mysql',   'data_dir' => '/home/lakk5493/akademi-db'],
+    // server_sql_mode: every legacy connection leaves sql_mode to the server — the old
+    // PDO backends never set it, and production is non-strict (it stores e.g. hlife dreams
+    // year "" as tahun=0, which strict mode rejects). `core` stays strict; services that
+    // rely on the coercion must coerce explicitly (#97). DB_<ENV>_SQL_MODE pins a mode.
+    'account' => ['env' => 'ACCOUNT',   'database' => 'lakk5493_db_account',   'legacy' => 'account-api-mysql', 'server_sql_mode' => true],
+    'absensi' => ['env' => 'ABSENSI',   'database' => 'lakk5493_db_absensi',   'legacy' => 'absensi/api', 'server_sql_mode' => true],
+    'akademi' => ['env' => 'AKADEMI',   'database' => 'lakk5493_db_akademi',   'legacy' => 'akademi-api-mysql',   'data_dir' => '/home/lakk5493/akademi-db', 'server_sql_mode' => true],
     'bd' => ['env' => 'BD',        'database' => 'lakk5493_db_bd',        'legacy' => 'bd-api-mysql', 'server_sql_mode' => true],
-    'dw' => ['env' => 'DW',        'database' => 'lakk5493_db_dw',        'legacy' => 'dw-api-mysql'],
+    'dw' => ['env' => 'DW',        'database' => 'lakk5493_db_dw',        'legacy' => 'dw-api-mysql', 'server_sql_mode' => true],
     // event+ticketing share the legacy EMS database, but their connection and maintenance switches are independent.
     'event' => ['env' => 'EMS',       'database' => 'lakk5493_db_ems',       'legacy' => 'event-api-mysql',     'data_dir' => '/home/lakk5493/event-db', 'server_sql_mode' => true],
     'ticketing' => ['env' => 'EMS',       'database' => 'lakk5493_db_ems',       'legacy' => 'ticketing-api', 'server_sql_mode' => true],
     'finance' => ['env' => 'FINANCE',   'database' => 'lakk5493_db_finance',   'legacy' => 'finance-api-mysql', 'server_sql_mode' => true],
-    // server_sql_mode (hlife, bd, hr, event, ticketing, finance, kompas, stock, reservasi): do not force Laravel's strict sql_mode — the legacy PDO used
-    // the server default, and production (non-strict) stores e.g. hlife dreams year "" as
-    // tahun=0. Strict mode would reject writes legacy accepted (see #97 for the other modules).
     'hlife' => ['env' => 'HLIFE',     'database' => 'lakk5493_db_hlife',     'legacy' => 'howandi-life-api-mysql', 'server_sql_mode' => true],
     'hr' => ['env' => 'HR',        'database' => 'lakk5493_db_hr',        'legacy' => 'hr-api-mysql', 'server_sql_mode' => true],
-    'jadwal' => ['env' => 'JADWAL',    'database' => 'lakk5493_db_jadwal',    'legacy' => 'jadwal-api-mysql'],
+    'jadwal' => ['env' => 'JADWAL',    'database' => 'lakk5493_db_jadwal',    'legacy' => 'jadwal-api-mysql', 'server_sql_mode' => true],
     'kompas' => ['env' => 'KOMPAS',    'database' => 'lakk5493_db_kompas',    'legacy' => 'kompas-api-mysql',    'data_dir' => '/home/lakk5493/kompas-db', 'server_sql_mode' => true],
-    'konten' => ['env' => 'KONTEN',    'database' => 'lakk5493_db_konten',    'legacy' => 'konten-api-mysql',    'data_dir' => '/home/lakk5493/konten-db'],
-    'marketing' => ['env' => 'MARKETING', 'database' => 'lakk5493_db_marketing', 'legacy' => 'marketing-api-mysql', 'data_dir' => '/home/lakk5493/marketing-db'],
+    'konten' => ['env' => 'KONTEN',    'database' => 'lakk5493_db_konten',    'legacy' => 'konten-api-mysql',    'data_dir' => '/home/lakk5493/konten-db', 'server_sql_mode' => true],
+    'marketing' => ['env' => 'MARKETING', 'database' => 'lakk5493_db_marketing', 'legacy' => 'marketing-api-mysql', 'data_dir' => '/home/lakk5493/marketing-db', 'server_sql_mode' => true],
     'reservasi' => ['env' => 'RESERVASI', 'database' => 'lakk5493_db_reservasi', 'legacy' => 'reservasi-api-mysql', 'data_dir' => '/home/lakk5493/reservasi-db', 'server_sql_mode' => true],
     'stock' => ['env' => 'STOCK',     'database' => 'lakk5493_db_stock',     'legacy' => 'stock-api-mysql',     'data_dir' => '/home/lakk5493/data-latih', 'server_sql_mode' => true],
 ];
