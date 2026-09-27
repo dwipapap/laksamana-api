@@ -7,9 +7,10 @@
 # FTP_SERVER / FTP_USERNAME / FTP_PASSWORD and the variable APP_HOST (e.g.
 # dev-api.laksamanamuda.id). Until they exist, the run says so and stops green.
 #
-# The server may have no shell, so everything is built here. Deliberately NOT
-# built: config:cache / view:cache (they bake this runner's absolute paths,
-# /home/runner/..., into bootstrap/cache and break the app on the server).
+# vendor/ is installed on the server with Composer (docs/deploy.md): uploading
+# its ~6,200 files by FTP took hours. Deliberately NOT built: config:cache /
+# view:cache (they would bake this runner's /home/runner/... paths into
+# bootstrap/cache and break the app on the server).
 # `.env` is created once on the server by the owner and is never uploaded or
 # deleted (the FTP action only removes files it uploaded itself).
 #
@@ -61,6 +62,21 @@ jobs:
         if: steps.cfg.outputs.ready == 'true'
         with:
           ref: ${{ env.SHA }}
+          fetch-depth: 0 # to compare composer.lock with the deployed commit
+
+      # vendor/ lives on the server (Composer there, see docs/deploy.md): over FTP
+      # its ~6,200 files took hours. So when composer.lock changed since the
+      # deployed commit, the owner must run Composer on the server after this run.
+      - name: Did composer.lock change since the deployed commit?
+        if: steps.cfg.outputs.ready == 'true'
+        id: lock
+        run: |
+          prev=$(curl -s "https://$APP_HOST/build.txt?$(date +%s)" | tr -d '[:space:]')
+          if [ -n "$prev" ] && git cat-file -e "$prev^{commit}" 2>/dev/null && git diff --quiet "$prev" "$SHA" -- composer.lock; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Set up PHP
         if: steps.cfg.outputs.ready == 'true'
@@ -71,10 +87,12 @@ jobs:
           extensions: bcmath, curl, fileinfo, gd, mbstring, openssl, pdo, pdo_mysql, tokenizer, xml, zip
           coverage: none
 
-      - name: Build (production dependencies only)
+      # Built here only to prove the lock installs on the server's PHP; vendor/
+      # itself is not uploaded.
+      - name: Check the dependencies install on this PHP
         if: steps.cfg.outputs.ready == 'true'
         run: |
-          composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --no-progress
+          composer install --no-dev --prefer-dist --no-interaction --no-progress
           composer check-platform-reqs --no-dev
           echo "$SHA" > public/build.txt
 
@@ -113,6 +131,8 @@ jobs:
             tools/**
             docs/**
             node_modules/**
+            vendor/**
+            bootstrap/cache/*.php
             .env
             .env.*
             storage/logs/*.log
@@ -142,6 +162,15 @@ jobs:
 
       # Passing means the new code is what answers: the health route works and
       # public/build.txt carries this commit. A half-finished upload fails here.
+      - name: Composer on the server needed?
+        if: steps.cfg.outputs.ready == 'true' && steps.lock.outputs.changed == 'true'
+        run: |
+          {
+            echo "### ⚠️ composer.lock changed (or first deploy): update vendor/ on the server"
+            echo 'In cPanel Terminal: `cd ~/<app folder> && php ~/bin/composer install --no-dev --optimize-autoloader --no-interaction`'
+            echo "Then re-run this workflow if Verify below failed."
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Verify
         if: steps.cfg.outputs.ready == 'true'
         run: |

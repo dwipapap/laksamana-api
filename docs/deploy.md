@@ -11,7 +11,7 @@ Claude and the agents never deploy or touch a server (CLAUDE.md §0): GitHub Act
 
 ## What a deploy does
 
-1. Builds in CI: `composer install --no-dev --optimize-autoloader`, checks the PHP platform, writes the commit hash to `public/build.txt`.
+1. Checks in CI that the locked dependencies install on the server's PHP, and writes the commit hash to `public/build.txt`. **`vendor/` is not uploaded**: over FTP its ~6,200 files took hours, so it is installed on the server with Composer (setup step 9). When `composer.lock` changed since the deployed commit, the run summary says so: then run Composer on the server (see Releasing).
 2. Uploads the app folder by FTP (three attempts). `tests/`, `tools/`, `docs/`, `.github/`, `.env*` and logs are never uploaded. Only files that changed since the last deploy are sent; files created on the server (`.env`, logs, compiled views) are never deleted.
 3. Verifies: `https://<host>/up` answers 200 and `https://<host>/build.txt` shows the deployed commit. A half-finished upload fails this step.
 
@@ -30,7 +30,14 @@ Deliberately **not** done: `config:cache`, `route:cache`, `view:cache` (built in
 5. **Core database**: create an empty database (e.g. `lakk5493_laksamana_core`), then locally run `tools/core-schema.sh` and import the file it writes (`../core-schema.sql`) through phpMyAdmin → Import. It holds every core table empty, plus the migration list. Sanctum tokens for new apps are stored there. Do this for dev before production.
 6. **MySQL user** with rights on that core database **and** on every legacy database the API serves (`lakk5493_db_*` for production, the dev ones for dev).
 7. **Create `.env`** in the app folder with cPanel File Manager (template below). No deploy ever uploads or deletes it.
-8. **Run the first deploy** (Actions → deploy → Run workflow → `dev`). The first upload sends the whole `vendor/` (thousands of files) and can take a while; later deploys send only what changed.
+8. **Run the first deploy** (Actions → deploy → Run workflow → `dev`). It sends the app code (~400 files); later deploys send only what changed. Verify fails until step 9 is done.
+9. **Install Composer and `vendor/` on the server** (cPanel Terminal):
+   ```bash
+   mkdir -p ~/bin && cd ~/bin && php -r "copy('https://getcomposer.org/installer','composer-setup.php');" && php composer-setup.php --quiet --filename=composer && rm composer-setup.php
+   cd ~/<app folder> && php ~/bin/composer install --no-dev --optimize-autoloader --no-interaction
+   cd ~/<app folder> && php artisan migrate --force   # creates the core tables (Sanctum tokens)
+   ```
+   Then re-run the deploy; Verify must pass.
 
 ## `.env` on the server
 
@@ -74,6 +81,8 @@ CORS_ALLOWED_ORIGINS=https://office.laksamanamuda.id
 The data folders default to the old backends' (`/home/lakk5493/<x>-db`), so both apps share them. Override with `<KEY>_DATA_DIR` only if the paths differ.
 
 ## Releasing to production
+
+If the run summary says **composer.lock changed**, run in cPanel Terminal for that environment first: `cd ~/<app folder> && php ~/bin/composer install --no-dev --optimize-autoloader --no-interaction`, then re-run the workflow.
 
 1. The change is on `main` and dev has deployed it (Actions shows a green **deploy** run for that commit).
 2. Try it on dev.
