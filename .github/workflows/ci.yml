@@ -46,3 +46,6 @@ jobs:
 
       - name: Route list
         run: php artisan route:list --path=api/v1
+
+      - name: OpenAPI drift check
+        run: php tools/openapi-check.php
