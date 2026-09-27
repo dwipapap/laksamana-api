@@ -28,8 +28,8 @@ class StockLog
                 if (! is_object($e)) {
                     continue;
                 }
-                $modul = trim(StockSupport::str($e->modul ?? ''));
-                $aksi = trim(StockSupport::str($e->aksi ?? ''));
+                $modul = StockSupport::fit('activity_log', 'modul', trim(StockSupport::str($e->modul ?? '')));
+                $aksi = StockSupport::fit('activity_log', 'aksi', trim(StockSupport::str($e->aksi ?? '')));
                 if ($modul === '' || $aksi === '') {
                     continue;
                 }
@@ -38,7 +38,8 @@ class StockLog
                     ({id},`waktu`,`tanggal`,`modul`,`aksi`,`aktor`,`tim`,`ringkas`,`data`)
                     VALUES (?,?,?,?,?,?,?,?,?)'), [
                     StockSupport::uid('LOG'), $waktu, substr($waktu, 0, 10), $modul, $aksi,
-                    trim(StockSupport::str($e->aktor ?? '')), trim(StockSupport::str($e->tim ?? '')),
+                    StockSupport::fit('activity_log', 'aktor', trim(StockSupport::str($e->aktor ?? ''))),
+                    StockSupport::fit('activity_log', 'tim', trim(StockSupport::str($e->tim ?? ''))),
                     mb_substr(trim(StockSupport::str($e->ringkas ?? '')), 0, 500),
                     StockSupport::enc($e->data ?? new stdClass),
                 ]);

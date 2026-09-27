@@ -4,6 +4,7 @@ namespace App\Modules\Hlife\Services;
 
 use App\Support\JsonDoc;
 use App\Support\Modules;
+use App\Support\RowSync;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Str;
 use stdClass;
@@ -197,7 +198,7 @@ class HlifeState
                 continue;
             }
             $ids[] = $rec->id;
-            $this->upsert($table, $rec);
+            $this->upsert($table, $rec, self::onCore());
         }
 
         // Rows missing from the payload were deleted in the UI (the client always sends everything).
@@ -213,9 +214,10 @@ class HlifeState
     /**
      * INSERT … ON DUPLICATE KEY UPDATE of one record (core columns + full JSON).
      *
-     * $coerce=false is the legacy behaviour: a missing/non-numeric value goes to a numeric
-     * column as '' and strict MySQL rejects the save (compat keeps that, parity-checked).
-     * v1 passes true: such values become NULL (nullable) or 0.
+     * $coerce=false is the legacy connection: a missing/non-numeric value goes to a
+     * numeric column as '' and the legacy server's sql_mode decides (non-strict
+     * production stored 0). On core, or with $coerce=true, the coercion is explicit:
+     * any non-numeric value becomes 0 and an explicit null stays NULL when nullable.
      *
      * On core the legacy id lives in `legacy_id`, a fresh ULID is minted per row,
      * the ms tech stamps are set by the server (legacy hlife had none), and every
@@ -225,13 +227,24 @@ class HlifeState
     {
         $map = self::COLUMNS[$table];
         $nulls = self::NULLABLE[$table] ?? [];
+        $core = self::onCore();
         $cols = array_keys($map);
 
         $vals = [];
         foreach ($cols as $c) {
             $v = self::coreValue($rec, $map[$c], in_array($c, $nulls, true));
-            if ($coerce && $v !== null && ! is_numeric($v) && in_array($c, self::NUMERIC[$table] ?? [], true)) {
-                $v = in_array($c, $nulls, true) ? null : 0;
+            // #97: core stays strict, so the coercion non-strict production did is
+            // done here: any non-numeric value becomes 0 (an explicit null stays
+            // NULL on a nullable column), matching what legacy stored.
+            if (($coerce || $core) && in_array($c, self::NUMERIC[$table] ?? [], true)) {
+                if (is_numeric($v)) {
+                    $v = $v + 0;
+                } elseif ($v !== null) {
+                    $v = 0;
+                }
+            }
+            if ($core) {
+                $v = RowSync::fit($this->db(), self::table($table), $c, $v);
             }
             $vals[] = $v;
         }

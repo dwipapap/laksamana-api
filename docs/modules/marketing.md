@@ -24,6 +24,9 @@ Ported: `app/Support/RowSync.php`, `app/Modules/Marketing/Services/{MarketingSch
   - composite keys
   - kol_settings collections
 - konten, akademi, bd, event, hr and hlife reuse it (see their specs).
+- On `core` (always strict, #97) the shared sync truncates a string column to its
+  physical width and the settings key to 64, as non-strict MySQL did on the legacy
+  connection — RowSync does it per collection when the module's defs carry `coerce`.
 
 ## Tables (from schema.sql; all `id` PK + `updated_at` BIGINT ms + `data` LONGTEXT + indexed columns)
 

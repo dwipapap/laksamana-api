@@ -134,9 +134,9 @@ class StockOrders
         if (! is_object($meta)) {
             $meta = new stdClass;
         }
-        $batchId = trim(StockSupport::str($meta->batchId ?? ''));
-        $batchName = trim(StockSupport::str($meta->batchName ?? ''));
-        $tim = trim(StockSupport::str($meta->tim ?? ''));
+        $batchId = StockSupport::fit('orders', 'batch_id', trim(StockSupport::str($meta->batchId ?? '')));
+        $batchName = StockSupport::fit('orders', 'batch_name', trim(StockSupport::str($meta->batchName ?? '')));
+        $tim = StockSupport::fit('orders', 'tim', trim(StockSupport::str($meta->tim ?? '')));
 
         $db = StockSupport::db();
         $db->beginTransaction();
@@ -173,14 +173,14 @@ class StockOrders
                 if (! is_object($o)) {
                     continue;
                 }
-                $item = StockSupport::str($o->item ?? '');
+                $item = StockSupport::fit('orders', 'item', StockSupport::str($o->item ?? ''));
                 if ($item === '') {
                     continue;
                 }
                 $qty = isset($o->qty) ? (float) $o->qty : 0;
-                $unit = StockSupport::str($o->unit ?? '');
+                $unit = StockSupport::fit('orders', 'unit', StockSupport::str($o->unit ?? ''));
                 $waktu = StockSupport::now();
-                $tgl = $gabung ? ($b0['tgl_datang'] ?? '-') : StockSupport::str($o->tglDatang ?? '-');
+                $tgl = $gabung ? ($b0['tgl_datang'] ?? '-') : StockSupport::fit('orders', 'tgl_datang', StockSupport::str($o->tglDatang ?? '-'));
 
                 $kunci = StockSupport::lower($item);
                 if ($gabung && isset($adaBaris[$kunci]) && $adaBaris[$kunci]['unit'] === $unit) {
@@ -218,7 +218,7 @@ class StockOrders
                     'unit' => $unit,
                     'note' => isset($o->note) && $o->note !== '' ? $o->note : '-',
                     'tglDatang' => $tgl,
-                    'pic' => StockSupport::str($o->pic ?? ''),
+                    'pic' => StockSupport::fit('orders', 'pic', StockSupport::str($o->pic ?? '')),
                     'status' => 'Aktif',
                     'kedatangan' => '',
                     'catatan' => '',
@@ -286,10 +286,14 @@ class StockOrders
                       `pic`=VALUES(`pic`), `status`=VALUES(`status`), `kedatangan`=VALUES(`kedatangan`),
                       `data`=VALUES(`data`)'), [
                     $nomor, $row,
-                    StockSupport::str($o->timestamp ?? ''), StockSupport::str($o->item ?? ''),
-                    isset($o->qty) ? (float) $o->qty : 0, StockSupport::str($o->unit ?? ''),
-                    StockSupport::str($o->tglDatang ?? ''), StockSupport::str($o->pic ?? ''),
-                    StockSupport::str($o->status ?? 'Aktif'), StockSupport::str($o->kedatangan ?? ''),
+                    StockSupport::fit('orders', 'waktu', StockSupport::str($o->timestamp ?? '')),
+                    StockSupport::fit('orders', 'item', StockSupport::str($o->item ?? '')),
+                    isset($o->qty) ? (float) $o->qty : 0,
+                    StockSupport::fit('orders', 'unit', StockSupport::str($o->unit ?? '')),
+                    StockSupport::fit('orders', 'tgl_datang', StockSupport::str($o->tglDatang ?? '')),
+                    StockSupport::fit('orders', 'pic', StockSupport::str($o->pic ?? '')),
+                    StockSupport::fit('orders', 'status', StockSupport::str($o->status ?? 'Aktif')),
+                    StockSupport::fit('orders', 'kedatangan', StockSupport::str($o->kedatangan ?? '')),
                     StockSupport::enc($o),
                 ]);
                 $n++;
@@ -371,7 +375,7 @@ class StockOrders
                 if ($row <= 0) {
                     continue;
                 }
-                $kdt = StockSupport::str($u->kedatangan ?? '');
+                $kdt = StockSupport::fit('orders', 'kedatangan', StockSupport::str($u->kedatangan ?? ''));
                 $cat = isset($u->catatanAktual) ? StockSupport::str($u->catatanAktual) : '';
                 if (isset($u->tglTerima) || isset($u->catatanTerima)) {
                     $tt = trim(StockSupport::str($u->tglTerima ?? ''));

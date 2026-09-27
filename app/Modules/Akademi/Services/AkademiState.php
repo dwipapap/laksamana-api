@@ -183,8 +183,8 @@ class AkademiState
                             strtolower((string) Str::ulid()),
                             self::activityId($a),
                             RowSync::ms($a['ts'] ?? 0),
-                            RowSync::ambil($a, 'userId', 'str'),
-                            RowSync::ambil($a, 'action', 'str'),
+                            RowSync::fit($db, $actTable, 'user_id', RowSync::ambil($a, 'userId', 'str')),
+                            RowSync::fit($db, $actTable, 'action', RowSync::ambil($a, 'action', 'str')),
                             RowSync::enc($a),
                         ]);
                     } else {
@@ -348,9 +348,11 @@ class AkademiState
                 $ua = $verServer[$id] + 1;
             }
 
+            $core = AkademiSchema::onCore();
             $args = [$id];
             foreach ($cols as $col => [$field, $type]) {
-                $args[] = RowSync::ambil($simpan, $field, $type);
+                $v = RowSync::ambil($simpan, $field, $type);
+                $args[] = $core ? RowSync::fit($db, $table, $col, $v) : $v;
             }
             $args[] = $ua;
             if ($hasCreated) {
@@ -414,6 +416,8 @@ class AkademiState
                     RowSync::enc($r),
                 ];
                 if ($onCore) {
+                    $vals[0] = RowSync::fit($db, $table, 'user_id', $vals[0]);
+                    $vals[1] = RowSync::fit($db, $table, 'material_id', $vals[1]);
                     $db->statement("INSERT INTO `$table` (id, legacy_id, user_id, material_id, done, score, at_ms, updated_at, data, version)
                         VALUES (?,?,?,?,?,?,?,?,?,1)
                         ON DUPLICATE KEY UPDATE
@@ -473,6 +477,9 @@ class AkademiState
                         RowSync::enc($r),
                     ];
                     if ($onCore) {
+                        $vals[0] = RowSync::fit($db, $table, 'user_id', $vals[0]);
+                        $vals[1] = RowSync::fit($db, $table, 'program_id', $vals[1]);
+                        $vals[2] = RowSync::fit($db, $table, 'material_id', $vals[2]);
                         $db->statement("INSERT INTO `$table` (id, legacy_id, user_id, program_id, material_id, done, score, at_ms, updated_at, data, version)
                             VALUES (?,?,?,?,?,?,?,?,?,?,1)
                             ON DUPLICATE KEY UPDATE

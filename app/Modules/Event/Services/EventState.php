@@ -219,6 +219,10 @@ class EventState
                 (id, ticket_id, checked_in_at, staff, gate, result, data) VALUES (?,?,?,?,?,?,?)", [$id, ...$cols]) > 0;
         }
 
+        foreach (['ticket_id' => 0, 'staff' => 2, 'gate' => 3, 'result' => 4] as $col => $i) {
+            $cols[$i] = RowSync::fit($this->db(), $table, $col, $cols[$i]);
+        }
+
         return $this->db()->affectingStatement("INSERT IGNORE INTO `$table`
             (id, legacy_id, ticket_id, checked_in_at, staff, gate, result, data, version) VALUES (?,?,?,?,?,?,?,?,1)",
             [strtolower((string) Str::ulid()), $id, ...$cols]) > 0;
@@ -241,6 +245,7 @@ class EventState
         }
 
         // core: event_id stays the natural key; legacy_id carries the same value.
+        $eventId = RowSync::fit($this->db(), $table, 'event_id', $eventId);
         $this->db()->statement("INSERT INTO `$table` (id, legacy_id, event_id, updated_at, data, version) VALUES (?,?,?,?,?,1)
             ON DUPLICATE KEY UPDATE
               `version`  = `version` + IF(VALUES(updated_at) >= updated_at, 1, 0),
@@ -432,6 +437,12 @@ class EventState
         $data = RowSync::enc($o);
         $cols = [$o['event_id'], $o['buyer_name'], $o['phone'], $o['email'], $o['total'],
             $o['payment_status'], $o['payment_ref']];
+        if (EventSchema::onCore()) {
+            foreach (['event_id' => 0, 'buyer_name' => 1, 'phone' => 2, 'email' => 3,
+                'payment_status' => 5, 'payment_ref' => 6] as $col => $i) {
+                $cols[$i] = RowSync::fit($this->db(), $table, $col, $cols[$i]);
+            }
+        }
         $upd = 'buyer_name=VALUES(buyer_name), phone=VALUES(phone), email=VALUES(email),
               total=VALUES(total), payment_status=VALUES(payment_status), payment_ref=VALUES(payment_ref),
               updated_at=VALUES(updated_at), data=VALUES(data)';

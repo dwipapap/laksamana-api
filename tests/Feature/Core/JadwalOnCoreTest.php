@@ -112,6 +112,16 @@ it('saves the setting to the normalised tables and rebuilds the blob', function 
         ->and($data['heads'])->toBe(['bar' => ['u-arif']]);
 });
 
+it('truncates an over-long shift code on strict core like non-strict production (#97)', function () {
+    $long = str_repeat('S', 30);
+    $this->withToken(loginAs(officeUser('u-rizkiarfan')))->putJson('/api/v1/jadwal/settings', [
+        'shifts' => [$long => ['n' => 'Long', 'm' => '08:00', 's' => '16:00']],
+        'heads' => [], 'divOverride' => [], 'jabatan' => [], 'shiftKru' => [], 'manajemen' => [],
+    ])->assertOk();
+
+    expect(DB::connection('core')->table('jadwal_shift')->where('kode', str_repeat('S', 16))->exists())->toBeTrue();
+});
+
 it('serves shiftHari for absensi from core', function () {
     $this->get('/jadwal-api-mysql/api.php?action=shiftHari&dari=2026-09-01&sampai=2026-09-30')
         ->assertOk()->assertJsonPath('ok', true)->assertJsonStructure(['data' => ['dari', 'sampai', 'rows']]);

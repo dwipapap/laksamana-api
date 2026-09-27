@@ -65,6 +65,6 @@ Request body: `{data, sinceTs}`.
 - **JSON is decoded as assoc arrays**, as legacy does. An empty object in a row therefore comes back as `[]` on both surfaces, exactly as before.
 - **Delete rule** (`hapus_yang_hilang`): the bound is `sinceTs`, or else the payload's max `updatedAt`. With ids and a bound, it deletes `NOT IN … AND updated_at <= bound`. With ids and no bound (every stamp 0), it runs a plain `NOT IN`. With no ids and a bound, it deletes `updated_at <= bound`. A collection missing from the payload is untouched. This does not fit RowSync's strategies, so `BdState` carries its own.
 - **addPo / setRealisasi** are called by the Marketing and Finance → Kas Kecil **browser pages**, not by other backends, so there is no server-side HTTP call to replace. Kompas reads `getAll` server-side; `BdState::read()` is the in-process entry point for when kompas is ported.
-- **sql_mode:** the connection keeps the server default (`server_sql_mode`), as the legacy PDO did (see #97).
+- **sql_mode:** the connection keeps the server default (`server_sql_mode`), as the legacy PDO did (see #97). On `core` (always strict) the service truncates an over-long indexed string to the column width explicitly, as non-strict MySQL did.
 - The busy message of the `bd_save` lock is the legacy one: `Server sedang sibuk menyimpan, coba lagi sebentar.`
 - **v1** is documented in `docs/api/bd.md`. Versions are the `updated_at` column.

@@ -4,6 +4,7 @@ namespace App\Modules\Kompas\Services;
 
 use App\Support\Modules;
 use App\Support\NamedLock;
+use App\Support\RowSync;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -191,7 +192,8 @@ class KompasState
                 VALUES (?,1,?,?,?,?,1)
                 ON DUPLICATE KEY UPDATE `version`=`version`+1, `data`=VALUES(`data`),
                   `updated_at`=VALUES(`updated_at`), `oleh`=VALUES(`oleh`)',
-                [self::ulid(), self::enc($state), $ts, $ts, $by]);
+                [self::ulid(), self::enc($state), $ts, $ts,
+                    RowSync::fit($this->db(), self::t('app_state'), 'oleh', $by)]);
 
             return;
         }

@@ -61,6 +61,17 @@ it('keeps the stale-edit conflict guard on core', function () {
         ->and(ktCore('konten_brands', 'b_core2')['name'])->toBe('B');
 });
 
+it('truncates an over-long indexed string on strict core like non-strict production (#97)', function () {
+    $long = str_repeat('K', 400);
+    $this->legacyPost('/konten-api-mysql/api.php', ['action' => 'saveAll', 'data' => [
+        'brands' => [['id' => 'b_core_long', 'name' => $long, 'updatedAt' => 1790100000000]],
+    ]])->assertOk();
+
+    $row = ktCore('konten_brands', 'b_core_long');
+    expect($row['name'])->toBe(str_repeat('K', 255))
+        ->and(json_decode($row['data'], true)['name'])->toBe($long);
+});
+
 it('appends logs to the core table and trims to 5000', function () {
     $this->legacyPost('/konten-api-mysql/api.php', ['action' => 'saveAll', 'data' => [
         'logs' => [['id' => 'lg_core1', 'action' => 'uji', 'by' => 'core', 'target' => 'x', 'at' => 1790100000000]],

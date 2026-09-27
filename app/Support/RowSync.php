@@ -164,6 +164,49 @@ final class RowSync
         return json_encode($v, self::JSON_STORE);
     }
 
+    /** CHARACTER_MAXIMUM_LENGTH per "<connection>|<table>|<column>", read once per process. */
+    private static array $colLen = [];
+
+    /**
+     * Truncate a value to the physical column's character width (#97). `core`
+     * stays strict, so a value longer than the column that non-strict production
+     * silently truncated must be cut explicitly, exactly as MySQL did. The width
+     * comes from the live schema (the same column the server truncated to); a
+     * non-string column (int/date/…) has no CHARACTER_MAXIMUM_LENGTH and passes
+     * through unchanged.
+     */
+    public static function fit(ConnectionInterface $db, string $table, string $column, mixed $value): mixed
+    {
+        if ($value === null || (! is_string($value) && ! is_numeric($value))) {
+            return $value;
+        }
+        $max = self::columnLength($db, $table, $column);
+        if ($max === null) {
+            return $value;
+        }
+        $s = is_string($value) ? $value : (string) $value;
+
+        return mb_strlen($s, 'UTF-8') > $max ? mb_substr($s, 0, $max, 'UTF-8') : $value;
+    }
+
+    private static function columnLength(ConnectionInterface $db, string $table, string $column): ?int
+    {
+        $key = $db->getName().'|'.$table.'|'.$column;
+        if (! array_key_exists($key, self::$colLen)) {
+            try {
+                $len = $db->selectOne(
+                    'SELECT CHARACTER_MAXIMUM_LENGTH AS l FROM information_schema.COLUMNS
+                      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+                    [$table, $column])?->l;
+            } catch (Throwable) {
+                $len = null; // table/column absent (an optional legacy table): never coerce
+            }
+            self::$colLen[$key] = ($len === null || (int) $len <= 0) ? null : (int) $len;
+        }
+
+        return self::$colLen[$key];
+    }
+
     /** Key-sorted deep copy; numeric-indexed lists keep their order. */
     public static function urutDalam(mixed $v): mixed
     {
@@ -236,6 +279,7 @@ final class RowSync
         $capBump = ! empty($opt['capBump']);
         $skipUnchanged = ! empty($opt['skipUnchanged']);
         $keepBase = ! empty($opt['keepBase']);
+        $fit = ! empty($def['coerce']); // core (#97): truncate string columns like non-strict MySQL did
         $createdField = $def['created_field'] ?? 'createdAt';
 
         $sendIds = [];
@@ -333,7 +377,8 @@ final class RowSync
 
             $args = [$id];
             foreach ($cols as $col => [$field, $type]) {
-                $args[] = self::ambil($simpan, $field, $type);
+                $v = self::ambil($simpan, $field, $type);
+                $args[] = $fit ? self::fit($db, $table, $col, $v) : $v;
             }
             $args[] = $ua;
             if ($hasCreated) {
@@ -424,7 +469,7 @@ final class RowSync
         }
         $db->statement(
             "INSERT INTO `$table` (id, k, v, version) VALUES (?, ?, ?, 1) ON DUPLICATE KEY UPDATE v = VALUES(v), `version` = `version` + 1",
-            [strtolower((string) Str::ulid()), $k, self::enc($v)]
+            [strtolower((string) Str::ulid()), self::fit($db, $table, 'k', $k), self::enc($v)]
         );
     }
 

@@ -49,12 +49,33 @@ it('saveAll replaces the state on core and counts every write in version', funct
         ->and(DB::connection('legacy_hlife')->table('tasks')->count())->toBeGreaterThan(0);
 });
 
-it('keeps the strict rejection of a bad numeric column, like the parity case', function () {
+it('coerces a bad numeric column on strict core like non-strict production did (#97)', function () {
     $this->legacyPost('/howandi-life-api-mysql/api.php', ['action' => 'saveAll',
         'token' => 'HL-5mHh8Lfu8bpiPMkgtRphSmvM',
         'data' => ['tasks' => [], 'finance' => ['ledger' => [['id' => 'lx', 'month' => '2026-01', 'income' => 1]]]]])
-        ->assertStatus(500)->assertJsonPath('error', 'kesalahan server');
-    expect(DB::connection('core')->table('hlife_ledger')->where('legacy_id', 'lx')->exists())->toBeFalse();
+        ->assertOk()->assertJsonPath('ok', true);
+    $row = DB::connection('core')->table('hlife_ledger')->where('legacy_id', 'lx')->first();
+    expect($row)->not->toBeNull()
+        ->and((float) $row->income)->toBe(1.0)
+        ->and((float) $row->expense)->toBe(0.0);
+
+    // year "" stored 0 on non-strict production; an explicit null stays NULL.
+    $this->legacyPost('/howandi-life-api-mysql/api.php', ['action' => 'saveAll',
+        'token' => 'HL-5mHh8Lfu8bpiPMkgtRphSmvM',
+        'data' => ['tasks' => [], 'dreams' => [['id' => 'd0', 'title' => 'X', 'year' => ''], ['id' => 'dnull', 'title' => 'Y', 'year' => null]]]])
+        ->assertOk();
+    expect((int) DB::connection('core')->table('hlife_dreams')->where('legacy_id', 'd0')->value('tahun'))->toBe(0)
+        ->and(DB::connection('core')->table('hlife_dreams')->where('legacy_id', 'dnull')->value('tahun'))->toBeNull();
+});
+
+it('truncates an over-long indexed string to the column width like non-strict production (#97)', function () {
+    $this->legacyPost('/howandi-life-api-mysql/api.php', ['action' => 'saveAll',
+        'token' => 'HL-5mHh8Lfu8bpiPMkgtRphSmvM',
+        'data' => ['tasks' => [], 'businesses' => [['id' => 'b1', 'name' => str_repeat('N', 250)]]]])
+        ->assertOk();
+    $row = DB::connection('core')->table('hlife_businesses')->where('legacy_id', 'b1')->first();
+    expect($row->nama)->toBe(str_repeat('N', 190))
+        ->and(json_decode($row->data, true)['name'])->toBe(str_repeat('N', 250));
 });
 
 it('v1 records and settings work on core, and the version hash matches across storages', function () {

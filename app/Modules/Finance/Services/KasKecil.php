@@ -3,6 +3,7 @@
 namespace App\Modules\Finance\Services;
 
 use App\Support\Modules;
+use App\Support\RowSync;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Str;
@@ -182,6 +183,9 @@ class KasKecil
             throw new RuntimeException('Tanggal tidak sah.');
         }
         $ket = isset($in['keterangan']) ? trim(self::s($in['keterangan'])) : '';
+        if (self::onCore()) {
+            $ket = RowSync::fit($this->db(), self::t('kk_trx'), 'keterangan', $ket);
+        }
         if ($ket === '') {
             throw new RuntimeException('Keterangan wajib diisi.');
         }
@@ -299,6 +303,9 @@ class KasKecil
         $urut = isset($in['urut']) ? (int) $in['urut'] : 0;
         $id = (isset($in['id']) && $in['id']) ? (int) $in['id'] : 0;
         $t = self::t($table);
+        if (self::onCore()) {
+            $nama = RowSync::fit($this->db(), $t, 'nama', $nama);
+        }
         $now = (int) round(microtime(true) * 1000);
         try {
             if ($id > 0) {

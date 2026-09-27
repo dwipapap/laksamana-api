@@ -4,6 +4,7 @@ namespace App\Modules\Ticketing\Services;
 
 use App\Modules\Event\Services\EventState;
 use App\Support\Modules;
+use App\Support\RowSync;
 use Exception;
 use Illuminate\Database\ConnectionInterface;
 use Throwable;
@@ -136,8 +137,12 @@ class TicketBuyers
         $id = TicketShop::uid('usr');
         if (TicketSchema::onCore()) {
             // core: a fresh ULID `id` (the legacy id moves to legacy_id) and version = 1
-            $this->db()->insert('INSERT INTO `'.TicketSchema::table('tix_users').'` (id,legacy_id,email,pass_hash,name,phone,created_at,version) VALUES (?,?,?,?,?,?,?,1)',
-                [TicketSchema::newId(), $id, $email, password_hash($pass, PASSWORD_DEFAULT), $name, $phone, TicketShop::nowMs()]);
+            $t = TicketSchema::table('tix_users');
+            $this->db()->insert('INSERT INTO `'.$t.'` (id,legacy_id,email,pass_hash,name,phone,created_at,version) VALUES (?,?,?,?,?,?,?,1)',
+                [TicketSchema::newId(), $id, RowSync::fit($this->db(), $t, 'email', $email),
+                    password_hash($pass, PASSWORD_DEFAULT),
+                    RowSync::fit($this->db(), $t, 'name', $name),
+                    RowSync::fit($this->db(), $t, 'phone', $phone), TicketShop::nowMs()]);
         } else {
             $this->db()->insert('INSERT INTO tix_users (id,email,pass_hash,name,phone,created_at) VALUES (?,?,?,?,?,?)',
                 [$id, $email, password_hash($pass, PASSWORD_DEFAULT), $name, $phone, TicketShop::nowMs()]);

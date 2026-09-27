@@ -124,7 +124,7 @@ class StockCatalog
             }
             $db->statement(StockSupport::q('INSERT INTO {vendors} (`nama`,`whatsapp`,`data`) VALUES (?,?,?)
                 ON DUPLICATE KEY UPDATE `whatsapp`=VALUES(`whatsapp`), `data`=VALUES(`data`)'),
-                [$nama, StockSupport::str($telp), StockSupport::enc($rec)]);
+                [StockSupport::fit('vendors', 'nama', $nama), StockSupport::fit('vendors', 'whatsapp', StockSupport::str($telp)), StockSupport::enc($rec)]);
             $db->commit();
 
             return ['status' => 'success'];
@@ -417,7 +417,7 @@ class StockCatalog
             }
             $db->statement(StockSupport::q('INSERT INTO {products} (`nama`,`utama`,`data`) VALUES (?,?,?)
                 ON DUPLICATE KEY UPDATE `utama`=VALUES(`utama`), `data`=VALUES(`data`)'),
-                [$nama, StockSupport::str($utama), StockSupport::enc($rec)]);
+                [StockSupport::fit('products', 'nama', $nama), StockSupport::fit('products', 'utama', StockSupport::str($utama)), StockSupport::enc($rec)]);
             $db->commit();
         } catch (Throwable $e) {
             $db->rollBack();

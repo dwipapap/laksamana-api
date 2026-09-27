@@ -45,6 +45,16 @@ it('Finance setRealisasi writes the PO on core and bumps its version', function 
     expect($row->status)->toBe('Diterima')->and((int) $row->version)->toBe((int) $po->version + 1);
 });
 
+it('truncates an over-long indexed string like non-strict production (#97)', function () {
+    $long = str_repeat('N', 300);
+    $this->legacyPost('/bd-api-mysql/api.php', ['action' => 'saveAll', 'sinceTs' => 0, 'data' => ['people' => [
+        ['id' => 'p-core-long', 'name' => $long, 'role' => 'Kasir', 'div' => 'Bar'],
+    ]]])->assertOk();
+    $row = bdCore('bd_people', 'p-core-long');
+    expect($row->name)->toBe(str_repeat('N', 255))
+        ->and(json_decode($row->data, true)['name'])->toBe($long);
+});
+
 it('v1 records and settings documents work on core', function () {
     $token = loginAs(officeUser('u-novi'));
     $r = $this->withToken($token)->postJson('/api/v1/bd/tasks', ['name' => 'Core task'])->assertCreated();

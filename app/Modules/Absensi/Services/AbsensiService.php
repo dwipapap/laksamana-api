@@ -7,6 +7,7 @@ use App\Modules\Dw\Services\DwService;
 use App\Modules\Jadwal\Services\JadwalService;
 use App\Support\Legacy\Sesi;
 use App\Support\Modules;
+use App\Support\RowSync;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -305,6 +306,8 @@ class AbsensiService
         }
         if (self::onCore()) {
             $actor = $this->actorUlid($by);
+            $nama = RowSync::fit($this->db(), 'abs_lokasi', 'nama', $nama);
+            $id = RowSync::fit($this->db(), 'abs_lokasi', 'legacy_id', $id);
             $this->db()->statement(
                 'INSERT INTO `abs_lokasi` (`id`,`legacy_id`,`nama`,`lat`,`lng`,`radius_m`,`aktif`,`updated_at`,`created_by`,`updated_by`,`version`)'.
                 ' VALUES (?,?,?,?,?,?,?,?,?,?,1)'.
@@ -405,13 +408,16 @@ class AbsensiService
         $fotoVal = ($foto ? self::s($foto) : null);
         if (self::onCore()) {
             $actor = $this->actorUlid($by);
+            $subjek = RowSync::fit($this->db(), 'abs_wajah', 'legacy_id', $subjek);
+            $nama = RowSync::fit($this->db(), 'abs_wajah', 'nama', self::s($nama));
+            $by = RowSync::fit($this->db(), 'abs_wajah', 'daftar_oleh', self::s($by));
             $this->db()->statement(
                 'INSERT INTO `abs_wajah` (`id`,`legacy_id`,`nama`,`descriptor`,`foto`,`aktif`,`daftar_at`,`daftar_oleh`,`created_by`,`updated_by`,`version`)'.
                 ' VALUES (?,?,?,?,?,1,?,?,?,?,1)'.
                 ' ON DUPLICATE KEY UPDATE `nama`=VALUES(`nama`),`descriptor`=VALUES(`descriptor`),'.
                 '`foto`=VALUES(`foto`),`aktif`=1,`daftar_at`=VALUES(`daftar_at`),`daftar_oleh`=VALUES(`daftar_oleh`),'.
                 '`updated_by`=VALUES(`updated_by`),`version`=`version`+1',
-                [strtolower((string) Str::ulid()), $subjek, self::s($nama), $desc, $fotoVal, self::ms(), self::s($by), $actor, $actor]
+                [strtolower((string) Str::ulid()), $subjek, $nama, $desc, $fotoVal, self::ms(), $by, $actor, $actor]
             );
         } else {
             $this->db()->statement(
@@ -800,6 +806,10 @@ class AbsensiService
         $actor = null;
         if (self::onCore()) {
             $actor = $this->actorUlid(self::s($p['nama'] ?? ''));
+            foreach ([3 => 'nama', 16 => 'shift_kode', 17 => 'shift_mulai', 18 => 'shift_selesai', 19 => 'shift_sumber', 23 => 'alasan'] as $i => $col) {
+                $row[$i] = RowSync::fit($this->db(), 'abs_punch', $col, $row[$i]);
+            }
+            $row[14] = max(0.0, min(9.9999, (float) $row[14])); // DECIMAL(5,4)
             $sql = 'INSERT INTO `abs_punch`'.
                 ' (`id`,`legacy_id`,`subjek_tipe`,`subjek_id`,`nama`,`tgl`,`arah`,`waktu`,`jam`,`lat`,`lng`,`akurasi_m`,'.
                 '`lokasi_id`,`jarak_m`,`dalam_area`,`wajah_skor`,`wajah_ok`,`shift_kode`,`shift_mulai`,'.
@@ -857,7 +867,10 @@ class AbsensiService
             'UPDATE `abs_punch` SET `status` = ?, `putus_at` = ?, `putus_oleh` = ?, `putus_nota` = ?'.
             (self::onCore() ? ', `version`=`version`+1' : '').
             ' WHERE `'.self::kId().'` = ? AND `status` = "MENUNGGU"',
-            [$status, self::ms(), self::s($by), self::s($nota), self::s($id)]
+            [$status, self::ms(),
+                self::onCore() ? RowSync::fit($this->db(), 'abs_punch', 'putus_oleh', self::s($by)) : self::s($by),
+                self::onCore() ? RowSync::fit($this->db(), 'abs_punch', 'putus_nota', self::s($nota)) : self::s($nota),
+                self::s($id)]
         );
 
         return $n > 0;

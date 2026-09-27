@@ -262,9 +262,11 @@ class AkademiRecords
         if ($versioned) {
             $upd[] = '`version` = `version` + 1';
         }
+        $core = AkademiSchema::onCore();
         $args = [(string) $row['id']];
         foreach ($cols as $col => [$field, $type]) {
-            $args[] = RowSync::ambil($row, $field, $type);
+            $v = RowSync::ambil($row, $field, $type);
+            $args[] = $core ? RowSync::fit($db, $def['table'], $col, $v) : $v;
         }
         $args[] = $stamp;
         if ($hasCreated) {
@@ -292,7 +294,9 @@ class AkademiRecords
         $t = AkademiSchema::table('activity');
         if (AkademiSchema::onCore()) {
             $this->db()->insert("INSERT IGNORE INTO `$t` (id, legacy_id, ts, user_id, action, data, version) VALUES (?,?,?,?,?,?,1)", [
-                strtolower((string) Str::ulid()), AkademiState::activityId($entry), $now, $by, $entry['action'], RowSync::enc($entry),
+                strtolower((string) Str::ulid()), AkademiState::activityId($entry), $now,
+                RowSync::fit($this->db(), $t, 'user_id', $by),
+                RowSync::fit($this->db(), $t, 'action', $entry['action']), RowSync::enc($entry),
             ]);
         } else {
             $this->db()->insert('INSERT IGNORE INTO activity (id, ts, user_id, action, data) VALUES (?,?,?,?,?)', [
@@ -513,7 +517,9 @@ class AkademiRecords
             $idCol = AkademiSchema::idCol();
             if (AkademiSchema::onCore()) {
                 $this->db()->insert("INSERT IGNORE INTO `$t` (id, legacy_id, ts, user_id, action, data, version) VALUES (?,?,?,?,?,?,1)", [
-                    strtolower((string) Str::ulid()), AkademiState::activityId($row), $now, $by, $row['action'], RowSync::enc($row),
+                    strtolower((string) Str::ulid()), AkademiState::activityId($row), $now,
+                    RowSync::fit($this->db(), $t, 'user_id', $by),
+                    RowSync::fit($this->db(), $t, 'action', $row['action']), RowSync::enc($row),
                 ]);
             } else {
                 $this->db()->insert('INSERT IGNORE INTO activity (id, ts, user_id, action, data) VALUES (?,?,?,?,?)', [

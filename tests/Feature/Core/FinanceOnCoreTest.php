@@ -56,6 +56,15 @@ it('writes a transaction on core: a legacy id, its split rows and the counter', 
         ->and(DB::connection('core')->table('finance_kk_trx_pos')->where('trx_id', (string) $id)->exists())->toBeFalse();
 });
 
+it('truncates an over-long keterangan on strict core like non-strict production (#97)', function () {
+    $long = str_repeat('K', 300);
+    $id = finCorePost('simpanTrx', ['tgl' => '2026-09-03', 'keterangan' => $long, 'input' => 1, 'oleh' => 'Kasir',
+        'baris' => [['pos_id' => 1, 'kredit' => 1000]]])->assertOk()->json('data.id');
+
+    expect(DB::connection('core')->table('finance_kk_trx')->where('legacy_id', (string) $id)->value('keterangan'))
+        ->toBe(str_repeat('K', 255));
+});
+
 it('serves the invoice queue from core: request, issue, print', function () {
     $req = finCorePost('invMinta', ['resId' => 'rm-core-1', 'oleh' => 'Host', 'ringkas' => ['nama' => 'Core']])->assertOk()->json('data');
     expect($req['id'])->toStartWith('inv')->and($req['status'])->toBe('MENUNGGU')

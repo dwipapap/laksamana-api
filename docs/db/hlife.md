@@ -146,18 +146,17 @@ DB_HLIFE_CONNECTION=core         # serve Howandi Life OS from core; unset = lega
 - Pest is green on both connections.
 - `tests/Feature/Core/HlifeImportTest.php`: 1:1 copy, idempotent, follows legacy edits
   and deletions.
-- `tests/Feature/Core/HlifeOnCoreTest.php`: getAll, saveAll + version, strict rejection,
-  v1 records and settings.
+- `tests/Feature/Core/HlifeOnCoreTest.php`: getAll, saveAll + version, numeric/string
+  coercion on strict core (#97), v1 records and settings.
 
 ## Deviations
 
 - **`core` is strict, production's legacy server was not.** Legacy hlife left sql_mode to
-  the server, and the config note records that non-strict production stored e.g.
-  `dreams.year: ''` as `tahun=0` with a warning. On `core` (strict, like the local parity
-  environment) such a write is rejected and the whole save answers
-  `kesalahan server` 500 — exactly what the local legacy server already did (parity case
-  "saveAll ledger without expense fails like legacy (strict mode)", and
-  `HlifeLegacyTest` pins the legacy connection's passthrough). No payload the parity suite
-  or the frontend sends changes result: values are either valid or already rejected locally.
+  the server, and non-strict production stored e.g. `dreams.year: ''` as `tahun=0` (and a
+  missing numeric as 0) with a warning. Core is strict, so the service performs that
+  coercion explicitly (#97): a non-numeric value becomes 0 (an explicit null stays NULL on a
+  nullable column) and an over-long indexed string is cut to the column width — exactly what
+  non-strict MySQL stored. The parity case that pinned the old strict rejection was removed
+  (`tools/parity/cases/hlife.json`); `HlifeOnCoreTest` pins the new behaviour.
 - **Timestamps.** Legacy hlife had no stamps; the ms `created_at`/`updated_at` tech columns
   import as 0 and are server-set on subsequent writes. Nothing reads them.

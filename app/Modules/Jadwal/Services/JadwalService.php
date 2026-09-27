@@ -8,6 +8,7 @@ use App\Support\Divisi;
 use App\Support\JsonDoc;
 use App\Support\Legacy\Sesi;
 use App\Support\Modules;
+use App\Support\RowSync;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -736,6 +737,7 @@ class JadwalService
                 if ($kode === '') {
                     continue;
                 }
+                $kode = RowSync::fit($this->db(), 'jadwal_shift', 'kode', $kode);
                 $def = is_array($def) ? $def : [];
                 $known = ['n', 'm', 's', 'w', 'libur', 'urut'];
                 $str = fn (string $k, int $max) => array_key_exists($k, $def) && is_scalar($def[$k]) ? mb_substr((string) $def[$k], 0, $max) : null;

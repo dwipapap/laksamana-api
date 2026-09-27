@@ -37,6 +37,7 @@ This is an older variant of marketing's saveAll. Reuse `App\Support\RowSync` (bu
 - **Empty lists** never delete anything.
 - **LEGACY BUG — reproduce on the compat route:** `hapus_yang_hilang` has NO `_sejak` bound. It deletes every row not in the payload, including rows created after the client loaded. Document this; v1 has no whole-state save.
 - **GC:** hard-unlinks orphan receipt files after 1 hour (no trash folder).
+- **Strict core (#97):** on `core` the writer truncates each string column to its physical width (and the settings key to 64), as non-strict MySQL did on the legacy connection.
 
 ## v1 (implemented — contract: docs/api/konten.md)
 

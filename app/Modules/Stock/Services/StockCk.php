@@ -228,7 +228,7 @@ class StockCk
     public function save(stdClass $b, bool $verified = false): array
     {
         $id = trim(StockSupport::str($b->id ?? ''));
-        $item = trim(StockSupport::str($b->item ?? ''));
+        $item = StockSupport::fit('ck_stock', 'item', trim(StockSupport::str($b->item ?? '')));
         $arah = strtolower(trim(StockSupport::str($b->arah ?? '')));
         $sebab = strtolower(trim(StockSupport::str($b->sebab ?? '')));
 
@@ -246,7 +246,7 @@ class StockCk
         if (! $p) {
             return ['status' => 'error', 'message' => 'barang bukan barang Central Kitchen: '.$item];
         }
-        $unitInput = trim(StockSupport::str($b->unitInput ?? ''));
+        $unitInput = StockSupport::fit('ck_stock', 'unit_input', trim(StockSupport::str($b->unitInput ?? '')));
         if ($unitInput === '') {
             $unitInput = $p->packSatuan !== '' ? $p->packSatuan : 'Pcs';
         }
@@ -255,10 +255,10 @@ class StockCk
             $sebab = $arah === 'masuk' ? 'produksi' : 'penyesuaian';
         }
         $rec = (object) ['catatan' => trim(StockSupport::str($b->catatan ?? '')), 'packIsi' => $p->packIsi, 'packSatuan' => $p->packSatuan];
-        $tanggal = trim(StockSupport::str($b->tanggal ?? '')) ?: StockSupport::now('Y-m-d');
+        $tanggal = StockSupport::fit('ck_stock', 'tanggal', trim(StockSupport::str($b->tanggal ?? '')) ?: StockSupport::now('Y-m-d'));
         $waktu = StockSupport::now();
-        $tim = trim(StockSupport::str($b->tim ?? ''));
-        $pic = trim(StockSupport::str($b->pic ?? ''));
+        $tim = StockSupport::fit('ck_stock', 'tim', trim(StockSupport::str($b->tim ?? '')));
+        $pic = StockSupport::fit('ck_stock', 'pic', trim(StockSupport::str($b->pic ?? '')));
         $dataJson = StockSupport::enc($rec);
         $db = StockSupport::db();
 
@@ -325,7 +325,7 @@ class StockCk
         if (! $p->diOutlet) {
             return ['status' => 'error', 'message' => 'barang ini tidak disimpan di outlet, jadi tidak bisa dikirim ke CK'];
         }
-        $unitInput = trim(StockSupport::str($b->unitInput ?? ''));
+        $unitInput = StockSupport::fit('ck_stock', 'unit_input', trim(StockSupport::str($b->unitInput ?? '')));
         if ($unitInput === '') {
             $unitInput = $p->packSatuan !== '' ? $p->packSatuan : 'Pcs';
         }
@@ -338,10 +338,10 @@ class StockCk
                         `sebab`,`status`,`ref`,`tim`,`pic`,`waktu`,`data`)
                      VALUES (?,?,?,'masuk',?,?,?,'kiriman','',NULL,?,?,?,?)"), [
             $id,
-            trim(StockSupport::str($b->tanggal ?? '')) ?: StockSupport::now('Y-m-d'),
+            StockSupport::fit('ck_stock', 'tanggal', trim(StockSupport::str($b->tanggal ?? '')) ?: StockSupport::now('Y-m-d')),
             $item, $qty, $qtyInput, $unitInput,
-            trim(StockSupport::str($b->tim ?? '')),
-            trim(StockSupport::str($b->pic ?? '')),
+            StockSupport::fit('ck_stock', 'tim', trim(StockSupport::str($b->tim ?? ''))),
+            StockSupport::fit('ck_stock', 'pic', trim(StockSupport::str($b->pic ?? ''))),
             StockSupport::now(),
             StockSupport::enc($rec),
         ]);

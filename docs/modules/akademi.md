@@ -40,6 +40,8 @@ Everything is open, subject only to the optional `API_TOKEN`.
 - `receipt` (GET `key`). Streams the file.
 - `ping`, `stats`.
 
+On `core` (always strict, #97) the writer truncates each string column to its physical width (and the settings key to 64), as non-strict MySQL did on the legacy connection.
+
 ## v1 (implemented — contract: docs/api/akademi.md)
 
 - 4 resources (`users`, `divisions`, `materials`, `programs`): reads for every

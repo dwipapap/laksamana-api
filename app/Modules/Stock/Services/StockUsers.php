@@ -191,7 +191,12 @@ class StockUsers
         StockSupport::db()->insert(StockSupport::q("INSERT INTO {{$table}} ({id},`nama`,`pin`,`role`,`keterangan`,`data`)
             VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE `nama`=VALUES(`nama`), `pin`=VALUES(`pin`),
             `role`=VALUES(`role`), `keterangan`=VALUES(`keterangan`), `data`=VALUES(`data`)"), [
-            $user->id, $user->name, $user->pin, $user->role, $user->keterangan, StockSupport::enc($user),
+            $user->id,
+            StockSupport::fit($table, 'nama', StockSupport::str($user->name ?? '')),
+            StockSupport::fit($table, 'pin', StockSupport::str($user->pin ?? '')),
+            StockSupport::fit($table, 'role', StockSupport::str($user->role ?? 'full')),
+            StockSupport::fit($table, 'keterangan', StockSupport::str($user->keterangan ?? '')),
+            StockSupport::enc($user),
         ]);
     }
 

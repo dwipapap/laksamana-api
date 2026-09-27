@@ -3,6 +3,7 @@
 namespace App\Modules\Hr\Services;
 
 use App\Support\Modules;
+use App\Support\RowSync;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Str;
 use stdClass;
@@ -79,6 +80,9 @@ class HrState
 
     /** Nullable on purpose: an anonymous suggestion MUST store emp_id NULL. */
     public const NULLABLE = ['suggestions' => ['emp_id'], 'moods' => ['mood'], 'training_records' => ['skor']];
+
+    /** Numeric core columns: a non-numeric value that non-strict MySQL turned into 0 must be cast (#97). */
+    public const NUMERIC = ['trainings' => ['mandatory'], 'training_records' => ['skor'], 'rewards' => ['points'], 'moods' => ['mood']];
 
     /** Top-level keys that are NOT stored as `extra:<key>` settings. */
     private const NOT_EXTRA = ['audit', 'kpiActuals', 'monthlyInputs', 'attendance', 'settings', 'version', '_rev', '_savedAt', '_savedBy'];
@@ -354,10 +358,11 @@ class HrState
 
             [$by, $versi] = $write();
             $rev = $revServer + 1;
+            $byStored = self::onCore() ? RowSync::fit($this->db(), 'hr_meta', 'saved_by', $by) : $by;
             $this->db()->update(self::onCore()
                 ? 'UPDATE `hr_meta` SET `version`=?, `saved_at`=?, `saved_by`=?, `versi`=? WHERE `legacy_id`=1'
                 : 'UPDATE `meta` SET `rev`=?, `saved_at`=?, `saved_by`=?, `versi`=? WHERE `id`=1',
-                [$rev, gmdate('Y-m-d\TH:i:s.000\Z'), $by, $versi ?? (int) ($m->versi ?? 1)]);
+                [$rev, gmdate('Y-m-d\TH:i:s.000\Z'), $byStored, $versi ?? (int) ($m->versi ?? 1)]);
 
             return ['ok' => true, 'rev' => $rev];
         });
@@ -394,10 +399,19 @@ class HrState
     {
         $map = self::COLUMNS[$table];
         $nulls = self::NULLABLE[$table] ?? [];
+        $nums = self::NUMERIC[$table] ?? [];
+        $core = self::onCore();
         $cols = array_keys($map);
         $vals = [$rec->id];
         foreach ($cols as $c) {
-            $vals[] = self::coreValue($rec, $map[$c], in_array($c, $nulls, true));
+            $v = self::coreValue($rec, $map[$c], in_array($c, $nulls, true));
+            if ($core) {
+                if (in_array($c, $nums, true)) {
+                    $v = is_numeric($v) ? $v + 0 : (in_array($c, $nulls, true) ? null : 0);
+                }
+                $v = RowSync::fit($this->db(), self::t($table), $c, $v);
+            }
+            $vals[] = $v;
         }
         $vals[] = self::enc($rec);
         if (self::onCore()) {
@@ -475,9 +489,12 @@ class HrState
     {
         $nilai = is_numeric($nilai) ? $nilai : null;
         if (self::onCore()) {
+            $db = $this->db();
+            $t = self::t('kpi_actuals');
             $this->db()->insert('INSERT INTO `hr_kpi_actuals` (`id`, `legacy_id`, `div_id`, `bulan`, `item_id`, `nilai`) VALUES (?,?,?,?,?,?)
                 ON DUPLICATE KEY UPDATE `version`=`version`+(NOT (`nilai`<=>VALUES(`nilai`))), `nilai`=VALUES(`nilai`)',
-                [self::ulid(), "$divId|$bulan|$itemId", $divId, $bulan, $itemId, $nilai]);
+                [self::ulid(), "$divId|$bulan|$itemId", RowSync::fit($db, $t, 'div_id', $divId),
+                    RowSync::fit($db, $t, 'bulan', $bulan), RowSync::fit($db, $t, 'item_id', $itemId), $nilai]);
 
             return;
         }
@@ -504,9 +521,12 @@ class HrState
     public function putMonthly(string $empId, string $bulan, mixed $isi): void
     {
         if (self::onCore()) {
+            $db = $this->db();
+            $t = self::t('monthly_inputs');
             $this->db()->insert('INSERT INTO `hr_monthly_inputs` (`id`, `legacy_id`, `emp_id`, `bulan`, `data`) VALUES (?,?,?,?,?)
                 ON DUPLICATE KEY UPDATE `version`=`version`+(`data`<>VALUES(`data`)), `data`=VALUES(`data`)',
-                [self::ulid(), "$empId|$bulan", $empId, $bulan, self::enc($isi)]);
+                [self::ulid(), "$empId|$bulan", RowSync::fit($db, $t, 'emp_id', $empId),
+                    RowSync::fit($db, $t, 'bulan', $bulan), self::enc($isi)]);
 
             return;
         }
@@ -546,12 +566,15 @@ class HrState
 
             $summary = clone $isi;
             unset($summary->days, $summary->importedAt, $summary->importedBy);
-            $monthVals = [$bulan, self::enc($summary), self::s($isi->importedAt ?? ''), self::s($isi->importedBy ?? '')];
+            $bulanF = RowSync::fit($db, $months, 'bulan', $bulan);
+            $monthVals = [$bulanF, self::enc($summary),
+                RowSync::fit($db, $months, 'imported_at', self::s($isi->importedAt ?? '')),
+                RowSync::fit($db, $months, 'imported_by', self::s($isi->importedBy ?? ''))];
             $core
                 ? $db->insert('INSERT INTO `hr_attendance_months` (`id`, `legacy_id`, `bulan`, `data`, `imported_at`, `imported_by`) VALUES (?,?,?,?,?,?)
                     ON DUPLICATE KEY UPDATE `version`=`version`+(`data`<>VALUES(`data`) OR `imported_at`<>VALUES(`imported_at`) OR `imported_by`<>VALUES(`imported_by`)),
                     `data`=VALUES(`data`), `imported_at`=VALUES(`imported_at`), `imported_by`=VALUES(`imported_by`)',
-                    [self::ulid(), $bulan, ...$monthVals])
+                    [self::ulid(), $bulanF, ...$monthVals])
                 : $db->insert('INSERT INTO `attendance_months` (`bulan`, `data`, `imported_at`, `imported_by`) VALUES (?,?,?,?)
                     ON DUPLICATE KEY UPDATE `data`=VALUES(`data`), `imported_at`=VALUES(`imported_at`), `imported_by`=VALUES(`imported_by`)',
                     $monthVals);
@@ -569,12 +592,16 @@ class HrState
                     }
                     $row = clone $d;
                     unset($row->talentaId, $row->date, $row->empId);
-                    $dayVals = [$bulan, $tid, $tgl, self::s($d->empId ?? ''), self::enc($row)];
+                    $dayVals = [RowSync::fit($db, $daysT, 'bulan', $bulan),
+                        RowSync::fit($db, $daysT, 'talenta_id', $tid),
+                        RowSync::fit($db, $daysT, 'tanggal', $tgl),
+                        RowSync::fit($db, $daysT, 'emp_id', self::s($d->empId ?? '')), self::enc($row)];
                     $core
                         ? $db->insert('INSERT INTO `hr_attendance_days` (`id`, `legacy_id`, `month_id`, `bulan`, `talenta_id`, `tanggal`, `emp_id`, `data`)
                             VALUES (?,?,(SELECT m.`id` FROM `hr_attendance_months` m WHERE m.`legacy_id` = ?),?,?,?,?,?)
                             ON DUPLICATE KEY UPDATE `emp_id`=VALUES(`emp_id`), `data`=VALUES(`data`)',
-                            [self::ulid(), "$bulan|$tid|$tgl", $bulan, ...$dayVals])
+                            [self::ulid(), RowSync::fit($db, $daysT, 'legacy_id', "$bulan|$tid|$tgl"),
+                                $bulanF, ...$dayVals])
                         : $db->insert('INSERT INTO `attendance_days` (`bulan`, `talenta_id`, `tanggal`, `emp_id`, `data`) VALUES (?,?,?,?,?)
                             ON DUPLICATE KEY UPDATE `emp_id`=VALUES(`emp_id`), `data`=VALUES(`data`)',
                             $dayVals);
@@ -594,10 +621,15 @@ class HrState
                 continue;
             }
             $vals = [$r->id, self::s($r->at ?? ''), self::s($r->userId ?? ''), self::s($r->userName ?? ''), self::s($r->action ?? ''), self::s($r->detail ?? '')];
-            self::onCore()
-                ? $this->db()->insert('INSERT INTO `hr_audit` (`id`, `legacy_id`, `at`, `user_id`, `user_name`, `action`, `detail`) VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE `legacy_id`=`legacy_id`',
-                    [self::ulid(), ...$vals])
-                : $this->db()->insert('INSERT INTO `audit` (`id`, `at`, `user_id`, `user_name`, `action`, `detail`) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE `id`=`id`', $vals);
+            if (self::onCore()) {
+                $db = $this->db();
+                $t = self::t('audit');
+                $this->db()->insert('INSERT INTO `hr_audit` (`id`, `legacy_id`, `at`, `user_id`, `user_name`, `action`, `detail`) VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE `legacy_id`=`legacy_id`',
+                    [self::ulid(), $vals[0], RowSync::fit($db, $t, 'at', $vals[1]), RowSync::fit($db, $t, 'user_id', $vals[2]),
+                        RowSync::fit($db, $t, 'user_name', $vals[3]), RowSync::fit($db, $t, 'action', $vals[4]), $vals[5]]);
+            } else {
+                $this->db()->insert('INSERT INTO `audit` (`id`, `at`, `user_id`, `user_name`, `action`, `detail`) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE `id`=`id`', $vals);
+            }
         }
     }
 
@@ -629,7 +661,7 @@ class HrState
     {
         self::onCore()
             ? $this->db()->insert('INSERT INTO `hr_pengaturan` (`id`, `k`, `v`) VALUES (?,?,?) ON DUPLICATE KEY UPDATE `version`=`version`+(`v`<>VALUES(`v`)), `v`=VALUES(`v`)',
-                [self::ulid(), $k, self::enc($v)])
+                [self::ulid(), RowSync::fit($this->db(), self::t('settings'), 'k', $k), self::enc($v)])
             : $this->db()->insert('INSERT INTO `settings` (`k`, `v`) VALUES (?,?) ON DUPLICATE KEY UPDATE `v`=VALUES(`v`)', [$k, self::enc($v)]);
     }
 }

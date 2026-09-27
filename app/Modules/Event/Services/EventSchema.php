@@ -139,6 +139,7 @@ final class EventSchema
                 $c['ulid'] = true;
                 $c['versioned'] = true;
                 $c['versionAccepted'] = true;
+                $c['coerce'] = true;
             }
             $out[$name] = $c;
         }
