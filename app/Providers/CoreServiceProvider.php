@@ -10,6 +10,7 @@ use App\Core\Imports\AccountImporter;
 use App\Core\Imports\AkademiImporter;
 use App\Core\Imports\BdImporter;
 use App\Core\Imports\DummyImporter;
+use App\Core\Imports\DwImporter;
 use App\Core\Imports\EventImporter;
 use App\Core\Imports\FinanceImporter;
 use App\Core\Imports\HlifeImporter;
@@ -48,6 +49,7 @@ final class CoreServiceProvider extends ServiceProvider
             $app->make(KompasImporter::class),
             $app->make(KontenImporter::class),
             $app->make(MarketingImporter::class),
+            $app->make(DwImporter::class),
             $app->make(ReservasiImporter::class),
             // stock has no user FKs and imports straight from its own legacy database
             $app->make(StockImporter::class),

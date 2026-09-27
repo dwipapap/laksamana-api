@@ -6,6 +6,7 @@ use App\Auth\AccountRepository;
 use App\Modules\Absensi\Services\AbsensiService;
 use App\Modules\Akademi\Services\AkademiSchema;
 use App\Modules\Bd\Services\BdState;
+use App\Modules\Dw\Services\DwService;
 use App\Modules\Event\Services\EventState;
 use App\Modules\Finance\Services\KasKecil;
 use App\Modules\Hlife\Services\HlifeState;
@@ -110,6 +111,9 @@ abstract class TestCase extends BaseTestCase
         }
         if (MarketingSchema::onCore()) {
             Artisan::call('core:import', ['module' => 'marketing']);
+        }
+        if (DwService::onCore()) {
+            Artisan::call('core:import', ['module' => 'dw']);
         }
         if (AbsensiService::onCore()) {
             Artisan::call('core:import', ['module' => 'absensi']);

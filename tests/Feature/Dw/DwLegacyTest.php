@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__.'/helpers.php';
+
 use App\Modules\Dw\Services\DwService;
 use App\Support\Modules;
 
@@ -43,7 +45,7 @@ function dwName(string $uid): string
 /** Live phone number of a restored worker (never hard-code: one digit off silently tests nothing). */
 function dwHp(string $id): string
 {
-    return Modules::db('dw')->selectOne('SELECT `no_hp` FROM `dw_pekerja` WHERE `id` = ?', [$id])->no_hp;
+    return Modules::db('dw')->selectOne(dwSql('SELECT `no_hp` FROM `dw_pekerja` WHERE `id` = ?'), [$id])->no_hp;
 }
 
 function dwSvc(): DwService
@@ -107,13 +109,13 @@ it('never lets a head decide ajuan', function () {
 
 it('sweeps past MENUNGGU rows to KEDALUWARSA on read', function () {
     $sesi = dwSesi('u-rizkiarfan');
-    Modules::db('dw')->insert("INSERT INTO dw_ajuan (id,dw_id,tgl,jam_mulai,jam_selesai,divisi,status) VALUES ('AJsweep1','DWmtxzw6fd369','2020-01-06','18:00','23:00','kitchen','MENUNGGU')");
-    Modules::db('dw')->insert("INSERT INTO dw_permintaan (id,divisi,tgl,jam_mulai,jam_selesai,jumlah,status) VALUES ('PMsweep1','kitchen','2020-01-06','18:00','23:00',2,'MENUNGGU')");
+    Modules::db('dw')->insert(dwSql("INSERT INTO dw_ajuan (id,dw_id,tgl,jam_mulai,jam_selesai,divisi,status) VALUES ('AJsweep1','DWmtxzw6fd369','2020-01-06','18:00','23:00','kitchen','MENUNGGU')"));
+    Modules::db('dw')->insert(dwSql("INSERT INTO dw_permintaan (id,divisi,tgl,jam_mulai,jam_selesai,jumlah,status) VALUES ('PMsweep1','kitchen','2020-01-06','18:00','23:00',2,'MENUNGGU')"));
 
     test()->get('/dw-api-mysql/api.php?action=getAll&dari=2026-09-01&sampai=2026-09-30&sesi='.$sesi)->assertOk();
 
-    $a = Modules::db('dw')->selectOne("SELECT status, putus_oleh, putus_nota FROM dw_ajuan WHERE id='AJsweep1'");
-    $p = Modules::db('dw')->selectOne("SELECT status, putus_oleh FROM dw_permintaan WHERE id='PMsweep1'");
+    $a = Modules::db('dw')->selectOne(dwSql("SELECT status, putus_oleh, putus_nota FROM dw_ajuan WHERE id='AJsweep1'"));
+    $p = Modules::db('dw')->selectOne(dwSql("SELECT status, putus_oleh FROM dw_permintaan WHERE id='PMsweep1'"));
     expect($a->status)->toBe('KEDALUWARSA')->and($a->putus_oleh)->toBe('(sistem)')
         ->and($a->putus_nota)->toBe('Tanggalnya lewat tanpa diputuskan')
         ->and($p->status)->toBe('KEDALUWARSA')->and($p->putus_oleh)->toBe('(sistem)');
@@ -145,7 +147,7 @@ it('creates and updates pekerja with normalisation and status mapping', function
     expect($r['data'])->toMatchArray(['saved' => true, 'baru' => true]);
     $id = $r['data']['id'];
 
-    $row = Modules::db('dw')->selectOne('SELECT * FROM dw_pekerja WHERE id=?', [$id]);
+    $row = Modules::db('dw')->selectOne(dwSql('SELECT * FROM dw_pekerja WHERE id=?'), [$id]);
     expect($row->no_hp)->toBe('08000000011')->and($row->status)->toBe('AKTIF')
         ->and($row->divisi)->toBe('floor,bar')->and($row->dibuat_oleh)->toBe(dwName('u-rizkiarfan'))
         ->and($row->bayar_jenis)->toBe('GOPAY')->and($row->bayar_bank)->toBe('');
@@ -153,7 +155,7 @@ it('creates and updates pekerja with normalisation and status mapping', function
     // updating the same id keeps dibuat_* and flips baru off; another's number stays taken
     $u = dwPost(['action' => 'simpanPekerja', 'sesi' => $sesi, 'row' => ['id' => $id, 'nama' => 'Uji Coba', 'hp' => '08000000011', 'status' => 'BLOKIR']]);
     expect($u['data'])->toMatchArray(['baru' => false, 'id' => $id]);
-    expect(Modules::db('dw')->selectOne('SELECT status FROM dw_pekerja WHERE id=?', [$id])->status)->toBe('NONAKTIF');
+    expect(Modules::db('dw')->selectOne(dwSql('SELECT status FROM dw_pekerja WHERE id=?'), [$id])->status)->toBe('NONAKTIF');
     $dup = dwPost(['action' => 'simpanPekerja', 'sesi' => $sesi, 'row' => ['id' => $id, 'nama' => 'Uji Coba', 'hp' => dwHp('DWmtxzw6fd369')]]);
     expect($dup['error'])->toContain('sudah terdaftar atas nama Abi');
 });
@@ -172,7 +174,7 @@ it('deletes pekerja but keeps their shifts as orphans', function () {
 
 it('validates ajuan input in legacy order', function () {
     $sesi = dwSesi('u-rizkiarfan');
-    $nonaktif = Modules::db('dw')->selectOne("SELECT `id`,`nama` FROM `dw_pekerja` WHERE `status`='NONAKTIF' LIMIT 1");
+    $nonaktif = Modules::db('dw')->selectOne(dwSql("SELECT `id`,`nama` FROM `dw_pekerja` WHERE `status`='NONAKTIF' LIMIT 1"));
     expect(dwPost(['action' => 'simpanAjuan', 'sesi' => $sesi, 'row' => ['tgl' => '2030-05-01', 'm' => '18:00', 's' => '23:00']])['error'])->toBe('Ajuan butuh DW dan tanggal');
     expect(dwPost(['action' => 'simpanAjuan', 'sesi' => $sesi, 'row' => ['dwId' => 'DWmtxzw6fd369', 'tgl' => '2030-05-01']])['error'])->toBe('Jam mulai dan jam selesai wajib diisi');
     expect(dwPost(['action' => 'simpanAjuan', 'sesi' => $sesi, 'row' => ['dwId' => 'DWtidakada', 'tgl' => '2030-05-01', 'm' => '18:00', 's' => '23:00']])['error'])->toBe('DW tidak ditemukan: DWtidakada');
@@ -211,7 +213,7 @@ it('timpa overwrites the conflicting row by id', function () {
     $sesi = dwSesi('u-rizkiarfan');
     $r = dwPost(['action' => 'simpanAjuan', 'sesi' => $sesi, 'row' => ['dwId' => 'DWmtxzw6fd369', 'tgl' => '2026-09-12', 'm' => '19:00', 's' => '21:00', 'timpa' => true]]);
     expect($r['data']['saved'])->toBeTrue()->and($r['data']['row']['id'])->toBe('AJmty25ynb821');
-    expect(Modules::db('dw')->selectOne("SELECT jam_mulai, status FROM dw_ajuan WHERE id='AJmty25ynb821'"))
+    expect(Modules::db('dw')->selectOne(dwSql("SELECT jam_mulai, status FROM dw_ajuan WHERE id='AJmty25ynb821'")))
         ->toMatchArray(['jam_mulai' => '19:00', 'status' => 'MENUNGGU']);
 });
 
@@ -223,7 +225,7 @@ it('decides, bulk-decides and deletes ajuan as HRD', function () {
 
     expect(dwPost(['action' => 'putusAjuan', 'sesi' => $sesi, 'id' => 'AJdec1', 'status' => 'DISETUJUI', 'nota' => 'ok'])['data'])
         ->toMatchArray(['saved' => true, 'status' => 'DISETUJUI']);
-    expect(Modules::db('dw')->selectOne("SELECT putus_oleh FROM dw_ajuan WHERE id='AJdec1'")->putus_oleh)->toBe(dwName('u-rizkiarfan'));
+    expect(Modules::db('dw')->selectOne(dwSql("SELECT putus_oleh FROM dw_ajuan WHERE id='AJdec1'"))->putus_oleh)->toBe(dwName('u-rizkiarfan'));
 
     dwPost(['action' => 'simpanAjuan', 'sesi' => $sesi, 'row' => ['id' => 'AJbulk1', 'dwId' => 'DWmtxzw6fd369', 'tgl' => '2030-06-01', 'm' => '10:00', 's' => '12:00']]);
     dwPost(['action' => 'simpanAjuan', 'sesi' => $sesi, 'row' => ['id' => 'AJbulk2', 'dwId' => 'DWmtxzw6fd369', 'tgl' => '2030-06-01', 'm' => '13:00', 's' => '15:00']]);
@@ -232,7 +234,7 @@ it('decides, bulk-decides and deletes ajuan as HRD', function () {
         ->toMatchArray(['saved' => true, 'jumlah' => 2, 'status' => 'DISETUJUI']);
 
     expect(dwPost(['action' => 'hapusAjuan', 'sesi' => $sesi, 'id' => 'AJbulk1'])['data'])->toMatchArray(['deleted' => true]);
-    expect(Modules::db('dw')->selectOne("SELECT COUNT(*) n FROM dw_ajuan WHERE id='AJbulk1'")->n)->toBe(0);
+    expect(Modules::db('dw')->selectOne(dwSql("SELECT COUNT(*) n FROM dw_ajuan WHERE id='AJbulk1'"))->n)->toBe(0);
 });
 
 it('lets heads request ajuan for their own division only', function () {
@@ -255,7 +257,7 @@ it('validates permintaan input in legacy order', function () {
 
 it('filters usulan to active workers within jumlah and reports conflicts', function () {
     $sesi = dwSesi('u-rizkiarfan');
-    $nonaktif = Modules::db('dw')->selectOne("SELECT `id` FROM `dw_pekerja` WHERE `status`='NONAKTIF' LIMIT 1")->id;
+    $nonaktif = Modules::db('dw')->selectOne(dwSql("SELECT `id` FROM `dw_pekerja` WHERE `status`='NONAKTIF' LIMIT 1"))->id;
     // Abi is booked kitchen 2026-09-12 18:00-00:00; Akbar is free that night
     $r = dwPost(['action' => 'simpanPermintaan', 'sesi' => $sesi, 'row' => [
         'divisi' => 'floor', 'tgl' => '2026-09-12', 'm' => '18:00', 's' => '23:00',
@@ -321,8 +323,8 @@ it('assigns workers HRD-only, approving at once and reporting the held-back', fu
     $r = dwPost(['action' => 'tugaskanDW', 'sesi' => $sesi, 'permintaanId' => $pm['row']['id'], 'dwIds' => ['DWmtxzw6fd369', 'DWmty9fok2781']]);
     expect($r['data'])->toMatchArray(['saved' => true, 'masuk' => 2, 'tertahan' => [], 'terpenuhi' => 2, 'jumlah' => 3])
         ->and($r['data']['ditugaskan'][0])->toHaveKeys(['id', 'dwId']);
-    expect(Modules::db('dw')->selectOne('SELECT status FROM dw_permintaan WHERE id=?', [$pm['row']['id']])->status)->toBe('DISETUJUI');
-    $aj = Modules::db('dw')->selectOne('SELECT status, permintaan_id, putus_nota FROM dw_ajuan WHERE id=?', [$r['data']['ditugaskan'][0]['id']]);
+    expect(Modules::db('dw')->selectOne(dwSql('SELECT status FROM dw_permintaan WHERE id=?'), [$pm['row']['id']])->status)->toBe('DISETUJUI');
+    $aj = Modules::db('dw')->selectOne(dwSql('SELECT status, permintaan_id, putus_nota FROM dw_ajuan WHERE id=?'), [$r['data']['ditugaskan'][0]['id']]);
     expect($aj->status)->toBe('DISETUJUI')->and($aj->permintaan_id)->toBe($pm['row']['id'])->and($aj->putus_nota)->toBe('Ditugaskan dari permintaan head');
 
     // assigning Abi again that night holds him back instead of double-booking
@@ -350,9 +352,9 @@ it('deletes permintaan of the own division, keeping the promised shifts unlinked
     $ajId = $as['ditugaskan'][0]['id'];
 
     expect(dwPost(['action' => 'hapusPermintaan', 'sesi' => $sesi, 'id' => $pm['row']['id']])['data'])->toMatchArray(['deleted' => true, 'id' => $pm['row']['id']]);
-    expect(Modules::db('dw')->selectOne('SELECT COUNT(*) n FROM dw_permintaan WHERE id=?', [$pm['row']['id']])->n)->toBe(0);
+    expect(Modules::db('dw')->selectOne(dwSql('SELECT COUNT(*) n FROM dw_permintaan WHERE id=?'), [$pm['row']['id']])->n)->toBe(0);
     // the shift survives, only the link is released
-    $aj = Modules::db('dw')->selectOne('SELECT status, permintaan_id FROM dw_ajuan WHERE id=?', [$ajId]);
+    $aj = Modules::db('dw')->selectOne(dwSql('SELECT status, permintaan_id FROM dw_ajuan WHERE id=?'), [$ajId]);
     expect($aj->status)->toBe('DISETUJUI')->and($aj->permintaan_id)->toBe('');
 });
 
@@ -387,13 +389,13 @@ it('marks attendance as HRD and resets it back to unconfirmed', function () {
 
     expect(dwPost(['action' => 'simpanHadir', 'sesi' => $sesi, 'id' => $aj, 'hadir' => 'TELAT', 'nota' => 'macet'])['data'])
         ->toMatchArray(['saved' => true, 'id' => $aj]);
-    $row = Modules::db('dw')->selectOne('SELECT hadir, hadir_nota, hadir_oleh, hadir_at FROM dw_ajuan WHERE id=?', [$aj]);
+    $row = Modules::db('dw')->selectOne(dwSql('SELECT hadir, hadir_nota, hadir_oleh, hadir_at FROM dw_ajuan WHERE id=?'), [$aj]);
     expect($row->hadir)->toBe('TELAT')->and($row->hadir_nota)->toBe('macet')
         ->and($row->hadir_oleh)->toBe(dwName('u-rizkiarfan'))->and($row->hadir_at)->toBeGreaterThan(0);
 
     // '' is not "present" — it returns the row to "not confirmed yet"
     expect(dwPost(['action' => 'simpanHadir', 'sesi' => $sesi, 'id' => $aj, 'hadir' => ''])['data'])->toMatchArray(['saved' => true]);
-    expect(Modules::db('dw')->selectOne('SELECT hadir FROM dw_ajuan WHERE id=?', [$aj])->hadir)->toBe('');
+    expect(Modules::db('dw')->selectOne(dwSql('SELECT hadir FROM dw_ajuan WHERE id=?'), [$aj])->hadir)->toBe('');
 });
 
 it('lets the head of the row division confirm attendance', function () {
@@ -421,7 +423,7 @@ it('validates gantiOrang input in legacy order', function () {
     expect(dwPost(['action' => 'gantiOrang', 'sesi' => $sesi, 'id' => $aj, 'dwBaru' => 'DWmtxzw6fd369'])['error'])->toBe('Penggantinya orang yang sama.');
     expect(dwPost(['action' => 'gantiOrang', 'sesi' => $sesi, 'id' => $aj, 'dwBaru' => 'DWtidakada'])['error'])->toBe('Pengganti tidak ditemukan: DWtidakada');
 
-    $nonaktif = Modules::db('dw')->selectOne("SELECT `id`,`nama` FROM `dw_pekerja` WHERE `status`='NONAKTIF' LIMIT 1");
+    $nonaktif = Modules::db('dw')->selectOne(dwSql("SELECT `id`,`nama` FROM `dw_pekerja` WHERE `status`='NONAKTIF' LIMIT 1"));
     expect(dwPost(['action' => 'gantiOrang', 'sesi' => $sesi, 'id' => $aj, 'dwBaru' => $nonaktif->id])['error'])
         ->toBe($nonaktif->nama.' berstatus tidak aktif dan tidak bisa dijadwalkan.');
 });
@@ -547,13 +549,13 @@ it('empties requests and assignments, keeping the talent pool unless asked', fun
     $r = dwPost(['action' => 'kosongkanSemua', 'sesi' => $sesi, 'konfirmasi' => 'HAPUS SEMUA']);
     expect($r['data'])->toMatchArray(['cleared' => true, 'ikutPekerja' => false, 'pekerja' => 0, 'oleh' => dwName('u-rizkiarfan')]);
     expect($r['data']['ajuan'])->toBeGreaterThanOrEqual(1)->and($r['data']['permintaan'])->toBeGreaterThanOrEqual(1);
-    expect(Modules::db('dw')->selectOne('SELECT COUNT(*) n FROM dw_ajuan WHERE id=?', [$aj])->n)->toBe(0);
-    expect(Modules::db('dw')->selectOne('SELECT COUNT(*) n FROM dw_permintaan WHERE id=?', [$pm])->n)->toBe(0);
+    expect(Modules::db('dw')->selectOne(dwSql('SELECT COUNT(*) n FROM dw_ajuan WHERE id=?'), [$aj])->n)->toBe(0);
+    expect(Modules::db('dw')->selectOne(dwSql('SELECT COUNT(*) n FROM dw_permintaan WHERE id=?'), [$pm])->n)->toBe(0);
     // talent pool survives a plain wipe
-    expect(Modules::db('dw')->selectOne('SELECT COUNT(*) n FROM dw_pekerja WHERE id=?', [$wid])->n)->toBe(1);
+    expect(Modules::db('dw')->selectOne(dwSql('SELECT COUNT(*) n FROM dw_pekerja WHERE id=?'), [$wid])->n)->toBe(1);
 
     $wid2 = dwSvc()->savePekerja(['nama' => 'Bersih Dua', 'hp' => '080000000052'], dwName('u-rizkiarfan'))['id'];
     $r2 = dwPost(['action' => 'kosongkanSemua', 'sesi' => $sesi, 'konfirmasi' => 'HAPUS SEMUA', 'pekerja' => 1]);
     expect($r2['data'])->toMatchArray(['cleared' => true, 'ikutPekerja' => true]);
-    expect(Modules::db('dw')->selectOne('SELECT COUNT(*) n FROM dw_pekerja WHERE id=?', [$wid2])->n)->toBe(0);
+    expect(Modules::db('dw')->selectOne(dwSql('SELECT COUNT(*) n FROM dw_pekerja WHERE id=?'), [$wid2])->n)->toBe(0);
 });

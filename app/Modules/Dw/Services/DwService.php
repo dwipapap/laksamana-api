@@ -5,6 +5,7 @@ namespace App\Modules\Dw\Services;
 use App\Support\Legacy\Sesi;
 use App\Support\Modules;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Support\Str;
 use RuntimeException;
 use stdClass;
 
@@ -52,6 +53,47 @@ class DwService
     private function db(): ConnectionInterface
     {
         return Modules::db('dw');
+    }
+
+    /** DW cut over (#51): the Modul reads and writes the core tables. */
+    public static function onCore(): bool
+    {
+        return Modules::connectionName('dw') === 'core';
+    }
+
+    /** Id column on the current connection: the legacy id, or `legacy_id` on core. */
+    private static function kId(): string
+    {
+        return self::onCore() ? 'legacy_id' : 'id';
+    }
+
+    /** `id` select expression rebuilding the legacy id on the wire. */
+    private static function selId(string $t = ''): string
+    {
+        $q = $t !== '' ? "`$t`." : '';
+
+        return self::onCore() ? "{$q}`legacy_id` AS `id`" : "{$q}`id`";
+    }
+
+    private static function ulid(): string
+    {
+        return strtolower((string) Str::ulid());
+    }
+
+    /** Actor ULID for the technical columns, resolved by session name. */
+    private function actorUlid(string $by): ?string
+    {
+        $by = self::s($by);
+        if ($by === '' || ! self::onCore()) {
+            return null;
+        }
+        try {
+            $r = $this->db()->selectOne('SELECT `id` FROM `user` WHERE `nama` = ? ORDER BY `legacy_id` LIMIT 1', [$by]);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return $r ? (string) $r->id : null;
     }
 
     /** DATE columns silently turn '2026-13-45' into 0000-00-00 — validate first. */
@@ -279,7 +321,8 @@ class DwService
     public function setting(): mixed
     {
         try {
-            $row = $this->db()->selectOne('SELECT `data` FROM `dw_setting` WHERE `id` = 1');
+            $kid = self::kId();
+            $row = $this->db()->selectOne("SELECT `data` FROM `dw_setting` WHERE `$kid` = '1'");
         } catch (\Throwable) {
             return new stdClass;
         }
@@ -306,18 +349,19 @@ class DwService
 
         $hariIni = gmdate('Y-m-d', time() + 7 * 3600);
         $now = self::ms();
+        $ver = self::onCore() ? ', `version`=`version`+1' : '';
         try {
             $this->db()->update(
                 "UPDATE `dw_permintaan`
                     SET `status`='KEDALUWARSA', `putus_at`=?, `putus_oleh`='(sistem)',
-                        `putus_nota`='Tanggalnya lewat tanpa diputuskan'
+                        `putus_nota`='Tanggalnya lewat tanpa diputuskan'$ver
                   WHERE `status`='MENUNGGU' AND `tgl` < ?",
                 [$now, $hariIni]
             );
             $this->db()->update(
                 "UPDATE `dw_ajuan`
                     SET `status`='KEDALUWARSA', `putus_at`=?, `putus_oleh`='(sistem)',
-                        `putus_nota`='Tanggalnya lewat tanpa diputuskan'
+                        `putus_nota`='Tanggalnya lewat tanpa diputuskan'$ver
                   WHERE `status`='MENUNGGU' AND `tgl` < ?",
                 [$now, $hariIni]
             );
@@ -360,11 +404,12 @@ class DwService
         }
 
         $pekerja = [];
+        $pid = self::selId();
         foreach ($this->db()->select(
-            'SELECT `id`,`nama`,`no_hp`,`gender`,`area`,`bank`,
+            "SELECT $pid,`nama`,`no_hp`,`gender`,`area`,`bank`,
                     `bayar_jenis`,`bayar_bank`,`bayar_nomor`,`bayar_nama`,`divisi`,`posisi`,
                     `skill`,`status`,`catatan`,`dibuat_at`
-               FROM `dw_pekerja` ORDER BY `nama`'
+               FROM `dw_pekerja` ORDER BY `nama`"
         ) as $r) {
             $baris = [
                 'id' => $r->id, 'nama' => $r->nama,
@@ -428,7 +473,7 @@ class DwService
     public function bentukPermintaan(array $r): array
     {
         return [
-            'id' => $r['id'], 'divisi' => $r['divisi'], 'tgl' => $r['tgl'],
+            'id' => $r['legacy_id'] ?? $r['id'], 'divisi' => $r['divisi'], 'tgl' => $r['tgl'],
             'm' => $r['jam_mulai'], 's' => $r['jam_selesai'],
             'posisi' => $r['posisi'], 'jumlah' => (int) $r['jumlah'],
             'catatan' => $r['catatan'], 'status' => $r['status'],
@@ -446,7 +491,7 @@ class DwService
     public function bentukAjuan(array $r): array
     {
         return [
-            'id' => $r['id'], 'dwId' => $r['dw_id'], 'tgl' => $r['tgl'],
+            'id' => $r['legacy_id'] ?? $r['id'], 'dwId' => $r['dw_id'], 'tgl' => $r['tgl'],
             'm' => $r['jam_mulai'], 's' => $r['jam_selesai'],
             'divisi' => $r['divisi'], 'posisi' => $r['posisi'],
             'catatan' => $r['catatan'], 'status' => $r['status'],
@@ -485,13 +530,14 @@ class DwService
         }
 
         $rows = [];
+        $jid = self::selId('j');
         foreach ($this->db()->select(
-            'SELECT j.`id`, j.`dw_id`, j.`tgl`, j.`jam_mulai`, j.`jam_selesai`,
+            "SELECT $jid, j.`dw_id`, j.`tgl`, j.`jam_mulai`, j.`jam_selesai`,
                     j.`divisi`, j.`posisi`, j.`hadir`, p.`nama`, p.`status` AS st_orang
                FROM `dw_ajuan` j
-               LEFT JOIN `dw_pekerja` p ON p.`id` = j.`dw_id`
-              WHERE j.`status` = \'DISETUJUI\' AND j.`tgl` BETWEEN ? AND ?
-              ORDER BY p.`nama`, j.`tgl`, j.`jam_mulai`',
+               LEFT JOIN `dw_pekerja` p ON p.".self::kId()." = j.`dw_id`
+              WHERE j.`status` = 'DISETUJUI' AND j.`tgl` BETWEEN ? AND ?
+              ORDER BY p.`nama`, j.`tgl`, j.`jam_mulai`",
             [$a, $b]
         ) as $r) {
             $rows[] = [
@@ -526,7 +572,8 @@ class DwService
             throw new RuntimeException('No. HP wajib diisi — nomor inilah identitas DW, dan lewat itu HR mengabarinya');
         }
 
-        $bentrok = $this->db()->selectOne('SELECT `id`,`nama` FROM `dw_pekerja` WHERE `no_hp` = ?', [$hp]);
+        $bentrok = $this->db()->selectOne(
+            'SELECT `'.self::kId().'` AS `id`,`nama` FROM `dw_pekerja` WHERE `no_hp` = ?', [$hp]);
         if ($bentrok && $bentrok->id !== $id) {
             throw new RuntimeException('No. HP '.$hp.' sudah terdaftar atas nama '.$bentrok->nama.'. Sunting data itu, jangan buat baru.');
         }
@@ -574,24 +621,50 @@ class DwService
         ];
 
         if ($baru) {
-            $this->db()->statement(
-                'INSERT INTO `dw_pekerja`
-                   (`id`,`nama`,`no_hp`,`gender`,`area`,`bank`,
-                    `bayar_jenis`,`bayar_bank`,`bayar_nomor`,`bayar_nama`,`divisi`,`posisi`,`skill`,
-                    `status`,`catatan`,`dibuat_at`,`dibuat_oleh`,`updated_at`,`updated_oleh`)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                [...$arg, $now, $by]
-            );
+            if (self::onCore()) {
+                $actor = $this->actorUlid($by);
+                $this->db()->statement(
+                    'INSERT INTO `dw_pekerja`
+                       (`id`,`legacy_id`,`nama`,`no_hp`,`gender`,`area`,`bank`,
+                        `bayar_jenis`,`bayar_bank`,`bayar_nomor`,`bayar_nama`,`divisi`,`posisi`,`skill`,
+                        `status`,`catatan`,`dibuat_at`,`dibuat_oleh`,`updated_at`,`updated_oleh`,
+                        `created_by`,`updated_by`,`version`)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)',
+                    [self::ulid(), $id, ...array_slice($arg, 1), $now, $by, $actor, $actor]
+                );
+            } else {
+                $this->db()->statement(
+                    'INSERT INTO `dw_pekerja`
+                       (`id`,`nama`,`no_hp`,`gender`,`area`,`bank`,
+                        `bayar_jenis`,`bayar_bank`,`bayar_nomor`,`bayar_nama`,`divisi`,`posisi`,`skill`,
+                        `status`,`catatan`,`dibuat_at`,`dibuat_oleh`,`updated_at`,`updated_oleh`)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                    [...$arg, $now, $by]
+                );
+            }
         } else {
-            $this->db()->statement(
-                'UPDATE `dw_pekerja` SET
-                   `nama`=?, `no_hp`=?, `gender`=?, `area`=?, `bank`=?,
-                   `bayar_jenis`=?, `bayar_bank`=?, `bayar_nomor`=?, `bayar_nama`=?,
-                   `divisi`=?, `posisi`=?, `skill`=?, `status`=?, `catatan`=?,
-                   `updated_at`=?, `updated_oleh`=?
-                 WHERE `id`=?',
-                [...array_slice($arg, 1), $id]
-            );
+            if (self::onCore()) {
+                $actor = $this->actorUlid($by);
+                $this->db()->statement(
+                    'UPDATE `dw_pekerja` SET
+                       `nama`=?, `no_hp`=?, `gender`=?, `area`=?, `bank`=?,
+                       `bayar_jenis`=?, `bayar_bank`=?, `bayar_nomor`=?, `bayar_nama`=?,
+                       `divisi`=?, `posisi`=?, `skill`=?, `status`=?, `catatan`=?,
+                       `updated_at`=?, `updated_oleh`=?, `updated_by`=?, `version`=`version`+1
+                     WHERE `legacy_id`=?',
+                    [...array_slice($arg, 1), $actor, $id]
+                );
+            } else {
+                $this->db()->statement(
+                    'UPDATE `dw_pekerja` SET
+                       `nama`=?, `no_hp`=?, `gender`=?, `area`=?, `bank`=?,
+                       `bayar_jenis`=?, `bayar_bank`=?, `bayar_nomor`=?, `bayar_nama`=?,
+                       `divisi`=?, `posisi`=?, `skill`=?, `status`=?, `catatan`=?,
+                       `updated_at`=?, `updated_oleh`=?
+                     WHERE `id`=?',
+                    [...array_slice($arg, 1), $id]
+                );
+            }
         }
 
         return ['saved' => true, 'id' => $id, 'baru' => $baru];
@@ -604,16 +677,23 @@ class DwService
      */
     public function deletePekerja(mixed $id): array
     {
-        $this->db()->delete('DELETE FROM `dw_pekerja` WHERE `id` = ?', [self::s($id)]);
+        $kid = self::kId();
+        $this->db()->delete("DELETE FROM `dw_pekerja` WHERE `$kid` = ?", [self::s($id)]);
 
         return ['deleted' => true, 'id' => self::s($id)];
     }
 
     public function pekerjaById(string $id): ?array
     {
-        $r = $this->db()->selectOne('SELECT * FROM `dw_pekerja` WHERE `id` = ?', [self::s($id)]);
+        $kid = self::kId();
+        $r = $this->db()->selectOne("SELECT * FROM `dw_pekerja` WHERE `$kid` = ?", [self::s($id)]);
+        if (! $r) {
+            return null;
+        }
+        $a = (array) $r;
+        $a['id'] = $a['legacy_id'] ?? $a['id'];
 
-        return $r ? (array) $r : null;
+        return $a;
     }
 
     /**
@@ -660,11 +740,12 @@ class DwService
     {
         $ms = self::menitJam($m);
         $ns = $ms + self::durasiMenit($m, $sj);
+        $bid = self::selId();
         $rows = $this->db()->select(
-            'SELECT `id`,`tgl`,`divisi`,`posisi`,`jam_mulai`,`jam_selesai`,`status`
+            "SELECT $bid,`tgl`,`divisi`,`posisi`,`jam_mulai`,`jam_selesai`,`status`
                FROM `dw_ajuan`
               WHERE `dw_id` = ? AND `tgl` IN (?,?,?)
-                AND (`status`=\'MENUNGGU\' OR `status`=\'DISETUJUI\')',
+                AND (`status`='MENUNGGU' OR `status`='DISETUJUI')",
             [$dw, $tgl, self::geserHari($tgl, -1), self::geserHari($tgl, 1)]
         );
         foreach ($rows as $T) {
@@ -701,10 +782,11 @@ class DwService
     {
         $ms = self::menitJam($m);
         $ns = $ms + self::durasiMenit($m, $sj);
+        $bid = self::selId();
         $rows = $this->db()->select(
-            'SELECT `id`,`divisi`,`tgl`,`jam_mulai`,`jam_selesai`,`usulan`,`dibuat_oleh`
+            "SELECT $bid,`divisi`,`tgl`,`jam_mulai`,`jam_selesai`,`usulan`,`dibuat_oleh`
                FROM `dw_permintaan`
-              WHERE `status`=\'MENUNGGU\' AND `tgl` IN (?,?,?)',
+              WHERE `status`='MENUNGGU' AND `tgl` IN (?,?,?)",
             [$tgl, self::geserHari($tgl, -1), self::geserHari($tgl, 1)]
         );
         foreach ($rows as $P) {
@@ -759,7 +841,8 @@ class DwService
             throw new RuntimeException('Jam mulai dan jam selesai wajib diisi');
         }
 
-        $o = $this->db()->selectOne('SELECT `nama`,`status`,`divisi`,`posisi` FROM `dw_pekerja` WHERE `id` = ?', [$dw]);
+        $o = $this->db()->selectOne(
+            'SELECT `nama`,`status`,`divisi`,`posisi` FROM `dw_pekerja` WHERE `'.self::kId().'` = ?', [$dw]);
         if (! $o) {
             throw new RuntimeException('DW tidak ditemukan: '.$dw);
         }
@@ -814,27 +897,50 @@ class DwService
         // same assignment edited. Status stays forced to MENUNGGU on edit: an
         // edited assignment must be re-approved, never silently keep DISETUJUI
         // with different hours.
-        $this->db()->statement(
-            'INSERT INTO `dw_ajuan`
-               (`id`,`dw_id`,`tgl`,`jam_mulai`,`jam_selesai`,`divisi`,`posisi`,`catatan`,
-                `status`,`dibuat_at`,`dibuat_oleh`)
-             VALUES (?,?,?,?,?,?,?,?,\'MENUNGGU\',?,?)
-             ON DUPLICATE KEY UPDATE
-               `dw_id`=VALUES(`dw_id`), `tgl`=VALUES(`tgl`),
-               `jam_mulai`=VALUES(`jam_mulai`), `jam_selesai`=VALUES(`jam_selesai`),
-               `divisi`=VALUES(`divisi`), `posisi`=VALUES(`posisi`),
-               `catatan`=VALUES(`catatan`), `status`=\'MENUNGGU\',
-               `dibuat_at`=VALUES(`dibuat_at`), `dibuat_oleh`=VALUES(`dibuat_oleh`),
-               `putus_at`=0, `putus_oleh`=\'\', `putus_nota`=\'\'',
-            [$id, $dw, $tgl, $m, $sj, $divisi, $posisi,
-                self::pot($row['catatan'] ?? '', 255),
-                self::ms(), self::pot($by, 120)]
-        );
+        if (self::onCore()) {
+            $actor = $this->actorUlid($by);
+            $nowMs = self::ms();
+            $this->db()->statement(
+                'INSERT INTO `dw_ajuan`
+                   (`id`,`legacy_id`,`dw_id`,`tgl`,`jam_mulai`,`jam_selesai`,`divisi`,`posisi`,`catatan`,
+                    `status`,`dibuat_at`,`dibuat_oleh`,`created_by`,`updated_by`,`version`)
+                 VALUES (?,?,?,?,?,?,?,?,?,\'MENUNGGU\',?,?,?, ?,1)
+                 ON DUPLICATE KEY UPDATE
+                   `dw_id`=VALUES(`dw_id`), `tgl`=VALUES(`tgl`),
+                   `jam_mulai`=VALUES(`jam_mulai`), `jam_selesai`=VALUES(`jam_selesai`),
+                   `divisi`=VALUES(`divisi`), `posisi`=VALUES(`posisi`),
+                   `catatan`=VALUES(`catatan`), `status`=\'MENUNGGU\',
+                   `dibuat_at`=VALUES(`dibuat_at`), `dibuat_oleh`=VALUES(`dibuat_oleh`),
+                   `putus_at`=0, `putus_oleh`=\'\', `putus_nota`=\'\',
+                   `updated_by`=VALUES(`updated_by`), `version`=`version`+1',
+                [self::ulid(), $id, $dw, $tgl, $m, $sj, $divisi, $posisi,
+                    self::pot($row['catatan'] ?? '', 255),
+                    $nowMs, self::pot($by, 120), $actor, $actor]
+            );
+        } else {
+            $this->db()->statement(
+                'INSERT INTO `dw_ajuan`
+                   (`id`,`dw_id`,`tgl`,`jam_mulai`,`jam_selesai`,`divisi`,`posisi`,`catatan`,
+                    `status`,`dibuat_at`,`dibuat_oleh`)
+                 VALUES (?,?,?,?,?,?,?,?,\'MENUNGGU\',?,?)
+                 ON DUPLICATE KEY UPDATE
+                   `dw_id`=VALUES(`dw_id`), `tgl`=VALUES(`tgl`),
+                   `jam_mulai`=VALUES(`jam_mulai`), `jam_selesai`=VALUES(`jam_selesai`),
+                   `divisi`=VALUES(`divisi`), `posisi`=VALUES(`posisi`),
+                   `catatan`=VALUES(`catatan`), `status`=\'MENUNGGU\',
+                   `dibuat_at`=VALUES(`dibuat_at`), `dibuat_oleh`=VALUES(`dibuat_oleh`),
+                   `putus_at`=0, `putus_oleh`=\'\', `putus_nota`=\'\'',
+                [$id, $dw, $tgl, $m, $sj, $divisi, $posisi,
+                    self::pot($row['catatan'] ?? '', 255),
+                    self::ms(), self::pot($by, 120)]
+            );
+        }
 
         // Re-read BY ID, never by (dw_id, tgl): since double shifts are
         // allowed that pair can match SEVERAL rows, and answering with the
         // morning shift after saving the night one makes Cancel kill wrong.
-        $ada = $this->db()->selectOne('SELECT * FROM `dw_ajuan` WHERE `id` = ?', [$id]);
+        $kid = self::kId();
+        $ada = $this->db()->selectOne("SELECT * FROM `dw_ajuan` WHERE `$kid` = ?", [$id]);
 
         return ['saved' => true, 'row' => $ada ? $this->bentukAjuan((array) $ada) : null];
     }
@@ -846,14 +952,16 @@ class DwService
         if (! in_array($status, ['DISETUJUI', 'DITOLAK', 'MENUNGGU', 'BATAL'], true)) {
             throw new RuntimeException('Status putusan tidak dikenal: '.$status);
         }
+        $kid = self::kId();
+        $ver = self::onCore() ? ', `version`=`version`+1' : '';
         $n = $this->db()->update(
-            'UPDATE `dw_ajuan` SET `status`=?, `putus_at`=?, `putus_oleh`=?, `putus_nota`=?
-              WHERE `id`=?',
+            "UPDATE `dw_ajuan` SET `status`=?, `putus_at`=?, `putus_oleh`=?, `putus_nota`=?$ver
+              WHERE `$kid`=?",
             [$status, self::ms(), self::pot($by, 120), self::pot($nota, 255), $id]
         );
         if ($n === 0) {
             // rowCount 0 also happens when the status is already exactly that — not an error.
-            $ada = $this->db()->selectOne('SELECT 1 FROM `dw_ajuan` WHERE `id` = ?', [$id]);
+            $ada = $this->db()->selectOne("SELECT 1 FROM `dw_ajuan` WHERE `$kid` = ?", [$id]);
             if (! $ada) {
                 throw new RuntimeException('Ajuan tidak ditemukan: '.$id);
             }
@@ -877,11 +985,13 @@ class DwService
         }
         $n = 0;
         $db = $this->db();
-        $db->transaction(function () use ($ids, $status, $nota, $by, &$n, $db) {
+        $kid = self::kId();
+        $ver = self::onCore() ? ', `version`=`version`+1' : '';
+        $db->transaction(function () use ($ids, $status, $nota, $by, &$n, $db, $kid, $ver) {
             foreach ($ids as $id) {
                 $db->update(
-                    'UPDATE `dw_ajuan` SET `status`=?, `putus_at`=?, `putus_oleh`=?, `putus_nota`=?
-                      WHERE `id`=?',
+                    "UPDATE `dw_ajuan` SET `status`=?, `putus_at`=?, `putus_oleh`=?, `putus_nota`=?$ver
+                      WHERE `$kid`=?",
                     [$status, self::ms(), self::pot($by, 120), self::pot($nota, 255), self::s($id)]
                 );
                 $n++;
@@ -893,7 +1003,8 @@ class DwService
 
     public function deleteAjuan(mixed $id): array
     {
-        $this->db()->delete('DELETE FROM `dw_ajuan` WHERE `id` = ?', [self::s($id)]);
+        $kid = self::kId();
+        $this->db()->delete("DELETE FROM `dw_ajuan` WHERE `$kid` = ?", [self::s($id)]);
 
         return ['deleted' => true, 'id' => self::s($id)];
     }
@@ -901,9 +1012,15 @@ class DwService
     /** One assignment, RAW row (not shaped): the gates read DIVISI and STATUS before deciding who may touch it. */
     public function ajuanById(mixed $id): ?array
     {
-        $r = $this->db()->selectOne('SELECT * FROM `dw_ajuan` WHERE `id` = ?', [self::s($id)]);
+        $kid = self::kId();
+        $r = $this->db()->selectOne("SELECT * FROM `dw_ajuan` WHERE `$kid` = ?", [self::s($id)]);
+        if (! $r) {
+            return null;
+        }
+        $a = (array) $r;
+        $a['id'] = $a['legacy_id'] ?? $a['id'];
 
-        return $r ? (array) $r : null;
+        return $a;
     }
 
     /**
@@ -961,9 +1078,15 @@ class DwService
 
     public function permintaanById(mixed $id): ?array
     {
-        $r = $this->db()->selectOne('SELECT * FROM `dw_permintaan` WHERE `id` = ?', [self::s($id)]);
+        $kid = self::kId();
+        $r = $this->db()->selectOne("SELECT * FROM `dw_permintaan` WHERE `$kid` = ?", [self::s($id)]);
+        if (! $r) {
+            return null;
+        }
+        $a = (array) $r;
+        $a['id'] = $a['legacy_id'] ?? $a['id'];
 
-        return $r ? (array) $r : null;
+        return $a;
     }
 
     /**
@@ -1038,8 +1161,9 @@ class DwService
                 }
             }
             if (count($minta)) {
+                $kid = self::kId();
                 $cek = $this->db()->select(
-                    'SELECT `id` FROM `dw_pekerja` WHERE `status`=\'AKTIF\' AND `id` IN ('.implode(',', array_fill(0, count($minta), '?')).')',
+                    "SELECT `$kid` AS `id` FROM `dw_pekerja` WHERE `status`='AKTIF' AND `$kid` IN (".implode(',', array_fill(0, count($minta), '?')).')',
                     $minta
                 );
                 $sah = [];
@@ -1071,33 +1195,70 @@ class DwService
         $now = self::ms();
         $by = self::pot($by, 120);
         if ($baru) {
-            $this->db()->statement(
-                'INSERT INTO `dw_permintaan`
-                   (`id`,`divisi`,`tgl`,`jam_mulai`,`jam_selesai`,`posisi`,`jumlah`,`catatan`,
-                    `usulan`,`status`,`dibuat_at`,`dibuat_oleh`)
-                 VALUES (?,?,?,?,?,?,?,?,?,\'MENUNGGU\',?,?)',
-                [$id, $div, $tgl, $m, $sj,
-                    self::pot($row['posisi'] ?? '', 60),
-                    $jml,
-                    self::pot($row['catatan'] ?? '', 255),
-                    self::pot(implode(',', $usulan), 400),
-                    $now, $by]
-            );
+            if (self::onCore()) {
+                $actor = $this->actorUlid($by);
+                $this->db()->statement(
+                    'INSERT INTO `dw_permintaan`
+                       (`id`,`legacy_id`,`divisi`,`tgl`,`jam_mulai`,`jam_selesai`,`posisi`,`jumlah`,`catatan`,
+                        `usulan`,`status`,`dibuat_at`,`dibuat_oleh`,`created_by`,`updated_by`,`version`)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,\'MENUNGGU\',?,?,?, ?,1)',
+                    [self::ulid(), $id, $div, $tgl, $m, $sj,
+                        self::pot($row['posisi'] ?? '', 60),
+                        $jml,
+                        self::pot($row['catatan'] ?? '', 255),
+                        self::pot(implode(',', $usulan), 400),
+                        $now, $by, $actor, $actor]
+                );
+            } else {
+                $this->db()->statement(
+                    'INSERT INTO `dw_permintaan`
+                       (`id`,`divisi`,`tgl`,`jam_mulai`,`jam_selesai`,`posisi`,`jumlah`,`catatan`,
+                        `usulan`,`status`,`dibuat_at`,`dibuat_oleh`)
+                     VALUES (?,?,?,?,?,?,?,?,?,\'MENUNGGU\',?,?)',
+                    [$id, $div, $tgl, $m, $sj,
+                        self::pot($row['posisi'] ?? '', 60),
+                        $jml,
+                        self::pot($row['catatan'] ?? '', 255),
+                        self::pot(implode(',', $usulan), 400),
+                        $now, $by]
+                );
+            }
         } else {
-            $this->db()->statement(
-                'UPDATE `dw_permintaan` SET
-                   `divisi`=?, `tgl`=?, `jam_mulai`=?, `jam_selesai`=?,
-                   `posisi`=?, `jumlah`=?, `catatan`=?, `usulan`=?,
-                   `status`=\'MENUNGGU\', `diubah_at`=?, `diubah_oleh`=?,
-                   `putus_at`=0, `putus_oleh`=\'\', `putus_nota`=\'\'
-                 WHERE `id`=?',
-                [$div, $tgl, $m, $sj,
-                    self::pot($row['posisi'] ?? '', 60),
-                    $jml,
-                    self::pot($row['catatan'] ?? '', 255),
-                    self::pot(implode(',', $usulan), 400),
-                    $now, $by, $id]
-            );
+            $ver = self::onCore() ? ', `version`=`version`+1' : '';
+            $kid = self::kId();
+            if (self::onCore()) {
+                $actor = $this->actorUlid($by);
+                $this->db()->statement(
+                    "UPDATE `dw_permintaan` SET
+                       `divisi`=?, `tgl`=?, `jam_mulai`=?, `jam_selesai`=?,
+                       `posisi`=?, `jumlah`=?, `catatan`=?, `usulan`=?,
+                       `status`='MENUNGGU', `diubah_at`=?, `diubah_oleh`=?,
+                       `putus_at`=0, `putus_oleh`='', `putus_nota`='',
+                       `updated_by`=?$ver
+                     WHERE `$kid`=?",
+                    [$div, $tgl, $m, $sj,
+                        self::pot($row['posisi'] ?? '', 60),
+                        $jml,
+                        self::pot($row['catatan'] ?? '', 255),
+                        self::pot(implode(',', $usulan), 400),
+                        $now, $by, $actor, $id]
+                );
+            } else {
+                $this->db()->statement(
+                    'UPDATE `dw_permintaan` SET
+                       `divisi`=?, `tgl`=?, `jam_mulai`=?, `jam_selesai`=?,
+                       `posisi`=?, `jumlah`=?, `catatan`=?, `usulan`=?,
+                       `status`=\'MENUNGGU\', `diubah_at`=?, `diubah_oleh`=?,
+                       `putus_at`=0, `putus_oleh`=\'\', `putus_nota`=\'\'
+                     WHERE `id`=?',
+                    [$div, $tgl, $m, $sj,
+                        self::pot($row['posisi'] ?? '', 60),
+                        $jml,
+                        self::pot($row['catatan'] ?? '', 255),
+                        self::pot(implode(',', $usulan), 400),
+                        $now, $by, $id]
+                );
+            }
         }
         $ada = $this->permintaanById($id);
 
@@ -1108,7 +1269,8 @@ class DwService
     /** One worker's name for conflict messages: ids alone can't be acted on. */
     public function namaPekerja(string $id): string
     {
-        $r = $this->db()->selectOne('SELECT `nama` FROM `dw_pekerja` WHERE `id` = ?', [self::s($id)]);
+        $kid = self::kId();
+        $r = $this->db()->selectOne("SELECT `nama` FROM `dw_pekerja` WHERE `$kid` = ?", [self::s($id)]);
 
         return $r ? (string) $r->nama : $id;
     }
@@ -1119,9 +1281,11 @@ class DwService
         if (! in_array($status, ['DISETUJUI', 'DITOLAK', 'MENUNGGU', 'BATAL'], true)) {
             throw new RuntimeException('Status putusan tidak dikenal: '.$status);
         }
+        $kid = self::kId();
+        $ver = self::onCore() ? ', `version`=`version`+1' : '';
         $n = $this->db()->update(
-            'UPDATE `dw_permintaan` SET `status`=?, `putus_at`=?, `putus_oleh`=?, `putus_nota`=?
-              WHERE `id`=?',
+            "UPDATE `dw_permintaan` SET `status`=?, `putus_at`=?, `putus_oleh`=?, `putus_nota`=?$ver
+              WHERE `$kid`=?",
             [$status, self::ms(), self::pot($by, 120), self::pot($nota, 255), self::s($id)]
         );
         if ($n === 0 && ! $this->permintaanById($id)) {
@@ -1181,10 +1345,12 @@ class DwService
             // Straight to DISETUJUI + tagged with this request. Done HERE,
             // not inside saveAjuan(): that guard ALWAYS forces MENUNGGU on
             // purpose and must not be loosened for any door.
+            $kid = self::kId();
+            $ver = self::onCore() ? ', `version`=`version`+1' : '';
             $this->db()->update(
-                'UPDATE `dw_ajuan` SET `permintaan_id`=?, `status`=\'DISETUJUI\',
-                   `putus_at`=?, `putus_oleh`=?, `putus_nota`=\'Ditugaskan dari permintaan head\'
-                 WHERE `id`=?',
+                "UPDATE `dw_ajuan` SET `permintaan_id`=?, `status`='DISETUJUI',
+                   `putus_at`=?, `putus_oleh`=?, `putus_nota`='Ditugaskan dari permintaan head'$ver
+                 WHERE `$kid`=?",
                 [$pm['id'], $now, $by, $aj['id']]
             );
             $masuk[] = ['id' => $aj['id'], 'dwId' => $dwId];
@@ -1194,9 +1360,11 @@ class DwService
         // partially. "Partial" is deliberately NOT its own status: how many
         // are filled is counted from the rows and written plainly ("2 of 3").
         if (count($masuk)) {
+            $kid = self::kId();
+            $ver = self::onCore() ? ', `version`=`version`+1' : '';
             $this->db()->update(
-                'UPDATE `dw_permintaan` SET `status`=\'DISETUJUI\', `putus_at`=?, `putus_oleh`=?
-                  WHERE `id`=?',
+                "UPDATE `dw_permintaan` SET `status`='DISETUJUI', `putus_at`=?, `putus_oleh`=?$ver
+                  WHERE `$kid`=?",
                 [$now, $by, $pm['id']]
             );
         }
@@ -1213,8 +1381,9 @@ class DwService
      */
     public function deletePermintaan(mixed $id): array
     {
-        $this->db()->update('UPDATE `dw_ajuan` SET `permintaan_id`=\'\' WHERE `permintaan_id` = ?', [self::s($id)]);
-        $this->db()->delete('DELETE FROM `dw_permintaan` WHERE `id` = ?', [self::s($id)]);
+        $kid = self::kId();
+        $this->db()->update("UPDATE `dw_ajuan` SET `permintaan_id`='' WHERE `permintaan_id` = ?", [self::s($id)]);
+        $this->db()->delete("DELETE FROM `dw_permintaan` WHERE `$kid` = ?", [self::s($id)]);
 
         return ['deleted' => true, 'id' => self::s($id)];
     }
@@ -1293,8 +1462,9 @@ class DwService
             throw new RuntimeException('Kehadiran hanya bisa dicatat untuk shift yang sudah disetujui.');
         }
         $this->db()->update(
-            'UPDATE `dw_ajuan` SET `hadir`=?, `hadir_nota`=?, `hadir_oleh`=?, `hadir_at`=?
-              WHERE `id`=?',
+            'UPDATE `dw_ajuan` SET `hadir`=?, `hadir_nota`=?, `hadir_oleh`=?, `hadir_at`=?'
+            .(self::onCore() ? ', `version`=`version`+1' : '')
+            .' WHERE `'.self::kId().'`=?',
             [$hadir, self::pot($nota, 255), self::pot($by, 120), self::ms(), self::s($id)]
         );
 
@@ -1331,7 +1501,8 @@ class DwService
             throw new RuntimeException('Penggantinya orang yang sama.');
         }
 
-        $baru = $this->db()->selectOne('SELECT `nama`,`status` FROM `dw_pekerja` WHERE `id` = ?', [$dwBaru]);
+        $baru = $this->db()->selectOne(
+            'SELECT `nama`,`status` FROM `dw_pekerja` WHERE `'.self::kId().'` = ?', [$dwBaru]);
         if (! $baru) {
             throw new RuntimeException('Pengganti tidak ditemukan: '.$dwBaru);
         }
@@ -1345,7 +1516,8 @@ class DwService
                 .$B['tgl'].' '.$B['m'].'-'.$B['s'].').');
         }
 
-        $r2 = $this->db()->selectOne('SELECT `nama` FROM `dw_pekerja` WHERE `id` = ?', [$a['dw_id']]);
+        $r2 = $this->db()->selectOne(
+            'SELECT `nama` FROM `dw_pekerja` WHERE `'.self::kId().'` = ?', [$a['dw_id']]);
         $namaLama = $r2 ? $r2->nama : $a['dw_id'];
 
         $t = self::ms();
@@ -1357,28 +1529,50 @@ class DwService
 
         // Positional placeholders: each ? binds once, so the repeated
         // timestamps and names need no :t1/:t2/:t3 dance (HY093).
-        $this->db()->transaction(function () use ($id, $baru, $dwBaru, $a, $namaLama, $ekor, $t, $by, $idBaru, $pm) {
+        $kid = self::kId();
+        $ver = self::onCore() ? ', `version`=`version`+1' : '';
+        $actor = $this->actorUlid($by);
+        $this->db()->transaction(function () use ($id, $baru, $dwBaru, $a, $namaLama, $ekor, $t, $by, $idBaru, $pm, $kid, $ver, $actor) {
             $this->db()->update(
-                'UPDATE `dw_ajuan`
-                    SET `hadir`=\'ALFA\', `hadir_nota`=?, `hadir_oleh`=?, `hadir_at`=?
-                  WHERE `id`=?',
+                "UPDATE `dw_ajuan`
+                    SET `hadir`='ALFA', `hadir_nota`=?, `hadir_oleh`=?, `hadir_at`=?$ver
+                  WHERE `$kid`=?",
                 [self::pot('Digantikan '.$baru->nama.$ekor, 255), $by, $t, $id]
             );
-            $this->db()->insert(
-                'INSERT INTO `dw_ajuan`
-                   (`id`,`dw_id`,`tgl`,`jam_mulai`,`jam_selesai`,`divisi`,`posisi`,`catatan`,
-                    `status`,`dibuat_at`,`dibuat_oleh`,`putus_at`,`putus_oleh`,`putus_nota`,
-                    `hadir`,`hadir_nota`,`hadir_oleh`,`hadir_at`,`permintaan_id`)
-                 VALUES (?,?,?,?,?,?,?,?,\'DISETUJUI\',?,?,?,?,?,\'HADIR\',?,?,?,?)',
-                [$idBaru, $dwBaru, $a['tgl'], $a['jam_mulai'], $a['jam_selesai'],
-                    $a['divisi'], $a['posisi'],
-                    self::pot('Pengganti '.$namaLama, 255),
-                    $t, $by, $t, $by,
-                    self::pot('Pengganti '.$namaLama.$ekor, 255),
-                    self::pot('Hadir sebagai pengganti '.$namaLama, 255),
-                    $by, $t,
-                    self::pot($pm, 32)]
-            );
+            if (DwService::onCore()) {
+                $this->db()->insert(
+                    'INSERT INTO `dw_ajuan`
+                       (`id`,`legacy_id`,`dw_id`,`tgl`,`jam_mulai`,`jam_selesai`,`divisi`,`posisi`,`catatan`,
+                        `status`,`dibuat_at`,`dibuat_oleh`,`putus_at`,`putus_oleh`,`putus_nota`,
+                        `hadir`,`hadir_nota`,`hadir_oleh`,`hadir_at`,`permintaan_id`,
+                        `created_by`,`updated_by`,`version`)
+                     VALUES (?,?,?,?,?,?,?,?,?,\'DISETUJUI\',?,?,?,?,?,\'HADIR\',?,?,?,?,?, ?,1)',
+                    [DwService::ulid(), $idBaru, $dwBaru, $a['tgl'], $a['jam_mulai'], $a['jam_selesai'],
+                        $a['divisi'], $a['posisi'],
+                        self::pot('Pengganti '.$namaLama, 255),
+                        $t, $by, $t, $by,
+                        self::pot('Pengganti '.$namaLama.$ekor, 255),
+                        self::pot('Hadir sebagai pengganti '.$namaLama, 255),
+                        $by, $t,
+                        self::pot($pm, 32), $actor, $actor]
+                );
+            } else {
+                $this->db()->insert(
+                    'INSERT INTO `dw_ajuan`
+                       (`id`,`dw_id`,`tgl`,`jam_mulai`,`jam_selesai`,`divisi`,`posisi`,`catatan`,
+                        `status`,`dibuat_at`,`dibuat_oleh`,`putus_at`,`putus_oleh`,`putus_nota`,
+                        `hadir`,`hadir_nota`,`hadir_oleh`,`hadir_at`,`permintaan_id`)
+                     VALUES (?,?,?,?,?,?,?,?,\'DISETUJUI\',?,?,?,?,?,\'HADIR\',?,?,?,?)',
+                    [$idBaru, $dwBaru, $a['tgl'], $a['jam_mulai'], $a['jam_selesai'],
+                        $a['divisi'], $a['posisi'],
+                        self::pot('Pengganti '.$namaLama, 255),
+                        $t, $by, $t, $by,
+                        self::pot('Pengganti '.$namaLama.$ekor, 255),
+                        self::pot('Hadir sebagai pengganti '.$namaLama, 255),
+                        $by, $t,
+                        self::pot($pm, 32)]
+                );
+            }
         });
 
         $lama = $this->ajuanById($id);
@@ -1412,7 +1606,8 @@ class DwService
         $k = $senin.'|'.$kunciTujuan;
 
         $this->db()->transaction(function () use ($k, $nyala, $by) {
-            $row = $this->db()->selectOne('SELECT `data` FROM `dw_setting` WHERE `id` = 1 FOR UPDATE');
+            $kid = self::kId();
+            $row = $this->db()->selectOne("SELECT `data` FROM `dw_setting` WHERE `$kid` = '1' FOR UPDATE");
             $data = ($row && $row->data !== null && $row->data !== '') ? json_decode($row->data, true) : [];
             if (! is_array($data)) {
                 $data = [];
@@ -1425,11 +1620,21 @@ class DwService
             } else {
                 unset($data['bayarLunas'][$k]);
             }
-            $this->db()->statement(
-                'INSERT INTO `dw_setting` (`id`,`data`,`updated_at`,`updated_by`) VALUES (1,?,?,?)
-                 ON DUPLICATE KEY UPDATE `data`=VALUES(`data`), `updated_at`=VALUES(`updated_at`), `updated_by`=VALUES(`updated_by`)',
-                [json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), self::ms(), $by]
-            );
+            if (self::onCore()) {
+                $actor = $this->actorUlid($by);
+                $this->db()->statement(
+                    'INSERT INTO `dw_setting` (`id`,`legacy_id`,`data`,`updated_at`,`created_by`,`updated_by`,`version`) VALUES (?,?,?,?,?,?,1)
+                     ON DUPLICATE KEY UPDATE `data`=VALUES(`data`), `updated_at`=VALUES(`updated_at`),
+                        `updated_by`=VALUES(`updated_by`), `version`=`version`+1',
+                    [self::ulid(), '1', json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), self::ms(), $actor, $actor]
+                );
+            } else {
+                $this->db()->statement(
+                    'INSERT INTO `dw_setting` (`id`,`data`,`updated_at`,`updated_by`) VALUES (1,?,?,?)
+                     ON DUPLICATE KEY UPDATE `data`=VALUES(`data`), `updated_at`=VALUES(`updated_at`), `updated_by`=VALUES(`updated_by`)',
+                    [json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), self::ms(), $by]
+                );
+            }
         });
 
         return ['saved' => true, 'kunci' => $k, 'nyala' => $nyala ? 1 : 0];
@@ -1461,11 +1666,21 @@ class DwService
             $data['akses'] = (is_array($lama) && isset($lama['akses']) && is_array($lama['akses']))
                 ? $lama['akses'] : [];
         }
-        $this->db()->statement(
-            'INSERT INTO `dw_setting` (`id`,`data`,`updated_at`,`updated_by`) VALUES (1,?,?,?)
-             ON DUPLICATE KEY UPDATE `data`=VALUES(`data`), `updated_at`=VALUES(`updated_at`), `updated_by`=VALUES(`updated_by`)',
-            [json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), self::ms(), self::pot($by, 120)]
-        );
+        if (self::onCore()) {
+            $actor = $this->actorUlid($by);
+            $this->db()->statement(
+                'INSERT INTO `dw_setting` (`id`,`legacy_id`,`data`,`updated_at`,`created_by`,`updated_by`,`version`) VALUES (?,?,?,?,?,?,1)
+                 ON DUPLICATE KEY UPDATE `data`=VALUES(`data`), `updated_at`=VALUES(`updated_at`),
+                    `updated_by`=VALUES(`updated_by`), `version`=`version`+1',
+                [self::ulid(), '1', json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), self::ms(), $actor, $actor]
+            );
+        } else {
+            $this->db()->statement(
+                'INSERT INTO `dw_setting` (`id`,`data`,`updated_at`,`updated_by`) VALUES (1,?,?,?)
+                 ON DUPLICATE KEY UPDATE `data`=VALUES(`data`), `updated_at`=VALUES(`updated_at`), `updated_by`=VALUES(`updated_by`)',
+                [json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), self::ms(), self::pot($by, 120)]
+            );
+        }
 
         return ['saved' => true, 'ts' => gmdate('c')];
     }

@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__.'/helpers.php';
+
 use App\Modules\Dw\Services\DwService;
 use App\Support\Modules;
 
@@ -69,7 +71,7 @@ it('runs the worker lifecycle as HRD with filters', function () {
 
     $this->withToken($hrd)->putJson('/api/v1/dw/workers/'.$id, ['nama' => 'V Satu', 'hp' => '080000000031', 'area' => 'Sleman'])
         ->assertOk()->assertJsonPath('data.baru', false);
-    expect(Modules::db('dw')->selectOne('SELECT area FROM dw_pekerja WHERE id=?', [$id])->area)->toBe('Sleman');
+    expect(Modules::db('dw')->selectOne(dwSql('SELECT area FROM dw_pekerja WHERE id=?'), [$id])->area)->toBe('Sleman');
     $this->withToken($hrd)->putJson('/api/v1/dw/workers/DWtidakada', ['nama' => 'X', 'hp' => '080000000032'])->assertStatus(404);
 
     $this->withToken($hrd)->deleteJson('/api/v1/dw/workers/'.$id)->assertOk()->assertJsonPath('data.deleted', true);
