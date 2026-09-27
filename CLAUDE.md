@@ -70,6 +70,10 @@ hlife hr jadwal kompas konten marketing reservasi stock. event+ticketing share `
    Use `Modules::db('<key>')` + parameterised SQL (EMULATE_PREPARES=false — each `?`/name once).
    Do NOT port runtime DDL (`*_pastikan`, ALTER): tables already exist live. If code must
    tolerate a missing optional column, check `information_schema` read-only and degrade.
+   **Exception — legacy bugs the owner decided to fix:** when an issue carries an
+   "Owner decision (…): fix it" comment, fix that behaviour instead of reproducing it.
+   Remove the parity case that pinned the old behaviour, pin the new one with a Pest test,
+   and note the change in `docs/modules/<module>.md`. Everything else stays identical.
 3. `Http/Legacy/<Name>LegacyController` — `match ($req->action)` → service → exact legacy
    envelope (Envelope::okData / error / flat / statusError / raw streams). Keep open
    endpoints open (ping, stats, cross-module reads like shiftHari, headIds, jadwalDW, eventsHari,
