@@ -60,6 +60,17 @@ it('keeps the stale-edit conflict guard on core', function () {
         ->and(akCore('akademi_divisions', 'd_core2')['name'])->toBe('B');
 });
 
+it('truncates an over-long indexed string on strict core like non-strict production (#97)', function () {
+    $long = str_repeat('A', 400);
+    $this->legacyPost('/akademi-api-mysql/api.php', ['action' => 'saveAll', 'data' => [
+        'users' => [['id' => 'u-core-long', 'name' => $long, 'updatedAt' => 1790100000000]],
+    ]])->assertOk();
+
+    $row = akCore('akademi_users', 'u-core-long');
+    expect($row['name'])->toBe(str_repeat('A', 255))
+        ->and(json_decode($row['data'], true)['name'])->toBe($long);
+});
+
 it('splits progress maps into composite-key core rows', function () {
     $this->legacyPost('/akademi-api-mysql/api.php', ['action' => 'saveAll', 'data' => [
         'progress' => ['u-core1' => ['m-core1' => ['done' => true, 'score' => 90, 'at' => 1790100000000, 'updatedAt' => 1790100000000]]],
