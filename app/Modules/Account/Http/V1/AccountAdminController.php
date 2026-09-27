@@ -6,8 +6,10 @@ use App\Auth\AccountRepository;
 use App\Auth\OfficeAccess;
 use App\Modules\Account\Services\AccountService;
 use App\Support\Api\ApiResponse;
+use App\Support\Modules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use RuntimeException;
 
 /**
  * /api/v1/account — user & access administration for new apps.
@@ -122,6 +124,50 @@ class AccountAdminController
         return ApiResponse::ok($this->account->modulesList($request->boolean('all')));
     }
 
+    /** Bulk User import (legacy saveUsers): {users:[…]} -> {sukses, gagal, baris}. */
+    public function bulkUsers(Request $request): JsonResponse
+    {
+        $rows = $request->input('users');
+        if (! is_array($rows)) {
+            $rows = [];
+        }
+
+        return self::result($this->account->saveUsersCore($rows), 201);
+    }
+
+    /** One-time Sheet migration (legacy import): users/modules/grants/admins upserts. */
+    public function import(Request $request): JsonResponse
+    {
+        return self::result($this->account->importCore(
+            $request->only(['users', 'modules', 'grants', 'admins'])));
+    }
+
+    /** Register NEW Modul keys (legacy syncModules). Existing keys are never touched. */
+    public function syncModules(Request $request): JsonResponse
+    {
+        $modules = $request->input('modules');
+        if (! is_array($modules)) {
+            $modules = [];
+        }
+
+        return self::result($this->account->syncModulesCore($modules), 201);
+    }
+
+    /** Edit one Modul's label and/or active flag (legacy saveModule). */
+    public function saveModule(Request $request, string $key): JsonResponse
+    {
+        $data = $request->validate([
+            'label' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'active' => ['sometimes', 'nullable'],
+        ]);
+
+        return self::result($this->account->saveModuleCore(
+            $key,
+            array_key_exists('label', $data) ? $data['label'] : null,
+            array_key_exists('active', $data) ? $data['active'] : null,
+        ));
+    }
+
     // any authenticated user -------------------------------------------------
 
     public function divisiRoster(): JsonResponse
@@ -140,10 +186,54 @@ class AccountAdminController
     {
         $body = $request->only(['name', 'keterangan', 'noHp', 'talentaId', 'active',
             'branch', 'organization', 'jobPosition', 'jobLevel', 'employmentStatus', 'joinDate']);
+        // `active` goes through the rosterSetActive rules below, so a PATCH cannot
+        // deactivate the caller or a superadmin (the shared rosterSaveUserCore is
+        // the legacy whitelist and would write active straight through).
+        $active = array_key_exists('active', $body) ? ! ($body['active'] === false) : null;
+        unset($body['active']);
         if ($id !== null) {
             $body['id'] = $id;
         }
 
-        return self::result($this->account->rosterSaveUserCore($body), $id === null ? 201 : 200);
+        // One transaction: a refused `active` rolls the identity write back, so a
+        // 422 never leaves a half-applied PATCH behind.
+        $refused = null;
+        try {
+            $r = Modules::db('account')->transaction(function () use ($body, $active, $id, $request, &$refused) {
+                $r = $this->account->rosterSaveUserCore($body);
+                if (! empty($r['ok']) && $active !== null) {
+                    $ra = $this->account->setActiveCore((string) $request->user()->getKey(), (string) ($id ?? $r['id']), $active);
+                    if (empty($ra['ok'])) {
+                        $refused = $ra;
+                        throw new RuntimeException('roster active refused');
+                    }
+                }
+
+                return $r;
+            });
+        } catch (RuntimeException $e) {
+            if ($refused === null) {
+                throw $e;
+            }
+
+            return self::result($refused);
+        }
+
+        return self::result($r, $id === null ? 201 : 200);
+    }
+
+    /** Permanently delete a deactivated roster row as a Pengelola Roster (legacy rosterHapusUser). */
+    public function rosterDestroy(Request $request, string $id): JsonResponse
+    {
+        return self::result($this->account->deleteUserCore($id, (string) $request->user()->getKey(), true));
+    }
+
+    /** Active / inactive as a Pengelola Roster (legacy rosterSetActive). */
+    public function rosterSetActive(Request $request, string $id): JsonResponse
+    {
+        // Legacy default: anything but an explicit false means active.
+        $active = ! ($request->input('active') === false);
+
+        return self::result($this->account->setActiveCore((string) $request->user()->getKey(), $id, $active));
     }
 }

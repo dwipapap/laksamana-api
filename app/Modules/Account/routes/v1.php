@@ -21,17 +21,23 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('module:jadwal,admin')->group(function () {
         Route::post('account/roster', [AccountAdminController::class, 'rosterSave']);
         Route::patch('account/roster/{id}', [AccountAdminController::class, 'rosterSave']);
+        Route::put('account/roster/{id}/active', [AccountAdminController::class, 'rosterSetActive']);
+        Route::delete('account/roster/{id}', [AccountAdminController::class, 'rosterDestroy']);
     });
 
     // superadmin
     Route::middleware('module:*,admin')->prefix('account')->group(function () {
         Route::get('users', [AccountAdminController::class, 'users']);
         Route::post('users', [AccountAdminController::class, 'saveUser']);
+        Route::post('users/bulk', [AccountAdminController::class, 'bulkUsers']);
         Route::patch('users/{id}', [AccountAdminController::class, 'saveUser']);
         Route::put('users/{id}/active', [AccountAdminController::class, 'setActive']);
         Route::delete('users/{id}', [AccountAdminController::class, 'destroy']);
         Route::put('users/{id}/access', [AccountAdminController::class, 'setModuleAccess']);
         Route::put('users/{id}/admin', [AccountAdminController::class, 'setAdmin']);
         Route::get('modules', [AccountAdminController::class, 'modules']);
+        Route::post('modules', [AccountAdminController::class, 'syncModules']);
+        Route::patch('modules/{key}', [AccountAdminController::class, 'saveModule']);
+        Route::post('import', [AccountAdminController::class, 'import']);
     });
 });
