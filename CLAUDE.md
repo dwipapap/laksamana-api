@@ -119,14 +119,17 @@ the DB-free Unit suite (`php artisan test --testsuite=Unit`), and `route:list`.
 Feature tests need the restored dumps (§0), so CI skips them explicitly until
 the anonymised set from #9 can be restored in CI.
 
-### Pass criteria — keep them LOW (owner's call, 2026-09-26)
+### Pass criteria — keep them LOW (owner's call, 2026-09-26, tightened 2026-09-27)
 
 Speed beats exhaustive local verification. The bar to merge a PR is:
-**CI green** (lint, Pint, Unit, routes). Nothing else is required.
+**CI green** (lint, Pint, Unit, routes) **plus the touched module's tests green locally**.
+Nothing else is required.
 
-- Local tests are optional. If you run any, run only the touched module's
-  folder once (`php artisan test tests/Feature/<Name>`, plus `tests/Feature/Core/<Name>*`
-  for a cutover) on the connection you changed. Seconds, not minutes.
+- **Required:** before opening a PR, run the touched module's folder once
+  (`php artisan test tests/Feature/<Name>`) and report the `Tests:` line in the PR.
+  For a cutover, run it on legacy AND with `DB_<NAME>_CONNECTION=core`, plus
+  `tests/Feature/Core/<Name>*`. CI runs no feature tests, so this is the only check
+  that the module still works. Seconds, not minutes.
 - **Never** run the full suite, never run it once per connection, never chunk it,
   never re-run it after a rebase. Never run two suites at once.
 - Parity (`parity.mjs`) is optional; run it for the one module you changed, only if
