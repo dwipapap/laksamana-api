@@ -57,6 +57,18 @@ function linkDir(target, at) {
 }
 
 /**
+ * Packages whose bin proxies resolve the package from `__DIR__`: they must be
+ * real copies, not links, or `vendor/bin/pest` (and phpunit/pint) load the main
+ * checkout's code and pest dies (#139). `vendor/bin` itself is copied too, so
+ * the proxy file lives here.
+ */
+const mustCopy = (rel) =>
+  rel === 'bin' ||
+  /^pestphp[\\/]/.test(rel) ||
+  /^phpunit[\\/]/.test(rel) ||
+  /^laravel[\\/]pint$/.test(rel);
+
+/**
  * A vendor/ that belongs to this worktree: real autoload.php + real composer/,
  * links for the packages. Never a link to the whole vendor/.
  */
@@ -73,18 +85,47 @@ function buildVendor(src, dst) {
 
   let linked = 0;
   let copied = 0;
+  const copiedPkgs = [];
   for (const e of fs.readdirSync(src, { withFileTypes: true })) {
     if (e.name === 'composer' || e.name === 'autoload.php') continue;
     const s = path.join(src, e.name);
     const d = path.join(dst, e.name);
-    if (e.isDirectory()) {
-      if (linkDir(s, d)) linked++;
-    } else if (!fs.existsSync(d)) {
-      fs.copyFileSync(s, d);
-      copied++;
+    if (!e.isDirectory()) {
+      if (!fs.existsSync(d)) {
+        fs.copyFileSync(s, d);
+        copied++;
+      }
+      continue;
+    }
+    if (mustCopy(e.name)) {
+      fs.cpSync(s, d, { recursive: true });
+      copiedPkgs.push(e.name);
+      continue;
+    }
+    const kids = fs.readdirSync(s, { withFileTypes: true });
+    const copyKids = kids.filter((c) => mustCopy(`${e.name}/${c.name}`));
+    if (copyKids.length) {
+      // a real group dir: copy its bin-shipping children, link the rest
+      fs.mkdirSync(d, { recursive: true });
+      for (const c of kids) {
+        const cs = path.join(s, c.name);
+        const cd = path.join(d, c.name);
+        if (mustCopy(`${e.name}/${c.name}`)) {
+          fs.cpSync(cs, cd, { recursive: true });
+          copiedPkgs.push(`${e.name}/${c.name}`);
+        } else if (c.isDirectory()) {
+          if (linkDir(cs, cd)) linked++;
+        } else if (!fs.existsSync(cd)) {
+          fs.copyFileSync(cs, cd);
+          copied++;
+        }
+      }
+    } else if (linkDir(s, d)) {
+      linked++;
     }
   }
-  console.log(`vendor/: autoload.php + composer/ copied (real), ${linked} package dir(s) linked, ${copied} loose file(s) copied`);
+  const pkgs = copiedPkgs.length ? ` (${copiedPkgs.join(', ')})` : '';
+  console.log(`vendor/: autoload.php + composer/ copied (real), ${linked} package dir(s) linked, ${copied} loose file(s) copied, ${copiedPkgs.length} bin package(s)/dir(s) copied${pkgs}`);
 }
 
 /** Fails loudly when the worktree would execute another checkout's code. */
@@ -109,6 +150,30 @@ function verify(dir) {
     );
   }
   console.log(`vendor check OK: App\\... loads from ${dir}`);
+
+  // pest probe (#139): vendor/bin/pest must actually run from THIS worktree.
+  // Composer's proxies resolve the package from __DIR__, so a linked bin/ or
+  // pestphp/phpunit/pint package would run another checkout's pest.
+  const pest = path.join(dir, 'vendor', 'bin', 'pest');
+  if (!fs.existsSync(pest)) {
+    die(`No vendor/bin/pest in ${dir} — run \`composer install\` there first.`);
+  }
+  let pestOut = '';
+  try {
+    pestOut = execFileSync(PHP, [pest, '--version'], { cwd: dir, encoding: 'utf8' }).trim();
+  } catch (e) {
+    die(
+      `pest probe FAILED in ${dir}: vendor/bin/pest did not run.\n  ` +
+      `${String(e.stderr || e.message || e).trim().split('\n').slice(0, 8).join('\n  ')}\n\n` +
+      'vendor/bin or a pest/phpunit/pint package is a link to another checkout, so pest\n' +
+      `resolves __DIR__ there. Delete ${path.join(dir, 'vendor')} and re-run this script.\n` +
+      'More: docs/agents/worktrees.md'
+    );
+  }
+  if (!/pest/i.test(pestOut)) {
+    die(`pest probe gave an unexpected answer in ${dir}:\n  ${pestOut}`);
+  }
+  console.log(`pest probe OK: ${pestOut.split('\n')[0]}`);
 }
 /**
  * Unlink every symlink/junction under $root WITHOUT following it (the target is
