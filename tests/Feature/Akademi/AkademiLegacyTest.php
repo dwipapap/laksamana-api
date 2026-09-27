@@ -2,6 +2,8 @@
 
 use App\Support\Modules;
 
+require_once __DIR__.'/helpers.php';
+
 /*
  * Legacy /akademi-api-mysql/api.php — the whole-state saveAll on RowSync
  * (notIn delete + baseUpdatedAt), the composite-key progress maps, the
@@ -20,7 +22,7 @@ function akSave(array $data): array
 
 function akDivision(string $id): ?array
 {
-    $row = Modules::db('akademi')->selectOne('SELECT updated_at, data FROM divisions WHERE id = ?', [$id]);
+    $row = Modules::db('akademi')->selectOne(akSql('SELECT updated_at, data FROM divisions WHERE id = ?'), [$id]);
 
     return $row ? ['v' => (int) $row->updated_at, 'data' => json_decode($row->data, true)] : null;
 }
@@ -76,7 +78,7 @@ it('round-trips progress maps to composite-key rows and never deletes on an empt
     akSave(['progress' => ['u-adit' => ['m_bar_basic' => ['status' => 'done', 'completedAt' => 1790100000000]]]]);
 
     $row = Modules::db('akademi')->selectOne(
-        'SELECT done, at_ms, updated_at, data FROM progress WHERE user_id = ? AND material_id = ?',
+        akSql('SELECT done, at_ms, updated_at, data FROM progress WHERE user_id = ? AND material_id = ?'),
         ['u-adit', 'm_bar_basic']);
     expect($row)->not->toBeNull()
         ->and(json_decode($row->data, true))->toMatchArray(['status' => 'done']);
@@ -86,7 +88,7 @@ it('round-trips progress maps to composite-key rows and never deletes on an empt
 
     akSave(['progress' => []]);
     expect(Modules::db('akademi')->selectOne(
-        'SELECT 1 c FROM progress WHERE user_id = ? AND material_id = ?', ['u-adit', 'm_bar_basic']))->not->toBeNull();
+        akSql('SELECT 1 c FROM progress WHERE user_id = ? AND material_id = ?'), ['u-adit', 'm_bar_basic']))->not->toBeNull();
 });
 
 it('round-trips 3-level progProg maps', function () {
@@ -97,7 +99,7 @@ it('round-trips 3-level progProg maps', function () {
 });
 
 it('appends activity with sha1-derived ids and never doubles a resend', function () {
-    $before = (int) Modules::db('akademi')->selectOne('SELECT COUNT(*) c FROM activity')->c;
+    $before = (int) Modules::db('akademi')->selectOne(akSql('SELECT COUNT(*) c FROM activity'))->c;
     $r = akSave(['activity' => [
         ['ts' => 1790100000000, 'userId' => 'u-adit', 'action' => 'uji', 'detail' => 'coba'],
         ['noid' => true],
@@ -106,17 +108,17 @@ it('appends activity with sha1-derived ids and never doubles a resend', function
     // konten logs), so jumlah counts both; the fingerprint-less row lands
     // on the empty fingerprint id.
     expect($r['data']['jumlah']['activity'])->toBe(2);
-    expect((int) Modules::db('akademi')->selectOne('SELECT COUNT(*) c FROM activity')->c)->toBe($before + 2);
+    expect((int) Modules::db('akademi')->selectOne(akSql('SELECT COUNT(*) c FROM activity'))->c)->toBe($before + 2);
 
     $id = 'ac_'.substr(sha1('1790100000000|u-adit|uji|coba'), 0, 24);
-    expect(Modules::db('akademi')->selectOne('SELECT id FROM activity WHERE id = ?', [$id]))->not->toBeNull();
+    expect(Modules::db('akademi')->selectOne(akSql('SELECT id FROM activity WHERE id = ?'), [$id]))->not->toBeNull();
 
     // Resending the identical list changes nothing (INSERT IGNORE on the
     // content-derived id); a changed detail is a genuinely new row.
     akSave(['activity' => [['ts' => 1790100000000, 'userId' => 'u-adit', 'action' => 'uji', 'detail' => 'coba']]]);
-    $row = Modules::db('akademi')->selectOne('SELECT data FROM activity WHERE id = ?', [$id]);
+    $row = Modules::db('akademi')->selectOne(akSql('SELECT data FROM activity WHERE id = ?'), [$id]);
     expect(json_decode($row->data, true)['detail'])->toBe('coba');
-    expect((int) Modules::db('akademi')->selectOne('SELECT COUNT(*) c FROM activity')->c)->toBe($before + 2);
+    expect((int) Modules::db('akademi')->selectOne(akSql('SELECT COUNT(*) c FROM activity'))->c)->toBe($before + 2);
 });
 
 it('stores settings plus unknown keys, and keeps the safety nets', function () {
@@ -141,7 +143,7 @@ it('answers ping and stats with the legacy shape', function () {
     $this->get('/akademi-api-mysql/api.php?action=ping')->assertOk()
         ->assertJsonPath('ok', true)->assertJsonPath('data.pong', true)->assertJsonPath('data.backend', 'laravel');
 
-    $n = (int) Modules::db('akademi')->selectOne('SELECT COUNT(*) c FROM materials')->c;
+    $n = (int) Modules::db('akademi')->selectOne(akSql('SELECT COUNT(*) c FROM materials'))->c;
     $this->get('/akademi-api-mysql/api.php?action=stats')->assertOk()
         ->assertJsonPath('ok', true)->assertJsonPath('data.materials', $n)->assertJsonPath('data.backend', 'laravel');
 });
