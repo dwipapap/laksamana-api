@@ -6,6 +6,8 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Testing\TestResponse;
 
+require_once __DIR__.'/helpers.php';
+
 /*
  * Public ticket shop on the restored EMS copy: event e2 is Upcoming with a seat map;
  * id02n81bj / id0bogbkq are VIP seats (price 3), id06hjcvx a table (furniture),
@@ -30,8 +32,8 @@ function tixPost(array $body, array $server = []): TestResponse
 /** A Buyer with a live session; returns the session token. */
 function tixBuyer(string $id = 'tu_test1'): string
 {
-    tixDb()->insert("INSERT INTO tix_users (id,email,pass_hash,name,phone,created_at) VALUES (?,?,'x','Test Buyer','0811',0)", [$id, "$id@example.test"]);
-    tixDb()->insert('INSERT INTO tix_sessions (token,user_id,expires_at,created_at) VALUES (?,?,?,0)', ["s_$id", $id, 4102444800000]);
+    tixDb()->insert(tixSql("INSERT INTO tix_users (id,email,pass_hash,name,phone,created_at) VALUES (?,?,'x','Test Buyer','0811',0)"), [$id, "$id@example.test"]);
+    tixDb()->insert(tixSql('INSERT INTO tix_sessions (token,user_id,expires_at,created_at) VALUES (?,?,?,0)'), ["s_$id", $id, 4102444800000]);
 
     return "s_$id";
 }
@@ -43,7 +45,7 @@ function tixPendingOrder(string $invoiceId): string
         'subtotal' => 2, 'fee' => 0, 'total' => 2, 'payment_status' => 'Pending', 'payment_ref' => 'LMTEST01',
         'items' => [['seat_id' => '', 'label' => '', 'tier' => 'Reguler', 'class_id' => 'idt97tumy', 'kind' => 'general', 'capacity' => 1, 'price' => 2]],
         'access_token' => 'acc1', 'expires_at' => '2099-01-01T00:00:00+00:00', 'payment' => ['invoice_id' => $invoiceId]];
-    tixDb()->insert("INSERT INTO orders (id,event_id,buyer_name,phone,email,total,payment_status,payment_ref,updated_at,created_at,data) VALUES ('ord_test1','e2','T','1','t@example.test',2,'Pending','LMTEST01',1,1,?)", [json_encode($o)]);
+    tixDb()->insert(tixSql("INSERT INTO orders (id,event_id,buyer_name,phone,email,total,payment_status,payment_ref,updated_at,created_at,data) VALUES ('ord_test1','e2','T','1','t@example.test',2,'Pending','LMTEST01',1,1,?)"), [json_encode($o)]);
 
     return 'ord_test1';
 }
@@ -79,13 +81,13 @@ it('webhook: 401 on a wrong token, 500 when Xendit cannot confirm, Paid once Xen
         ->push(['status' => 'PAID', 'payment_method' => 'QR_CODE', 'paid_amount' => 2])]);
     tixPost(['external_id' => $oid, 'status' => 'PAID'], ['HTTP_X_CALLBACK_TOKEN' => 'cbtest'])->assertStatus(500)
         ->assertJsonPath('error', 'Xendit menyatakan invoice belum lunas (PENDING) — webhook diabaikan.');
-    $before = (int) tixDb()->selectOne('SELECT COUNT(*) c FROM tickets')->c;
+    $before = (int) tixDb()->selectOne(tixSql('SELECT COUNT(*) c FROM tickets'))->c;
     tixPost(['external_id' => $oid, 'status' => 'PAID'], ['HTTP_X_CALLBACK_TOKEN' => 'cbtest'])->assertOk()->assertJsonPath('data.tiket', 1);
 
-    $o = json_decode(tixDb()->selectOne('SELECT data FROM orders WHERE id = ?', [$oid])->data, true);
+    $o = json_decode(tixDb()->selectOne(tixSql('SELECT data FROM orders WHERE id = ?'), [$oid])->data, true);
     expect($o['payment_status'])->toBe('Paid')->and($o['payment']['payment_method'])->toBe('QR_CODE')
         ->and($o['email_eticket'])->toBe(['ok' => false, 'sebab' => 'SMTP belum dikonfigurasi'])
-        ->and((int) tixDb()->selectOne('SELECT COUNT(*) c FROM tickets')->c)->toBe($before + 1);
+        ->and((int) tixDb()->selectOne(tixSql('SELECT COUNT(*) c FROM tickets'))->c)->toBe($before + 1);
 });
 
 it('v1: checkout needs a Buyer, prices server-side, and pays through the simulated gateway', function () {
@@ -137,7 +139,7 @@ it('v1 Buyers: register, log in, see me and my orders, log out', function () {
     $this->withToken($tok)->getJson('/api/v1/tickets/me')->assertOk()->assertJsonPath('data.name', 'Rina');
     $this->withToken($tok)->getJson('/api/v1/tickets/me/orders')->assertOk()->assertJsonPath('data', []);
     $this->withToken($tok)->deleteJson('/api/v1/tickets/sessions')->assertOk();
-    expect(tixDb()->selectOne('SELECT COUNT(*) c FROM tix_sessions WHERE token = ?', [$tok])->c)->toBe(0);
+    expect(tixDb()->selectOne(tixSql('SELECT COUNT(*) c FROM tix_sessions WHERE token = ?'), [$tok])->c)->toBe(0);
 });
 
 it('mail: the reset link and the paid e-ticket (with its PDF) go out through the ticketing mailer', function () {
@@ -146,15 +148,15 @@ it('mail: the reset link and the paid e-ticket (with its PDF) go out through the
     tixBuyer();
     $this->postJson('/api/v1/tickets/password/forgot', ['email' => 'tu_test1@example.test'])->assertOk()->assertJsonPath('data.terkirim', true);
     Mail::assertSent(ShopMail::class, fn (ShopMail $m) => $m->hasTo('tu_test1@example.test') && str_contains($m->body, '#reset/'));
-    $reset = tixDb()->selectOne("SELECT token FROM tix_reset WHERE user_id = 'tu_test1'")->token;
+    $reset = tixDb()->selectOne(tixSql("SELECT token FROM tix_reset WHERE user_id = 'tu_test1'"))->token;
     $this->postJson('/api/v1/tickets/password/reset', ['token' => $reset, 'password' => 'barubaru123'])->assertOk();
-    expect(tixDb()->selectOne("SELECT COUNT(*) c FROM tix_sessions WHERE token = 's_tu_test1'")->c)->toBe(0);
+    expect(tixDb()->selectOne(tixSql("SELECT COUNT(*) c FROM tix_sessions WHERE token = 's_tu_test1'"))->c)->toBe(0);
 
     tixPendingOrder('SIM-LMTEST01');
-    tixDb()->update("UPDATE orders SET data = JSON_SET(data, '$.email', 'pembeli@example.test') WHERE id = 'ord_test1'");
+    tixDb()->update(tixSql("UPDATE orders SET data = JSON_SET(data, '$.email', 'pembeli@example.test') WHERE id = 'ord_test1'"));
     tixPost(['external_id' => 'ord_test1', 'status' => 'PAID'], ['HTTP_X_CALLBACK_TOKEN' => 'cbtest'])->assertOk();
     Mail::assertSent(ShopMail::class, fn (ShopMail $m) => $m->hasTo('pembeli@example.test')
         && count($m->files) === 1 && str_starts_with($m->files[0]['isi'], '%PDF-1.4') && $m->files[0]['nama'] === 'E-Ticket-LMTEST01.pdf');
-    $o = json_decode(tixDb()->selectOne("SELECT data FROM orders WHERE id = 'ord_test1'")->data, true);
+    $o = json_decode(tixDb()->selectOne(tixSql("SELECT data FROM orders WHERE id = 'ord_test1'"))->data, true);
     expect($o['email_eticket']['ok'])->toBeTrue()->and($o['email_eticket']['pdf'])->toBeTrue();
 });
