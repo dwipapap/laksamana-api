@@ -31,6 +31,16 @@ it('logs in with a legacy sesi stored in core and keeps legacy ids on the wire',
         ->assertOk()->assertJsonPath('user.id', 'u-arif')->assertJsonPath('user.modules', $login['user']['modules']);
 });
 
+it('truncates an over-long indexed string on strict core like non-strict production (#97)', function () {
+    $admin = officeUser('u-admin');
+    $long = str_repeat('T', 64);
+    $created = $this->withToken(loginAs($admin))->postJson('/api/v1/account/users',
+        ['name' => 'Coerce User', 'talentaId' => $long])->assertCreated()->json('data');
+
+    expect(DB::connection('core')->table('user')->where('legacy_id', $created['id'])->value('talenta_id'))
+        ->toBe(str_repeat('T', 32));
+});
+
 it('issues Sanctum tokens owned by the core User and exposes its ULID on v1', function () {
     $u = officeUser('u-arif');
     $ulid = DB::connection('core')->table('user')->where('legacy_id', 'u-arif')->value('id');

@@ -2,6 +2,7 @@
 
 namespace App\Auth;
 
+use App\Support\RowSync;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
@@ -136,7 +137,7 @@ class CoreAccountRepository extends AccountRepository
         $vals = [];
         foreach ($set as $col => $v) {
             $sql[] = "`$col` = ?";
-            $vals[] = $v;
+            $vals[] = RowSync::fit($this->db(), 'user', $col, $v);
         }
         $sql[] = '`updated_at` = ?';
         $vals[] = self::now();
@@ -183,7 +184,7 @@ class CoreAccountRepository extends AccountRepository
         $row = ['id' => self::ulid(), 'version' => 1, 'created_at' => self::now(), 'updated_at' => self::now()];
         foreach ($columns as $col => $val) {
             if (isset(self::COLUMNS[$col])) {
-                $row[self::COLUMNS[$col]] = self::coreValue($col, $val);
+                $row[self::COLUMNS[$col]] = RowSync::fit($this->db(), 'user', self::COLUMNS[$col], self::coreValue($col, $val));
             }
         }
         $this->db()->table('user')->insert($row);
@@ -405,7 +406,9 @@ class CoreAccountRepository extends AccountRepository
 
     public function insertModule(string $key, string $label, int $urut): void
     {
-        $this->db()->table('modul')->insert(['id' => self::ulid(), 'kunci' => self::s($key), 'label' => self::s($label),
+        $this->db()->table('modul')->insert(['id' => self::ulid(),
+            'kunci' => RowSync::fit($this->db(), 'modul', 'kunci', self::s($key)),
+            'label' => RowSync::fit($this->db(), 'modul', 'label', self::s($label)),
             'aktif' => 1, 'urutan' => $urut, 'version' => 1, 'created_at' => self::now(), 'updated_at' => self::now()]);
     }
 
@@ -413,17 +416,20 @@ class CoreAccountRepository extends AccountRepository
     {
         if ($this->moduleExists($key)) {
             $this->db()->update('UPDATE modul SET label = ?, aktif = ?, updated_at = ?, version = version + 1 WHERE kunci = ?',
-                [self::s($label), $active ? 1 : 0, self::now(), self::s($key)]);
+                [RowSync::fit($this->db(), 'modul', 'label', self::s($label)), $active ? 1 : 0, self::now(), self::s($key)]);
 
             return;
         }
-        $this->db()->table('modul')->insert(['id' => self::ulid(), 'kunci' => self::s($key), 'label' => self::s($label),
+        $this->db()->table('modul')->insert(['id' => self::ulid(),
+            'kunci' => RowSync::fit($this->db(), 'modul', 'kunci', self::s($key)),
+            'label' => RowSync::fit($this->db(), 'modul', 'label', self::s($label)),
             'aktif' => $active ? 1 : 0, 'urutan' => 0, 'version' => 1, 'created_at' => self::now(), 'updated_at' => self::now()]);
     }
 
     public function updateModuleLabel(string $key, string $label): void
     {
-        $this->db()->update('UPDATE modul SET label = ?, updated_at = ?, version = version + 1 WHERE kunci = ?', [self::s($label), self::now(), self::s($key)]);
+        $this->db()->update('UPDATE modul SET label = ?, updated_at = ?, version = version + 1 WHERE kunci = ?',
+            [RowSync::fit($this->db(), 'modul', 'label', self::s($label)), self::now(), self::s($key)]);
     }
 
     public function updateModuleActive(string $key, bool $active): void
@@ -540,7 +546,7 @@ class CoreAccountRepository extends AccountRepository
         if ($id === null) {
             $id = self::ulid();
             $urut = (int) $this->db()->selectOne('SELECT COALESCE(MAX(urutan), 0) m FROM divisi')->m + 1;
-            $this->db()->table('divisi')->insert(['id' => $id, 'kode' => $kode, 'urutan' => $urut, 'version' => 1,
+            $this->db()->table('divisi')->insert(['id' => $id, 'kode' => RowSync::fit($this->db(), 'divisi', 'kode', $kode), 'urutan' => $urut, 'version' => 1,
                 'created_at' => self::now(), 'updated_at' => self::now()]);
         }
 
