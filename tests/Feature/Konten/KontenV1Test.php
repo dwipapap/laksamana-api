@@ -3,6 +3,8 @@
 use App\Support\Modules;
 use App\Support\RowSync;
 
+require_once __DIR__.'/helpers.php';
+
 /* u-andry holds module `konten`; u-adit does not. */
 
 beforeEach(function () {
@@ -35,10 +37,10 @@ it('creates a record, stamps a version and logs the activity', function () {
     $id = $res->json('data.id');
     expect($id)->toStartWith('b_')->and($res->json('meta.version'))->toBeGreaterThan(0);
 
-    $row = Modules::db('konten')->selectOne('SELECT name, updated_at FROM brands WHERE id = ?', [$id]);
+    $row = Modules::db('konten')->selectOne(ktSql('SELECT name, updated_at FROM brands WHERE id = ?'), [$id]);
     expect($row->name)->toBe('Brand API')->and((int) $row->updated_at)->toBe($res->json('meta.version'));
 
-    $act = Modules::db('konten')->selectOne('SELECT action, by_user FROM logs WHERE ref_id = ? ORDER BY at_ms DESC LIMIT 1', ['Brand API']);
+    $act = Modules::db('konten')->selectOne(ktSql('SELECT action, by_user FROM logs WHERE ref_id = ? ORDER BY at_ms DESC LIMIT 1'), ['Brand API']);
     expect($act->action)->toBe('Brand ditambah (API)')->and($act->by_user)->toBe(officeUser('u-andry')['name']);
 });
 
@@ -63,8 +65,8 @@ it('rejects a stale version with 409 and the current record', function () {
 });
 
 it('merges a PATCH with the right version and bumps it', function () {
-    $row = Modules::db('konten')->selectOne("SELECT updated_at FROM brands WHERE id='b_mrbwdt83an0o'");
-    $oldName = json_decode(Modules::db('konten')->selectOne("SELECT data FROM brands WHERE id='b_mrbwdt83an0o'")->data, true)['name'];
+    $row = Modules::db('konten')->selectOne(ktSql("SELECT updated_at FROM brands WHERE id='b_mrbwdt83an0o'"));
+    $oldName = json_decode(Modules::db('konten')->selectOne(ktSql("SELECT data FROM brands WHERE id='b_mrbwdt83an0o'"))->data, true)['name'];
     $res = $this->withToken(loginAs(officeUser('u-andry')))
         ->withHeader('If-Match', '"'.((int) $row->updated_at).'"')->patchJson('/api/v1/konten/brands/b_mrbwdt83an0o', ['name' => $oldName.' v2'])
         ->assertOk()->assertJsonPath('data.name', $oldName.' v2');
@@ -81,12 +83,12 @@ it('deletes with the right version', function () {
 });
 
 it('stays compatible with old laksamana-office tabs: the v1 version is a valid baseUpdatedAt', function () {
-    $v = (int) Modules::db('konten')->selectOne("SELECT updated_at FROM brands WHERE id='b_mrbwdt83an0o'")->updated_at;
+    $v = (int) Modules::db('konten')->selectOne(ktSql("SELECT updated_at FROM brands WHERE id='b_mrbwdt83an0o'"))->updated_at;
     $new = $this->withToken(loginAs(officeUser('u-andry')))
         ->withHeader('If-Match', '"'.$v.'"')->patchJson('/api/v1/konten/brands/b_mrbwdt83an0o', ['name' => 'Brand v1'])
         ->json('meta.version');
 
-    $row = json_decode(Modules::db('konten')->selectOne("SELECT data FROM brands WHERE id='b_mrbwdt83an0o'")->data, true);
+    $row = json_decode(Modules::db('konten')->selectOne(ktSql("SELECT data FROM brands WHERE id='b_mrbwdt83an0o'"))->data, true);
     $row['name'] = 'Brand legacy';
     $row['baseUpdatedAt'] = $new; // what the old frontend reads back
     $row['updatedAt'] = $new + 5;
@@ -173,9 +175,9 @@ it('treats an identical-content write as a no-op success instead of a conflict',
 
     // Someone else saves first: the stored version moves, the content does not.
     $db = Modules::db('konten');
-    $cur = json_decode($db->selectOne('SELECT data FROM brands WHERE id = ?', [$row['id']])->data, true);
+    $cur = json_decode($db->selectOne(ktSql('SELECT data FROM brands WHERE id = ?'), [$row['id']])->data, true);
     $cur['updatedAt'] = $v + 5;
-    $db->update('UPDATE brands SET data = ?, updated_at = ? WHERE id = ?',
+    $db->update(ktSql('UPDATE brands SET data = ?, updated_at = ? WHERE id = ?'),
         [RowSync::enc($cur), $v + 5, $row['id']]);
 
     // Sending back exactly what is stored is a no-op 200, not a 409.
