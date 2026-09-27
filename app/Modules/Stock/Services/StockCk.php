@@ -220,10 +220,10 @@ class StockCk
      * never set here (it belongs to the order sync). Pack size comes from the
      * master, never from the browser.
      *
-     * Legacy quirk kept: with a non-empty `id` legacy calls pur_ada_baris() on
-     * `ck_stock`, which is not on its table allow-list, so it throws (a 500)
-     * before writing anything. $verified = true (v1, row already locked and
-     * checked) takes the update path instead.
+     * With a non-empty `id` this is an edit under the same rules as the v1
+     * PATCH: order-sync rows (with a `ref`) are refused, and an unknown id is a
+     * clean legacy error. (#113 owner decision: fix it — legacy's pur_ada_baris()
+     * table list was missing ck_stock, so this path answered a 500.)
      */
     public function save(stdClass $b, bool $verified = false): array
     {
@@ -262,7 +262,10 @@ class StockCk
         $dataJson = StockSupport::enc($rec);
         $db = StockSupport::db();
 
-        if ($id !== '' && ($verified || StockSupport::exists('ck_stock', $id))) {
+        if ($id !== '') {
+            if (! $verified && ! StockSupport::exists('ck_stock', $id)) {
+                return ['status' => 'error', 'message' => 'mutasi tidak ditemukan'];
+            }
             if ((string) $db->selectOne(StockSupport::q('SELECT `ref` FROM {ck_stock} WHERE {id}=?'), [$id])?->ref !== '') {
                 return ['status' => 'error', 'message' => 'mutasi dari pengajuan hanya berubah lewat check-in'];
             }

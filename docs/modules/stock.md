@@ -18,7 +18,7 @@ Port notes (part 3):
 - v1 `POST /hpp/import` is all-or-nothing (legacy stops half-way on a bad row, after a `timpa` wipe); v1 refuses a rename onto a name another ingredient holds (legacy's upsert + delete would merge them, or lose the row on a case-only rename).
 
 Port notes (part 2):
-- **`pur_ada_baris()` quirk kept (#113).** Its closed table list lacks `serah_terima` and `ck_stock`: a serah terima edit is saved and then answered 500; a CK `simpan` with an `id` answers 500 before writing. The compat route does the same; v1 is not affected.
+- **`pur_ada_baris()` quirk FIXED (#113, owner decision 2026-09-27 — fix, not reproduce).** Legacy's closed table list lacked `serah_terima` and `ck_stock`: a serah terima edit was saved and then answered 500; a CK `simpan` with an `id` answered 500 before writing. Both tables are on the list now: a serah terima edit answers success (`catatan tidak ditemukan` for an unknown id), and a CK `simpan` with an `id` is an edit under the same rules as the v1 PATCH — order-sync rows (with a `ref`) refused, unknown id a clean `mutasi tidak ditemukan`.
 - `activity_log`'s runtime `CREATE TABLE IF NOT EXISTS` is not ported (the table exists live); a missing table gives legacy's swallowed answers (`dicatat: 0`, `[]`).
 - v1 applies the team scope to single reads, photos and writes too (legacy scoped lists only).
 
