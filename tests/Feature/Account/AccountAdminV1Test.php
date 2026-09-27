@@ -150,6 +150,13 @@ it('applies the rosterSetActive rules when active goes through the roster PATCH 
         'name' => $me['name'], 'keterangan' => $me['keterangan'], 'talentaId' => $me['talenta_id'], 'active' => false,
     ])->assertStatus(422)->assertJsonPath('error.code', 'cannot_deactivate_self');
 
+    // A refused PATCH writes nothing: the identity edit is rolled back with it.
+    $before = app(AccountRepository::class)->userById('u-admin');
+    $this->withToken($token)->patchJson('/api/v1/account/roster/u-admin', [
+        'name' => $before['name'], 'keterangan' => 'Diubah Tapi Ditolak', 'active' => false,
+    ])->assertStatus(422)->assertJsonPath('error.code', 'cannot_deactivate_admin');
+    expect(app(AccountRepository::class)->userById('u-admin')['keterangan'])->toBe($before['keterangan']);
+
     // A plain row can still be deactivated through PATCH.
     $this->withToken($token)->patchJson('/api/v1/account/roster/u-andry', [
         'name' => 'Andry', 'keterangan' => '', 'active' => false,

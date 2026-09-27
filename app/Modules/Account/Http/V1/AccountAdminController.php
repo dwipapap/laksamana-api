@@ -6,8 +6,10 @@ use App\Auth\AccountRepository;
 use App\Auth\OfficeAccess;
 use App\Modules\Account\Services\AccountService;
 use App\Support\Api\ApiResponse;
+use App\Support\Modules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use RuntimeException;
 
 /**
  * /api/v1/account — user & access administration for new apps.
@@ -193,15 +195,28 @@ class AccountAdminController
             $body['id'] = $id;
         }
 
-        $r = $this->account->rosterSaveUserCore($body);
-        if (empty($r['ok'])) {
-            return self::result($r);
-        }
-        if ($active !== null) {
-            $ra = $this->account->setActiveCore((string) $request->user()->getKey(), (string) ($id ?? $r['id']), $active);
-            if (empty($ra['ok'])) {
-                return self::result($ra);
+        // One transaction: a refused `active` rolls the identity write back, so a
+        // 422 never leaves a half-applied PATCH behind.
+        $refused = null;
+        try {
+            $r = Modules::db('account')->transaction(function () use ($body, $active, $id, $request, &$refused) {
+                $r = $this->account->rosterSaveUserCore($body);
+                if (! empty($r['ok']) && $active !== null) {
+                    $ra = $this->account->setActiveCore((string) $request->user()->getKey(), (string) ($id ?? $r['id']), $active);
+                    if (empty($ra['ok'])) {
+                        $refused = $ra;
+                        throw new RuntimeException('roster active refused');
+                    }
+                }
+
+                return $r;
+            });
+        } catch (RuntimeException $e) {
+            if ($refused === null) {
+                throw $e;
             }
+
+            return self::result($refused);
         }
 
         return self::result($r, $id === null ? 201 : 200);
