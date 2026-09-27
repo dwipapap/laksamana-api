@@ -2,6 +2,8 @@
 
 use App\Support\Modules;
 
+require_once __DIR__.'/helpers.php';
+
 /*
  * Legacy /konten-api-mysql/api.php — the whole-state saveAll on RowSync,
  * the receipt store, and the legacy unbounded delete (kept exactly).
@@ -19,7 +21,7 @@ function ktSave(array $data): array
 
 function ktBrand(string $id): ?array
 {
-    $row = Modules::db('konten')->selectOne('SELECT updated_at, data FROM brands WHERE id = ?', [$id]);
+    $row = Modules::db('konten')->selectOne(ktSql('SELECT updated_at, data FROM brands WHERE id = ?'), [$id]);
 
     return $row ? ['v' => (int) $row->updated_at, 'data' => json_decode($row->data, true)] : null;
 }
@@ -73,7 +75,7 @@ it('never deletes on an empty list, and skips collections missing from the paylo
 });
 
 it('appends logs without touching existing rows and stores settings plus unknown keys', function () {
-    $before = (int) Modules::db('konten')->selectOne('SELECT COUNT(*) c FROM logs')->c;
+    $before = (int) Modules::db('konten')->selectOne(ktSql('SELECT COUNT(*) c FROM logs'))->c;
     $r = ktSave([
         'logs' => [
             ['id' => 'lg_test1', 'by' => 'u-andry', 'action' => 'uji coba', 'target' => 'x', 'at' => 1790100000000],
@@ -85,12 +87,12 @@ it('appends logs without touching existing rows and stores settings plus unknown
     ]);
 
     expect($r['data']['jumlah']['logs'])->toBe(1);
-    $count = (int) Modules::db('konten')->selectOne('SELECT COUNT(*) c FROM logs')->c;
+    $count = (int) Modules::db('konten')->selectOne(ktSql('SELECT COUNT(*) c FROM logs'))->c;
     expect($count)->toBe($before + 1);
 
     // Re-saving the same log id changes nothing (INSERT IGNORE).
     ktSave(['logs' => [['id' => 'lg_test1', 'by' => 'u-andry', 'action' => 'diubah?', 'target' => 'x', 'at' => 1790100000000]]]);
-    $row = Modules::db('konten')->selectOne("SELECT data FROM logs WHERE id = 'lg_test1'");
+    $row = Modules::db('konten')->selectOne(ktSql("SELECT data FROM logs WHERE id = 'lg_test1'"));
     expect(json_decode($row->data, true)['action'])->toBe('uji coba');
 
     $get = test()->get('/konten-api-mysql/api.php?action=getAll')->assertOk()->json();
@@ -111,7 +113,7 @@ it('answers ping and stats with the legacy shape', function () {
     $this->get('/konten-api-mysql/api.php?action=ping')->assertOk()
         ->assertJsonPath('ok', true)->assertJsonPath('data.pong', true)->assertJsonPath('data.backend', 'laravel');
 
-    $n = (int) Modules::db('konten')->selectOne('SELECT COUNT(*) c FROM content')->c;
+    $n = (int) Modules::db('konten')->selectOne(ktSql('SELECT COUNT(*) c FROM content'))->c;
     $this->get('/konten-api-mysql/api.php?action=stats')->assertOk()
         ->assertJsonPath('ok', true)->assertJsonPath('data.content', $n)->assertJsonPath('data.backend', 'laravel');
 });
