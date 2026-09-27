@@ -1,5 +1,7 @@
 # Modules cut over to `core` by an offline import behind a maintenance flag
 
+> **Amended by [ADR-0005](0005-production-on-api-subdomain-for-new-apps-only.md) (2026-09-27):** the old URLs are not routed to Laravel, so step 1 no longer applies. A Modul is cut over only after its old screens are retired; the import steps 3–6 stay as described.
+
 Production is cPanel shared hosting (Rumahweb), with no confirmed SSH, and Claude never writes to production or dev (CLAUDE.md §0). So live data reaches `core` by an **offline import**, per module:
 
 1. The module's old URLs already route to Laravel, still on its legacy database.
