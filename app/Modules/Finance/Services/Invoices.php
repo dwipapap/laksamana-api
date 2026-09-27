@@ -4,6 +4,7 @@ namespace App\Modules\Finance\Services;
 
 use App\Support\Modules;
 use App\Support\NamedLock;
+use App\Support\RowSync;
 use Illuminate\Database\ConnectionInterface;
 use RuntimeException;
 
@@ -149,6 +150,10 @@ class Invoices
         $core = KasKecil::onCore();
         $t = KasKecil::t('inv_penanda');
         $idc = KasKecil::idCol();
+        if ($core) {
+            $nama = RowSync::fit($this->db(), $t, 'nama', $nama);
+            $jab = RowSync::fit($this->db(), $t, 'jabatan', $jab);
+        }
         $stamp = $core ? ', `updated_at`=?, `version`=`version`+1' : '';
         if ($id === '') {
             $core
@@ -225,8 +230,13 @@ class Invoices
         $jenis = self::kind($in['jenis'] ?? 'KWITANSI');
         $ringkas = isset($in['ringkas']) && is_array($in['ringkas']) ? json_encode($in['ringkas'], JSON_UNESCAPED_UNICODE) : null;
 
-        $ada = $this->byResId($resId);
         $core = KasKecil::onCore();
+        if ($core) {
+            $tK = KasKecil::t('inv_kwitansi');
+            $resId = RowSync::fit($this->db(), $tK, 'res_id', $resId);
+            $oleh = RowSync::fit($this->db(), $tK, 'minta_oleh', $oleh);
+        }
+        $ada = $this->byResId($resId);
         if ($ada) {
             if ($ada->status === 'DIBUAT') {
                 return self::row($ada);
@@ -319,6 +329,9 @@ class Invoices
             $core = KasKecil::onCore();
             $t = KasKecil::t('inv_kwitansi');
             $idc = KasKecil::idCol();
+            if ($core) {
+                $oleh = RowSync::fit($this->db(), $t, 'putus_oleh', $oleh);
+            }
             $stamp = $core ? ', `updated_at`=?, `version`=`version`+1' : '';
             $row = $this->db()->selectOne(self::reqSelect().' WHERE `'.$idc.'`=?', [$id]);
             if (! $row) {
