@@ -1,5 +1,6 @@
 <?php
 
+use App\Auth\AccountRepository;
 use App\Modules\Jadwal\Services\HeadDirectory;
 use App\Modules\Jadwal\Services\JadwalService;
 use App\Support\Divisi;
@@ -52,12 +53,26 @@ it('keeps a single copy of the Divisi, office and Tim words', function () {
     expect(Divisi::SYNONYMS)->toBe([
         'bar' => ['bar', 'bartender'],
         'kitchen' => ['kitchen', 'dapur'],
-        'floor' => ['floor', 'service', 'waiter', 'waitress', 'host', 'hostess'],
+        'floor' => ['floor', 'service', 'waiter', 'waitress', 'host', 'hostess', 'foh'],
         'cashier' => ['cashier', 'kasir'],
     ])->and(Divisi::OFFICE_WORDS)->toBe(['office', 'kantor'])
         ->and(Divisi::NONSHIFT)->toBe('nonshift')
-        ->and(Divisi::TIM_BAWAAN_JADWAL)->toContain('hrd', 'bar', 'kasir')
+        ->and(Divisi::TIM_BAWAAN_JADWAL)->toContain('hrd', 'bar', 'kasir', 'foh')
         ->and(Divisi::TIM_BOLEH_DW)->toBe(['hrd', 'hr', 'ceo'])
         ->and(Divisi::TIM_ADMIN_ROSTER)->toBe(['hrd', 'hr'])
         ->and(Divisi::MODUL_ADMIN_BAWAAN)->toBe(['jadwal', 'dw']);
+});
+
+it('resolves a User whose Tim is FOH to Divisi floor on the jadwal sheet (#3)', function () {
+    // Talenta Organization "FOH" lands in the Tim column; before #3 this API
+    // treated that crew as Nonshift — no sheet and no Akses Bawaan.
+    app(AccountRepository::class)->updateUser('u-andry', ['keterangan' => 'FOH']);
+
+    $rows = $this->withToken(loginAs(officeUser('u-arif')))->getJson('/api/v1/jadwal/roster')
+        ->assertOk()->json('data');
+    $byId = [];
+    foreach ($rows as $r) {
+        $byId[$r['id']] = $r['divisi'];
+    }
+    expect($byId['u-andry'])->toBe('floor');
 });

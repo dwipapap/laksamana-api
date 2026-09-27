@@ -88,18 +88,14 @@ it('refuses by FK to delete a User who is Kepala Divisi', function () {
     expect(DB::connection('core')->table('user')->where('id', $head)->delete())->toBe(1);
 });
 
-it('makes adding foh one divisi_kata row', function () {
+it('seeds foh as one floor divisi_kata row so Tim "FOH" resolves to floor (#3)', function () {
     $this->artisan('core:import', ['module' => 'account'])->assertSuccessful();
-    $crew = ['keterangan' => 'FOH'];
-    expect(Divisi::resolve('x', [], $crew, ...wordsFromCore()))->toBe(Divisi::NONSHIFT);
+    $floor = DB::connection('core')->table('divisi')->where('kode', 'floor')->value('id');
 
-    DB::connection('core')->table('divisi_kata')->insert([
-        'id' => strtolower((string) Str::ulid()), 'kata' => 'foh',
-        'divisi_id' => DB::connection('core')->table('divisi')->where('kode', 'floor')->value('id'),
-        'created_at' => now()->addSecond(), 'updated_at' => now()->addSecond(),
-    ]);
-
-    expect(Divisi::resolve('x', [], $crew, ...wordsFromCore()))->toBe('floor');
+    // Owner decision #3: foh -> floor everywhere in this API, so the import
+    // writes the word as one divisi_kata row (the identity cutover shape).
+    expect(DB::connection('core')->table('divisi_kata')->where('kata', 'foh')->value('divisi_id'))->toBe($floor)
+        ->and(Divisi::resolve('x', [], ['keterangan' => 'FOH'], ...wordsFromCore()))->toBe('floor');
 });
 
 it('follows legacy changes on a re-import: changed rows bump version, gone rows are deleted', function () {

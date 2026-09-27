@@ -25,3 +25,4 @@ These are deliberate:
 
 - `ping` and `stats` report `backend: 'laravel'` instead of `'php-mysql'`.
 - DB errors are masked as `kesalahan database` unless `APP_DEBUG` is on.
+- Tim "FOH" grants the built-in jadwal access: the owner-decided #3 fix, not yet in laksamana-office's legacy PHP.
