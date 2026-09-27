@@ -3,6 +3,7 @@
 namespace App\Modules\Kompas\Services;
 
 use App\Support\Modules;
+use App\Support\RowSync;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Str;
 
@@ -722,7 +723,10 @@ class VoidBri
             $catatan = mb_substr($catatan, 0, 255);
         }
         if (KompasState::onCore()) {
-            $this->db()->update('UPDATE `'.self::t('bri_mutasi').'` SET `res_id`=?,`dp_id`=?,`res_nama`=?,`res_tgl`=?,`cara`=?,`catatan`=?,`cocok_oleh`=?,`cocok_at`=?,`diubah`=?,`diubah_oleh`=?,`updated_at`=?,`version`=`version`+1
+            $t = self::t('bri_mutasi');
+            $resId = RowSync::fit($this->db(), $t, 'res_id', $resId);
+            $dpId = RowSync::fit($this->db(), $t, 'dp_id', $dpId);
+            $this->db()->update('UPDATE `'.$t.'` SET `res_id`=?,`dp_id`=?,`res_nama`=?,`res_tgl`=?,`cara`=?,`catatan`=?,`cocok_oleh`=?,`cocok_at`=?,`diubah`=?,`diubah_oleh`=?,`updated_at`=?,`version`=`version`+1
                 WHERE `'.self::idCol().'`=?',
                 [$resId, $dpId, $nama, $resTgl, $cara === 'lepas' ? '' : $cara, $catatan, self::cut($oleh, 120), $now, $now, self::cut($oleh, 120), $now, $id]);
 

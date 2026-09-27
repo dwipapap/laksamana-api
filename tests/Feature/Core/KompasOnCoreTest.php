@@ -70,6 +70,14 @@ it('saveAll writes the blob on core, honouring the stored version', function () 
         ->and($row->oleh)->toBe('Kasir Core')->and(json_decode($row->data, true)['daily'])->toHaveCount(1);
 });
 
+it('truncates an over-long author on strict core like non-strict production (#97)', function () {
+    $ts = (int) kpCore('kompas_app_state', 1)->updated_at;
+    kpCorePost(['action' => 'saveAll', 'baseTs' => $ts, 'data' => ['_savedBy' => str_repeat('O', 200), 'daily' => []]])
+        ->assertOk()->assertJsonPath('data.saved', true);
+
+    expect(kpCore('kompas_app_state', 1)->oleh)->toBe(str_repeat('O', 120));
+});
+
 it('legacy void writes, cancels and lists on core, never on legacy', function () {
     $sesi = legacySesi(officeUser('u-novi'));
     $id = kpCorePost(['action' => 'voidSimpan', 'sesi' => $sesi, 'data' => ['tgl' => '2026-09-12', 'bill' => 'B-9',
