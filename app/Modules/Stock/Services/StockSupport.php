@@ -157,12 +157,13 @@ final class StockSupport
 
     /**
      * pur_ada_baris(): does the row exist (an UPDATE's rowCount is 0 for "unchanged"
-     * too). Legacy's closed table list is kept AS IS: `ck_stock` and `serah_terima`
-     * are missing from it, so asking about them throws (legacy answered 500).
+     * too). Legacy's table list was missing `ck_stock` and `serah_terima`, so asking
+     * about them threw (a 500); #113 (owner decision: fix it) adds them — serah
+     * terima edit answers success, CK save with an id continues as an edit.
      */
     public static function exists(string $table, string $id): bool
     {
-        if (! in_array($table, ['usage_events', 'waste', 'opname', 'orders', 'purchase_requests'], true)) {
+        if (! in_array($table, ['usage_events', 'waste', 'opname', 'orders', 'purchase_requests', 'ck_stock', 'serah_terima'], true)) {
             throw new RuntimeException('Tabel tidak dikenal: '.$table);
         }
 

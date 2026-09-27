@@ -39,9 +39,22 @@ it('converts a Pack to the base unit from the master and refuses non-CK goods', 
     ctPost('ck.php', ['action' => 'hapus', 'id' => $id])->assertExactJson(['status' => 'success', 'deleted' => 1]);
 });
 
-it('keeps the legacy 500 when a CK movement is saved with an id (#113)', function () {
+it('answers a CK movement saved with an id as an edit, refusing unknown and order-sync rows (#113)', function () {
+    // unknown id: a clean legacy error, never a 500, and nothing is written
     ctPost('ck.php', ['action' => 'simpan', 'id' => 'CK-X', 'item' => 'Ayam Hainan', 'arah' => 'masuk', 'qtyInput' => 1])
-        ->assertStatus(500)->assertExactJson(['status' => 'error', 'message' => 'kesalahan server']);
+        ->assertExactJson(['status' => 'error', 'message' => 'mutasi tidak ditemukan']);
+    expect(ctDb()->selectOne(StockSupport::q('SELECT {id} AS id FROM {ck_stock} WHERE {id} = ?'), ['CK-X']))->toBeNull();
+
+    // an own row is edited in place, like the v1 PATCH
+    $id = ctPost('ck.php', ['action' => 'simpan', 'item' => 'Ayam Hainan', 'arah' => 'masuk', 'qtyInput' => 1])->json('id');
+    ctPost('ck.php', ['action' => 'simpan', 'id' => $id, 'item' => 'Ayam Hainan', 'arah' => 'keluar', 'qtyInput' => 2])
+        ->assertExactJson(['status' => 'success', 'id' => $id]);
+    expect(ctDb()->selectOne(StockSupport::q('SELECT arah FROM {ck_stock} WHERE {id} = ?'), [$id]))->arah->toBe('keluar');
+
+    // an order-sync row only changes through its check-in
+    $ref = ctDb()->selectOne(StockSupport::q('SELECT {id} AS id FROM {ck_stock} WHERE ref IS NOT NULL LIMIT 1'))->id;
+    ctPost('ck.php', ['action' => 'simpan', 'id' => $ref, 'item' => 'Ayam Hainan', 'arah' => 'keluar', 'qtyInput' => 2])
+        ->assertExactJson(['status' => 'error', 'message' => 'mutasi dari pengajuan hanya berubah lewat check-in']);
 });
 
 it('protects order-sync rows and only lets outlet goods be sent to CK', function () {
@@ -80,14 +93,19 @@ it('keeps a waste photo out of the list, keeps it on edit unless sent, and serve
     $this->get('/stock-api-mysql/waste.php?action=foto&id='.$id)->assertExactJson(['status' => 'error', 'message' => 'foto tidak ada']);
 });
 
-it('requires a photo for a new handover, and keeps the legacy save-then-500 on edit (#113)', function () {
+it('requires a photo for a new handover, and answers the edit with success (#113)', function () {
     $body = ['action' => 'simpan', 'tanggal' => '2031-01-01', 'tujuan' => 'Bar', 'items' => [['item' => 'Gula', 'qty' => 1]]];
     ctPost('serah.php', $body)->assertExactJson(['status' => 'error', 'message' => 'foto bukti wajib diunggah']);
     $id = ctPost('serah.php', $body + ['foto' => 'data:y'])->assertOk()->json('id');
 
-    ctPost('serah.php', ['id' => $id, 'penerima' => 'Diedit'] + $body)->assertStatus(500);
+    ctPost('serah.php', ['id' => $id, 'penerima' => 'Diedit'] + $body)
+        ->assertExactJson(['status' => 'success', 'id' => $id]);
     expect(ctDb()->selectOne(StockSupport::q('SELECT penerima, foto FROM {serah_terima} WHERE {id} = ?'), [$id]))
         ->penerima->toBe('Diedit')->foto->toBe('data:y');
+
+    // an unknown id is a clean legacy error, never a 500
+    ctPost('serah.php', ['id' => 'SRH-NOPE', 'penerima' => 'X'] + $body)
+        ->assertExactJson(['status' => 'error', 'message' => 'catatan tidak ditemukan']);
 });
 
 it('stores opname lines as sent, unfilled numbers as null', function () {
