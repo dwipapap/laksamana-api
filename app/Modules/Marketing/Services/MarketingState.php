@@ -243,8 +243,10 @@ class MarketingState
                 $db->insert("INSERT IGNORE INTO `$table` (id, legacy_id, ref_type, ref_id, action, by_user, at_time, data, version) VALUES (?,?,?,?,?,?,?,?,1)", [
                     strtolower((string) Str::ulid()),
                     (string) $id,
-                    RowSync::ambil($a, 'refType', 'str'), RowSync::ambil($a, 'refId', 'str'),
-                    RowSync::ambil($a, 'action', 'str'), RowSync::ambil($a, 'by', 'str'),
+                    RowSync::fit($db, $table, 'ref_type', RowSync::ambil($a, 'refType', 'str')),
+                    RowSync::fit($db, $table, 'ref_id', RowSync::ambil($a, 'refId', 'str')),
+                    RowSync::fit($db, $table, 'action', RowSync::ambil($a, 'action', 'str')),
+                    RowSync::fit($db, $table, 'by_user', RowSync::ambil($a, 'by', 'str')),
                     RowSync::ambil($a, 'at', 'datetime'), RowSync::enc($a),
                 ]);
             } else {

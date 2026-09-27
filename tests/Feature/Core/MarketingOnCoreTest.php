@@ -69,6 +69,17 @@ it('merges vip per row into the core child table', function () {
         ->and($row->jenis)->toBe('Assisted');
 });
 
+it('truncates an over-long indexed string on strict core like non-strict production (#97)', function () {
+    $long = str_repeat('C', 400);
+    $this->legacyPost('/marketing-api-mysql/api.php', ['action' => 'saveAll', 'data' => [
+        'clients' => [['id' => 'c_core_long', 'nama' => $long, 'updatedAt' => 1790100002000, 'createdAt' => 1790100002000]],
+    ]])->assertOk();
+
+    $row = DB::connection('core')->table('marketing_klien')->where('legacy_id', 'c_core_long')->first();
+    expect($row->nama)->toBe(str_repeat('C', 255))
+        ->and(json_decode($row->data, true)['nama'])->toBe($long);
+});
+
 it('answers eventsHari and dpMasuk from core', function () {
     $this->get('/marketing-api-mysql/api.php?action=eventsHari&tgl=2026-09-20')
         ->assertOk()->assertJsonPath('ok', true)

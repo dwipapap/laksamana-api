@@ -73,7 +73,7 @@ final class MarketingSchema
             return $defs;
         }
         foreach ($defs as $key => $def) {
-            $defs[$key] = array_merge($def, ['table' => self::CORE_TABLES[$key], 'id' => 'legacy_id', 'ulid' => true, 'versioned' => true]);
+            $defs[$key] = array_merge($def, ['table' => self::CORE_TABLES[$key], 'id' => 'legacy_id', 'ulid' => true, 'versioned' => true, 'coerce' => true]);
         }
 
         return $defs;
@@ -90,7 +90,7 @@ final class MarketingSchema
             : [];
 
         return ['table' => self::CORE_TABLES[$key], 'id' => 'legacy_id', 'ulid' => true,
-            'versioned' => true, 'ordered' => true, 'cols' => $cols];
+            'versioned' => true, 'ordered' => true, 'coerce' => true, 'cols' => $cols];
     }
 
     /** ORDER BY for a created-first listing on the current connection. */
