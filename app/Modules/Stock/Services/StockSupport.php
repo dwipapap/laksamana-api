@@ -3,6 +3,7 @@
 namespace App\Modules\Stock\Services;
 
 use App\Support\Modules;
+use App\Support\RowSync;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Carbon;
 use RuntimeException;
@@ -140,6 +141,20 @@ final class StockSupport
     public static function str(mixed $v): string
     {
         return is_array($v) ? 'Array' : (string) $v;
+    }
+
+    /**
+     * #97: `core` is strict, so a value longer than its column, which non-strict
+     * production silently truncated, is cut here to the physical width. A no-op
+     * on the legacy connection (the server's sql_mode still decides there).
+     */
+    public static function fit(string $legacy, string $column, mixed $value): mixed
+    {
+        if (! self::onCore() || ! isset(self::CORE_TABLES[$legacy])) {
+            return $value;
+        }
+
+        return RowSync::fit(self::db(), self::table($legacy), $column, $value);
     }
 
     /** pur_filter_tanggal(): optional ?dari=&ke= (already trimmed), filtered in SQL. */

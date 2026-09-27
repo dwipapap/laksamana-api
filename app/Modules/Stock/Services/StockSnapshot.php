@@ -34,7 +34,7 @@ class StockSnapshot
         if (! is_object($stockMap) || count((array) $stockMap) === 0) {
             return ['status' => 'error', 'message' => 'stock kosong'];
         }
-        $asOf = StockSupport::str($asOf);
+        $asOf = StockSupport::fit('stock', 'as_of', StockSupport::str($asOf));
         $db = StockSupport::db();
         $db->beginTransaction();
         try {
@@ -46,9 +46,9 @@ class StockSnapshot
                     continue;
                 }
                 $now = (is_object($v) && isset($v->stock_now) && is_numeric($v->stock_now)) ? (float) $v->stock_now : 0;
-                $unit = (is_object($v) && isset($v->stock_unit)) ? StockSupport::str($v->stock_unit) : '';
+                $unit = (is_object($v) && isset($v->stock_unit)) ? StockSupport::fit('stock', 'stock_unit', StockSupport::str($v->stock_unit)) : '';
                 $db->insert(StockSupport::q('INSERT INTO {stock} (`nama`,`stock_now`,`stock_unit`,`as_of`,`data`) VALUES (?,?,?,?,?)'),
-                    [$nama, $now, $unit, $asOf, StockSupport::enc($v)]);
+                    [StockSupport::fit('stock', 'nama', $nama), $now, $unit, $asOf, StockSupport::enc($v)]);
                 $n++;
             }
             $db->commit();

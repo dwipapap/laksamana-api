@@ -92,9 +92,9 @@ class StockEntries
     public function usageSave(stdClass $b, bool $verified = false): array
     {
         $id = self::s($b->id ?? '');
-        $tanggal = self::s($b->tanggal ?? '');
-        $jenis = self::s($b->jenis ?? '');
-        $nama = self::s($b->namaEvent ?? '');
+        $tanggal = StockSupport::fit('usage_events', 'tanggal', self::s($b->tanggal ?? ''));
+        $jenis = StockSupport::fit('usage_events', 'jenis', self::s($b->jenis ?? ''));
+        $nama = StockSupport::fit('usage_events', 'nama_event', self::s($b->namaEvent ?? ''));
         if ($tanggal === '') {
             return ['status' => 'error', 'message' => 'tanggal wajib diisi'];
         }
@@ -123,8 +123,8 @@ class StockEntries
         }
         $status = StockSupport::str($b->status ?? '') === 'Selesai' ? 'Selesai' : 'Rencana';
         $json = StockSupport::enc((object) ['catatan' => self::s($b->catatan ?? ''), 'items' => $items]);
-        $pic = self::s($b->pic ?? '');
-        $tim = self::s($b->tim ?? '');
+        $pic = StockSupport::fit('usage_events', 'pic', self::s($b->pic ?? ''));
+        $tim = StockSupport::fit('usage_events', 'tim', self::s($b->tim ?? ''));
         $db = StockSupport::db();
 
         if ($id !== '') {
@@ -190,8 +190,8 @@ class StockEntries
     public function wasteSave(stdClass $b, bool $verified = false): array
     {
         $id = self::s($b->id ?? '');
-        $tanggal = self::s($b->tanggal ?? '');
-        $item = self::s($b->item ?? '');
+        $tanggal = StockSupport::fit('waste', 'tanggal', self::s($b->tanggal ?? ''));
+        $item = StockSupport::fit('waste', 'item', self::s($b->item ?? ''));
         $qty = isset($b->qty) ? (float) $b->qty : 0;
         if ($tanggal === '') {
             return ['status' => 'error', 'message' => 'tanggal wajib diisi'];
@@ -203,10 +203,10 @@ class StockEntries
             return ['status' => 'error', 'message' => 'jumlah harus lebih dari 0'];
         }
         $json = StockSupport::enc((object) ['catatan' => self::s($b->catatan ?? '')]);
-        $unit = self::s($b->unit ?? '');
-        $sebab = self::s($b->sebab ?? '');
-        $pic = self::s($b->pic ?? '');
-        $tim = self::s($b->tim ?? '');
+        $unit = StockSupport::fit('waste', 'unit', self::s($b->unit ?? ''));
+        $sebab = StockSupport::fit('waste', 'sebab', self::s($b->sebab ?? ''));
+        $pic = StockSupport::fit('waste', 'pic', self::s($b->pic ?? ''));
+        $tim = StockSupport::fit('waste', 'tim', self::s($b->tim ?? ''));
         // foto not sent (null) = keep the old one; '' = remove it on purpose
         $fotoBaru = $b->foto ?? null;
         $db = StockSupport::db();
@@ -275,8 +275,8 @@ class StockEntries
     public function handoverSave(stdClass $b, bool $verified = false): array
     {
         $id = self::s($b->id ?? '');
-        $tanggal = self::s($b->tanggal ?? '');
-        $tujuan = self::s($b->tujuan ?? '');
+        $tanggal = StockSupport::fit('serah_terima', 'tanggal', self::s($b->tanggal ?? ''));
+        $tujuan = StockSupport::fit('serah_terima', 'tujuan', self::s($b->tujuan ?? ''));
         if ($tanggal === '') {
             return ['status' => 'error', 'message' => 'tanggal wajib diisi'];
         }
@@ -299,9 +299,9 @@ class StockEntries
             return ['status' => 'error', 'message' => 'minimal satu item harus diisi'];
         }
         $json = StockSupport::enc((object) ['catatan' => self::s($b->catatan ?? ''), 'items' => $items]);
-        $penerima = self::s($b->penerima ?? '');
-        $pic = self::s($b->pic ?? '');
-        $tim = self::s($b->tim ?? '');
+        $penerima = StockSupport::fit('serah_terima', 'penerima', self::s($b->penerima ?? ''));
+        $pic = StockSupport::fit('serah_terima', 'pic', self::s($b->pic ?? ''));
+        $tim = StockSupport::fit('serah_terima', 'tim', self::s($b->tim ?? ''));
         $fotoBaru = $b->foto ?? null;
         $db = StockSupport::db();
 
@@ -359,7 +359,7 @@ class StockEntries
     public function opnameSave(stdClass $b, bool $verified = false): array
     {
         $id = self::s($b->id ?? '');
-        $tanggal = self::s($b->tanggal ?? '');
+        $tanggal = StockSupport::fit('opname', 'tanggal', self::s($b->tanggal ?? ''));
         if ($tanggal === '') {
             return ['status' => 'error', 'message' => 'tanggal wajib diisi'];
         }
@@ -389,8 +389,8 @@ class StockEntries
         }
         $status = StockSupport::str($b->status ?? '') === 'Selesai' ? 'Selesai' : 'Draft';
         $json = StockSupport::enc((object) ['catatan' => self::s($b->catatan ?? ''), 'items' => $items]);
-        $pic = self::s($b->pic ?? '');
-        $tim = self::s($b->tim ?? '');
+        $pic = StockSupport::fit('opname', 'pic', self::s($b->pic ?? ''));
+        $tim = StockSupport::fit('opname', 'tim', self::s($b->tim ?? ''));
         $db = StockSupport::db();
 
         if ($id !== '') {
