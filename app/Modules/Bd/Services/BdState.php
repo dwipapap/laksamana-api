@@ -272,9 +272,11 @@ class BdState
     {
         $core = self::onCore();
         $cols = array_keys($c['cols']);
+        $physical = self::table($c['table']);
         $args = [];
-        foreach ($c['cols'] as [$field, $type]) {
-            $args[] = self::ambil($r, $field, $type);
+        foreach ($c['cols'] as $col => [$field, $type]) {
+            $v = self::ambil($r, $field, $type);
+            $args[] = $core ? RowSync::fit($this->db(), $physical, $col, $v) : $v;
         }
         if ($core && $c['table'] === 'people') {
             // the linked Office User as a real FK (NULL when unlinked or unknown)
