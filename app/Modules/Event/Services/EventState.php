@@ -115,6 +115,25 @@ class EventState
             throw new RuntimeException('Payload data kosong/invalid');
         }
         $db = $this->db();
+
+        // #100 owner decision (fix, not reproduce): a qr_token that already
+        // belongs to another ticket refuses the WHOLE save before anything is
+        // written. Legacy let the upsert's ON DUPLICATE KEY UPDATE fire on the
+        // UNIQUE qr_token, silently rewriting the other ticket's row — and the
+        // bounded delete then removed it as "not in the payload" (silent ticket
+        // loss). v1 refuses the same case as a 409 duplicate (EventRecords).
+        $tickets = EventSchema::defs()['tickets'];
+        foreach (is_array($state['tickets'] ?? null) ? $state['tickets'] : [] as $row) {
+            $qr = is_array($row) ? RowSync::strRaw($row['qr_token'] ?? null) : null;
+            $id = is_array($row) ? (string) ($row['id'] ?? '') : '';
+            if ($qr === null || $qr === '' || $id === '') {
+                continue;
+            }
+            if ($db->selectOne("SELECT `{$tickets['id']}` AS id FROM `{$tickets['table']}` WHERE qr_token = ? AND `{$tickets['id']}` <> ?", [$qr, $id])) {
+                throw new RuntimeException("qr_token ganda: $qr");
+            }
+        }
+
         $hitung = $db->transaction(function () use ($db, $state) {
             $hitung = [];
             $bentrok = [];
