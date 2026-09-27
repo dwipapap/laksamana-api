@@ -2,6 +2,8 @@
 
 use App\Support\Modules;
 
+require_once __DIR__.'/helpers.php';
+
 /* u-aurel holds module `marketing` (not superadmin); u-adit does not. */
 
 beforeEach(function () {
@@ -25,10 +27,10 @@ it('creates a record, stamps a version and logs the activity', function () {
     $id = $res->json('data.id');
     expect($id)->toStartWith('c_')->and($res->json('meta.version'))->toBeGreaterThan(0);
 
-    $row = Modules::db('marketing')->selectOne('SELECT nama, status, updated_at FROM clients WHERE id = ?', [$id]);
+    $row = Modules::db('marketing')->selectOne(mktSql('SELECT nama, status, updated_at FROM clients WHERE id = ?'), [$id]);
     expect($row->nama)->toBe('Klien API')->and((int) $row->updated_at)->toBe($res->json('meta.version'));
 
-    $act = Modules::db('marketing')->selectOne('SELECT action, by_user FROM activities WHERE ref_id = ? ORDER BY at_time DESC LIMIT 1', [$id]);
+    $act = Modules::db('marketing')->selectOne(mktSql('SELECT action, by_user FROM activities WHERE ref_id = ? ORDER BY at_time DESC LIMIT 1'), [$id]);
     expect($act->action)->toBe('Client ditambah (API)')->and($act->by_user)->toBe(officeUser('u-aurel')['name']);
 });
 
@@ -45,7 +47,7 @@ it('rejects a stale version with 409 and the current record', function () {
 });
 
 it('merges a PATCH with the right version and bumps it', function () {
-    $row = Modules::db('marketing')->selectOne("SELECT updated_at, JSON_UNQUOTE(JSON_EXTRACT(data, '$.nama')) AS nama FROM clients WHERE id='c_77uxgd8'");
+    $row = Modules::db('marketing')->selectOne(mktSql("SELECT updated_at, JSON_UNQUOTE(JSON_EXTRACT(data, '$.nama')) AS nama FROM clients WHERE id='c_77uxgd8'"));
     $res = $this->withToken(loginAs(officeUser('u-aurel')))
         ->withHeader('If-Match', '"'.((int) $row->updated_at).'"')->patchJson('/api/v1/marketing/clients/c_77uxgd8', ['status' => 'Deal'])
         ->assertOk()->assertJsonPath('data.status', 'Deal')->assertJsonPath('data.nama', $row->nama);
@@ -53,12 +55,12 @@ it('merges a PATCH with the right version and bumps it', function () {
 });
 
 it('stays compatible with old laksamana-office tabs: the v1 version is a valid baseUpdatedAt', function () {
-    $v = (int) Modules::db('marketing')->selectOne("SELECT updated_at FROM clients WHERE id='c_77uxgd8'")->updated_at;
+    $v = (int) Modules::db('marketing')->selectOne(mktSql("SELECT updated_at FROM clients WHERE id='c_77uxgd8'"))->updated_at;
     $new = $this->withToken(loginAs(officeUser('u-aurel')))
         ->withHeader('If-Match', '"'.$v.'"')->patchJson('/api/v1/marketing/clients/c_77uxgd8', ['status' => 'Deal'])
         ->json('meta.version');
 
-    $row = json_decode(Modules::db('marketing')->selectOne("SELECT data FROM clients WHERE id='c_77uxgd8'")->data, true);
+    $row = json_decode(Modules::db('marketing')->selectOne(mktSql("SELECT data FROM clients WHERE id='c_77uxgd8'"))->data, true);
     $row['status'] = 'Event Done';
     $row['baseUpdatedAt'] = $new;          // what the old frontend reads back
     $row['updatedAt'] = $new + 5;
@@ -72,7 +74,7 @@ it('manages Reservasi VIP rows stored inside settings', function () {
         ->postJson('/api/v1/marketing/vip', ['nama' => 'VIP API', 'tanggal' => '2026-12-01', 'jenis' => 'Assisted'])
         ->assertCreated();
     $id = $res->json('data.id');
-    $vip = json_decode(Modules::db('marketing')->selectOne("SELECT v FROM settings WHERE k='extra:vip'")->v, true);
+    $vip = mktVipList();
     expect(collect($vip)->firstWhere('id', $id)['nama'])->toBe('VIP API');
 });
 

@@ -2,6 +2,8 @@
 
 use App\Support\Modules;
 
+require_once __DIR__.'/helpers.php';
+
 /*
  * Legacy /marketing-api-mysql/api.php — the saveAll guards that exist because
  * data was lost in production (laksamana-office CLAUDE.md, babak 1–7).
@@ -15,7 +17,7 @@ function mktSave(array $data): array
 
 function mktClient(string $id): ?array
 {
-    $row = Modules::db('marketing')->selectOne('SELECT updated_at, data FROM clients WHERE id = ?', [$id]);
+    $row = Modules::db('marketing')->selectOne(mktSql('SELECT updated_at, data FROM clients WHERE id = ?'), [$id]);
 
     return $row ? ['v' => (int) $row->updated_at, 'data' => json_decode($row->data, true)] : null;
 }
@@ -66,10 +68,10 @@ it('never deletes when _sejak is missing, and only deletes rows the client could
 });
 
 it('merges Reservasi VIP per row instead of overwriting the whole list', function () {
-    $before = count(json_decode(Modules::db('marketing')->selectOne("SELECT v FROM settings WHERE k='extra:vip'")->v, true));
+    $before = count(mktVipList());
     mktSave(['vip' => [['id' => 'vip_t1', 'nama' => 'New VIP', 'updatedAt' => 1]]]);
 
-    $after = json_decode(Modules::db('marketing')->selectOne("SELECT v FROM settings WHERE k='extra:vip'")->v, true);
+    $after = mktVipList();
     expect($after)->toHaveCount($before + 1);
 });
 
