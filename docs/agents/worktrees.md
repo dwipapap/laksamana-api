@@ -47,9 +47,15 @@ Do this instead — either run `node tools/agent-worktree.mjs`, or by hand:
 ```bash
 cp ../laksamana-api/vendor/autoload.php vendor/            # a REAL copy
 cp -r ../laksamana-api/vendor/composer vendor/composer     # a REAL copy
+cp -r ../laksamana-api/vendor/bin vendor/bin               # a REAL copy: the bin proxies use __DIR__
 for d in ../laksamana-api/vendor/*/; do                    # link the packages only
   [ "$(basename "$d")" = composer ] || ln -s "$(realpath "$d")" "vendor/$(basename "$d")"
 done
+# bin-shipping packages must be REAL too: vendor/bin/pest resolves the package
+# from __DIR__, so a link would run the main checkout's pest (and die).
+cp -r ../laksamana-api/vendor/pestphp vendor/pestphp
+cp -r ../laksamana-api/vendor/phpunit vendor/phpunit
+cp -r ../laksamana-api/vendor/laravel/pint vendor/laravel/pint
 ```
 
 and then prove it:
@@ -57,7 +63,11 @@ and then prove it:
 ```bash
 php -r "require 'vendor/autoload.php'; echo (new ReflectionClass('App\Providers\AppServiceProvider'))->getFileName(), PHP_EOL;"
 # the path printed MUST start with your worktree, not with ../laksamana-api
+php vendor/bin/pest --version   # the worktree's Pest; not die on another checkout
 ```
+
+`node tools/agent-worktree.mjs --check <dir>` runs both probes. #139 added the
+`vendor/bin` + pestphp/phpunit/pint copies and the `pest --version` probe.
 
 Copying the whole `vendor/` tree also works but is slow; `robocopy /MIR` over a
 large vendor can take minutes and must never run in the other direction.
