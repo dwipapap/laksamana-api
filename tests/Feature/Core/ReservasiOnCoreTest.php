@@ -81,6 +81,20 @@ it('saveAll keeps the updated_at guard, the delete rule and the global _ver on c
         ->and((int) rsOnCore('reservasi_reservations', 'r-core1')->version)->toBe(2);
 });
 
+it('truncates an over-long reservation field on strict core like non-strict production (#97)', function () {
+    rsToCore();
+    $core = DB::connection('core');
+    $ver = (int) $core->table('reservasi_pengaturan')->where('k', '_ver')->value('v');
+    $long = str_repeat('S', 300);
+
+    rsCorePost(['action' => 'saveAll', 'baseVer' => $ver, 'data' => ['reservations' => [
+        ['id' => 'r-core-long', 'name' => $long, 'phone' => str_repeat('9', 50), 'date' => '2026-10-20'],
+    ], 'audit' => []]])->assertJsonPath('data.saved', true);
+
+    $row = rsOnCore('reservasi_reservations', 'r-core-long');
+    expect($row->name)->toBe(str_repeat('S', 255))->and($row->phone)->toBe(str_repeat('9', 32));
+});
+
 it('appends audit on core and trims it to the newest 500', function () {
     rsToCore();
     $core = DB::connection('core');

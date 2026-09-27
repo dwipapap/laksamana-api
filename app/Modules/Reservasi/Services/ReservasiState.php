@@ -4,6 +4,7 @@ namespace App\Modules\Reservasi\Services;
 
 use App\Support\Modules;
 use App\Support\NamedLock;
+use App\Support\RowSync;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -528,7 +529,11 @@ class ReservasiState
             intval($r['updatedAt'] ?? 0), intval($r['createdAt'] ?? 0), self::enc($r)];
 
         if (self::onCore()) {
-            $this->db()->insert('INSERT INTO '.self::t('reservations').' (id,legacy_id,name,phone,tanggal,jam,pax,status,pic_name,source,dp_amount,updated_at,created_at,data,version)
+            $t = self::t('reservations');
+            foreach ([0 => 'name', 1 => 'phone', 5 => 'status', 6 => 'pic_name', 7 => 'source'] as $i => $col) {
+                $args[$i] = RowSync::fit($this->db(), $t, $col, $args[$i]);
+            }
+            $this->db()->insert('INSERT INTO '.$t.' (id,legacy_id,name,phone,tanggal,jam,pax,status,pic_name,source,dp_amount,updated_at,created_at,data,version)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE version = version + IF(VALUES(updated_at) >= updated_at, 1, 0), '.$upd,
                 [self::ulid(), self::s($r['id']), ...$args, 1]);
 
