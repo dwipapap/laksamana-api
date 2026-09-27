@@ -82,8 +82,8 @@ jobs:
         if: steps.cfg.outputs.ready == 'true'
         uses: shivammathur/setup-php@v2
         with:
-          # the server's PHP; the lock file needs >= 8.3
-          php-version: ${{ vars.PHP_VERSION || '8.3' }}
+          # the server's PHP; the lock file needs >= 8.4
+          php-version: ${{ vars.PHP_VERSION || '8.4' }}
           extensions: bcmath, curl, fileinfo, gd, mbstring, openssl, pdo, pdo_mysql, tokenizer, xml, zip
           coverage: none
 
@@ -167,7 +167,7 @@ jobs:
         run: |
           {
             echo "### ⚠️ composer.lock changed (or first deploy): update vendor/ on the server"
-            echo 'In cPanel Terminal: `cd ~/<app folder> && php ~/bin/composer install --no-dev --optimize-autoloader --no-interaction`'
+            echo 'In cPanel Terminal: `cd ~/<app folder> && php ~/bin/composer install --no-dev --optimize-autoloader --no-interaction --no-scripts && php artisan package:discover --ansi`'
             echo "Then re-run this workflow if Verify below failed."
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
