@@ -78,6 +78,22 @@ it('keeps the stale-rev conflict on core', function () {
         ->and(DB::connection('core')->table('hr_employees')->count())->toBeGreaterThan(0);
 });
 
+it('coerces non-numeric and over-long values on strict core like non-strict production (#97)', function () {
+    hrToCore();
+    $rev = (int) DB::connection('core')->table('hr_meta')->value('version');
+    $long = str_repeat('J', 300);
+    hrCorePost(['action' => 'saveAll', 'baseRev' => $rev, 'data' => [
+        'employees' => [],
+        'trainings' => [['id' => 'tr-long', 'title' => $long, 'mandatory' => 'yes']],
+        'moods' => [['id' => 'mo-bad', 'empId' => 'e_x', 'mood' => 'bukan angka']],
+    ]]);
+
+    $core = DB::connection('core');
+    $tr = $core->table('hr_trainings')->where('legacy_id', 'tr-long')->first();
+    expect($tr->judul)->toBe(str_repeat('J', 255))->and((int) $tr->mandatory)->toBe(0)
+        ->and($core->table('hr_moods')->where('legacy_id', 'mo-bad')->value('mood'))->toBeNull();
+});
+
 it('serves v1 writes from core under the same document rev', function () {
     hrToCore();
     $rev = (int) DB::connection('core')->table('hr_meta')->value('version');
