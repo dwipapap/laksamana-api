@@ -26,6 +26,7 @@ source disagree, the source wins; then correct the spec.
 | reservasi | [reservasi.md](reservasi.md) | **done** | full contract, see docs/api/reservasi.md | 30/30 | 7 + 6 |
 | stock | [stock.md](stock.md) | **done** (19/19 files) | full contract, see docs/api/stock.md | 214/214 | 70 + 17 + 25 + 25 |
 | ticketing | [ticketing.md](ticketing.md) | **done** | full contract, see docs/api/ticketing.md (public, Buyer sessions) | 83/83 | 9 + 3 |
+| menu | [menu.md](menu.md) | n/a (greenfield) | full contract, see docs/api/menu.md | n/a (no legacy) | 2 |
 
 Update this table (and the table in CLAUDE.md §5) whenever a module moves.
 
@@ -41,6 +42,9 @@ Dependencies come first:
 6. `finance` — kompas reads finance's brankas.
 7. `kompas`
 8. `reservasi`, `stock`, `ticketing`.
+
+`menu` is greenfield and has no dependencies beyond `account` (for the module
+key and grants); it can be built at any point.
 
 ## Conventions shared by every legacy backend (don't repeat these in the specs)
 

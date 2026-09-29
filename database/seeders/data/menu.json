@@ -1,0 +1,22 @@
+{
+  "kategori": [
+    { "jenis": "makanan", "nama": "Nusantara", "slug": "nusantara", "urutan": 10 },
+    { "jenis": "makanan", "nama": "Harbour Bowls", "slug": "harbour-bowls", "urutan": 20 },
+    { "jenis": "makanan", "nama": "Asian Kitchen", "slug": "asian-kitchen", "urutan": 30 },
+    { "jenis": "makanan", "nama": "Wok Specials", "slug": "wok-specials", "urutan": 40 },
+    { "jenis": "makanan", "nama": "Western", "slug": "western", "urutan": 50 },
+    { "jenis": "makanan", "nama": "Pasta", "slug": "pasta", "urutan": 60 },
+    { "jenis": "makanan", "nama": "Sail Satay", "slug": "sail-satay", "urutan": 70 },
+    { "jenis": "makanan", "nama": "Cake & Pastries", "slug": "cake-pastries", "urutan": 80 },
+    { "jenis": "minuman", "nama": "Coffee", "slug": "coffee", "urutan": 10 },
+    { "jenis": "minuman", "nama": "Tea Collection", "slug": "tea-collection", "urutan": 20 },
+    { "jenis": "minuman", "nama": "Signature Non Coffee", "slug": "signature-non-coffee", "urutan": 30 },
+    { "jenis": "minuman", "nama": "Fresh & Tropical", "slug": "fresh-tropical", "urutan": 40 },
+    { "jenis": "minuman", "nama": "Coconut Fresh", "slug": "coconut-fresh", "urutan": 50 },
+    { "jenis": "minuman", "nama": "Warm Comfort", "slug": "warm-comfort", "urutan": 60 },
+    { "jenis": "minuman", "nama": "Wellness Tea", "slug": "wellness-tea", "urutan": 70 },
+    { "jenis": "minuman", "nama": "Blended Refresher", "slug": "blended-refresher", "urutan": 80 },
+    { "jenis": "minuman", "nama": "Grab and Go", "slug": "grab-and-go", "urutan": 90 }
+  ],
+  "item": []
+}

@@ -41,6 +41,10 @@ $modules = [
     'kompas' => ['env' => 'KOMPAS',    'database' => 'lakk5493_db_kompas',    'legacy' => 'kompas-api-mysql',    'data_dir' => '/home/lakk5493/kompas-db', 'server_sql_mode' => true],
     'konten' => ['env' => 'KONTEN',    'database' => 'lakk5493_db_konten',    'legacy' => 'konten-api-mysql',    'data_dir' => '/home/lakk5493/konten-db', 'server_sql_mode' => true],
     'marketing' => ['env' => 'MARKETING', 'database' => 'lakk5493_db_marketing', 'legacy' => 'marketing-api-mysql', 'data_dir' => '/home/lakk5493/marketing-db', 'server_sql_mode' => true],
+    // menu is greenfield and lives in `core` from day one (docs/db/menu.md): no legacy
+    // backend, no `legacy` key, no importer. `database` is unused — it only gives the
+    // connection-building loop a key (config/database.php builds an unused legacy_menu).
+    'menu' => ['env' => 'MENU', 'database' => 'lakk5493_db_menu', 'connection' => 'core'],
     'reservasi' => ['env' => 'RESERVASI', 'database' => 'lakk5493_db_reservasi', 'legacy' => 'reservasi-api-mysql', 'data_dir' => '/home/lakk5493/reservasi-db', 'server_sql_mode' => true],
     'stock' => ['env' => 'STOCK',     'database' => 'lakk5493_db_stock',     'legacy' => 'stock-api-mysql',     'data_dir' => '/home/lakk5493/data-latih', 'server_sql_mode' => true],
 ];
@@ -118,11 +122,12 @@ $legacyPolicies = [
 
 foreach ($modules as $key => &$m) {
     $envKey = strtoupper($key);
-    // A per-Modul override wins; the shared env connection keeps existing
-    // deployments unchanged, including event+ticketing on legacy_ems.
+    // A per-Modul override wins; an explicit registry `connection` (menu: core) comes
+    // next; then the shared env connection keeps existing deployments unchanged,
+    // including event+ticketing on legacy_ems.
     $m['connection'] = env(
         'DB_'.$envKey.'_CONNECTION',
-        env('DB_'.$m['env'].'_CONNECTION', 'legacy_'.strtolower($m['env']))
+        $m['connection'] ?? env('DB_'.$m['env'].'_CONNECTION', 'legacy_'.strtolower($m['env']))
     );
     $m['maintenance'] = filter_var(env($envKey.'_MAINTENANCE', false), FILTER_VALIDATE_BOOL);
     if (isset($m['data_dir'])) {
