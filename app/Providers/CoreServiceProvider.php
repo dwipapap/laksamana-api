@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Console\Commands\CoreImportCommand;
+use App\Console\Commands\OfficeGrantCommand;
 use App\Core\Imports\AbsensiImporter;
 use App\Core\Imports\AccountImporter;
 use App\Core\Imports\AkademiImporter;
@@ -59,6 +60,6 @@ final class CoreServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        $this->commands([CoreImportCommand::class]);
+        $this->commands([CoreImportCommand::class, OfficeGrantCommand::class]);
     }
 }
