@@ -48,6 +48,10 @@ $modules = [
     // news is greenfield on `core` like menu (homepage docs/12-NEWS-API-REQUEST.md):
     // no legacy backend, no importer; `database` is unused.
     'news' => ['env' => 'NEWS', 'database' => 'lakk5493_db_news', 'connection' => 'core'],
+    // homepage is greenfield on `core` like menu/news: it owns only the
+    // `homepage_event` switch (which EMS event is on the public website). The
+    // event data itself stays in EMS and is read through EventState.
+    'homepage' => ['env' => 'HOMEPAGE', 'database' => 'lakk5493_db_homepage', 'connection' => 'core'],
     'reservasi' => ['env' => 'RESERVASI', 'database' => 'lakk5493_db_reservasi', 'legacy' => 'reservasi-api-mysql', 'data_dir' => '/home/lakk5493/reservasi-db', 'server_sql_mode' => true],
     'stock' => ['env' => 'STOCK',     'database' => 'lakk5493_db_stock',     'legacy' => 'stock-api-mysql',     'data_dir' => '/home/lakk5493/data-latih', 'server_sql_mode' => true],
 ];
