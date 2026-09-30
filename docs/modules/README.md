@@ -28,7 +28,7 @@ source disagree, the source wins; then correct the spec.
 | ticketing | [ticketing.md](ticketing.md) | **done** | full contract, see docs/api/ticketing.md (public, Buyer sessions) | 83/83 | 9 + 3 |
 | menu | [menu.md](menu.md) | n/a (greenfield) | full contract, see docs/api/menu.md | n/a (no legacy) | 2 |
 | news | [news.md](news.md) | n/a (greenfield) | full contract, see docs/api/news.md | n/a (no legacy) | 2 |
-| homepage | [homepage.md](homepage.md) | n/a (greenfield) | event switch, public + office, see docs/api/homepage.md | n/a (no legacy) | 2 |
+| homepage | [homepage.md](homepage.md) | n/a (greenfield) | event & promo slider, public + office, see docs/api/homepage.md | n/a (no legacy) | 4 |
 | radar | — (reads marketing, event, reservasi, bd) | n/a (no legacy backend) | read-only board, see docs/api/radar.md | n/a | 8 unit + 6 |
 
 Update this table (and the table in CLAUDE.md §5) whenever a module moves.
