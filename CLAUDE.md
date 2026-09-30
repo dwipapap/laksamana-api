@@ -190,7 +190,7 @@ two agents cannot end up sharing a checkout. Details: `docs/agents/worktrees.md`
 | ticketing | done | full contract (docs/api/ticketing.md: public shop, Buyer sessions) | 83/83 · frontend e2e 15/15 |
 | menu | n/a (greenfield) | full contract (docs/api/menu.md) | n/a — no legacy |
 | news | n/a (greenfield) | full contract (docs/api/news.md) | n/a — no legacy |
-| homepage | n/a (greenfield) | event switch, public + office (docs/api/homepage.md) | n/a — no legacy |
+| homepage | n/a (greenfield) | event & promo slider, public + office (docs/api/homepage.md) | n/a — no legacy |
 | radar | n/a (no backend; reads 4 modules) | read-only board (docs/api/radar.md) | n/a — no legacy backend |
 | (others) | pending — see docs/modules/README.md | | |
 

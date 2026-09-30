@@ -1,11 +1,16 @@
 <?php
 
+use App\Modules\Bd\Services\BdState;
 use App\Modules\Event\Services\EventSchema;
+use App\Modules\Homepage\Models\HomepageBanner;
 use App\Modules\Homepage\Models\HomepageEvent;
+use App\Modules\Homepage\Services\HomepagePhotos;
 use App\Support\Modules;
 use App\Support\RowSync;
 use Carbon\CarbonImmutable;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 
 /*
@@ -170,4 +175,102 @@ function homepageSwitch(string $eventId, bool $tampil): void
 function emsMs(): int
 {
     return (int) round(microtime(true) * 1000);
+}
+
+// ─────────────────────────── promo fixtures ──
+
+/** The raw BD `promos` document as stored (for before/after comparisons). */
+function bdPromosDocument(): ?string
+{
+    $row = DB::connection(Modules::connectionName('bd'))
+        ->table(BdState::table('settings'))->where('k', 'promos')->first();
+
+    return $row?->v;
+}
+
+/** Write the BD `promos` document exactly as BD OS owns it. */
+function bdSetPromos(array $promos): void
+{
+    DB::connection(Modules::connectionName('bd'))
+        ->table(BdState::table('settings'))
+        ->updateOrInsert(['k' => 'promos'], ['v' => json_encode($promos)]);
+}
+
+/**
+ * One BD promo with every secret field a leak test can look for. Dates are
+ * relative to today WIB: running by default (`mulai` in the past, `selesai` in
+ * the future), `paused` false.
+ */
+function bdPromo(array $over = []): array
+{
+    $wib = CarbonImmutable::now('Asia/Jakarta');
+    $id = (string) ($over['id'] ?? 'pr_'.Str::lower(Str::random(7)));
+
+    return array_merge([
+        'id' => $id,
+        'nama' => 'Promo Uji '.$id,
+        'tipe' => 'Diskon',
+        'kategori' => 'Minuman',
+        'benefit' => 'Diskon 10%',
+        'partner' => 'PARTNER_RAHASIA',
+        'kode' => 'KODE_RAHASIA',
+        'ketentuan' => 'Syarat rahasia',
+        'outlet' => 'Laksamana Muda',
+        'hari' => 'Senin',
+        'jamMulai' => '10:00',
+        'jamSelesai' => '22:00',
+        'kuota' => 100,
+        'lmPIC' => 'PIC_RAHASIA',
+        'poster' => bdPosterDataUrl(),
+        'mulai' => $wib->subDays(2)->toDateString(),
+        'selesai' => $wib->addDays(2)->toDateString(),
+        'paused' => false,
+    ], $over);
+}
+
+function bdPosterDataUrl(string $bytes = 'JPEGBODY'): string
+{
+    return 'data:image/jpeg;base64,'.base64_encode($bytes);
+}
+
+/** Store a real file in the homepage photo folder; returns its key. */
+function homepagePhoto(string $key, string $bytes = 'IMG'): string
+{
+    $dir = app(HomepagePhotos::class)->dir();
+    File::put($dir.'/'.$key, $bytes);
+
+    return $key;
+}
+
+/** Insert one homepage_banner row directly (an `unggah` row gets a real file). */
+function bannerRow(array $over = []): HomepageBanner
+{
+    $over['sumber'] = (string) ($over['sumber'] ?? 'unggah');
+    if ($over['sumber'] === 'unggah') {
+        $over['gambar_key'] = (string) ($over['gambar_key'] ?? 'hb_'.Str::lower(Str::random(8)).'.jpg');
+        if (! app(HomepagePhotos::class)->exists($over['gambar_key'])) {
+            homepagePhoto($over['gambar_key']);
+        }
+    }
+
+    return HomepageBanner::query()->create(array_merge([
+        'alt' => 'Banner uji',
+        'tampil' => false,
+        'urutan' => 0,
+    ], $over));
+}
+
+/** The raw homepage_banner row, or [] when none exists. */
+function bannerDbRow(string $id): array
+{
+    return (array) DB::connection('core')->table('homepage_banner')->where('id', $id)->first();
+}
+
+/** A real 1x1 PNG (so the upload path sees an image mime). */
+function promoPng(): UploadedFile
+{
+    return UploadedFile::fake()->createWithContent(
+        'promo.png',
+        base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
+    );
 }
