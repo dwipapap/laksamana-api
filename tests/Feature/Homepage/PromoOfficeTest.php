@@ -110,6 +110,8 @@ it('validates the switches and never deletes an ineligible row', function () {
 
     $this->withToken($token)->patchJson("/api/v1/homepage/office/promos/{$outside->id}/tampil", [])
         ->assertStatus(422)->assertJsonPath('error.code', 'validation_failed');
+    $this->withToken($token)->patchJson("/api/v1/homepage/office/promos/{$outside->id}/tampil", ['tampil' => 'false'])
+        ->assertStatus(422)->assertJsonPath('error.code', 'validation_failed');
 
     // switching OFF is always allowed, even outside the window
     $this->withToken($token)->patchJson("/api/v1/homepage/office/promos/{$outside->id}/tampil", ['tampil' => false])
@@ -205,6 +207,30 @@ it('requires If-Match on PATCH/DELETE, refuses to delete a BD row, and removes t
     expect(HomepageBanner::query()->find($other->id))->not->toBeNull();
 });
 
+it('replaces the upload file on PATCH and never unlinks a file another row uses', function () {
+    $token = homepageToken();
+    $oldKey = homepagePhoto('hb_lama.jpg', 'LAMA');
+    $row = bannerRow(['gambar_key' => $oldKey, 'tampil' => true]);
+    $newKey = homepagePhoto('hb_baru.jpg', 'BARU');
+
+    $this->withToken($token)->patchJson("/api/v1/homepage/office/promos/{$row->id}", ['gambar_key' => $newKey], ['If-Match' => '1'])
+        ->assertOk();
+    expect(app(HomepagePhotos::class)->exists($oldKey))->toBeFalse()
+        ->and(app(HomepagePhotos::class)->exists($newKey))->toBeTrue();
+
+    // two rows pointing at one key: deleting one keeps the file for the other
+    $shared = homepagePhoto('hb_share.jpg', 'SHARE');
+    $a = bannerRow(['gambar_key' => $shared]);
+    $b = bannerRow(['gambar_key' => $shared]);
+
+    $this->withToken($token)->deleteJson("/api/v1/homepage/office/promos/{$a->id}", [], ['If-Match' => '1'])->assertOk();
+    expect(app(HomepagePhotos::class)->exists($shared))->toBeTrue()
+        ->and(HomepageBanner::query()->find($b->id))->not->toBeNull();
+
+    $this->withToken($token)->deleteJson("/api/v1/homepage/office/promos/{$b->id}", [], ['If-Match' => '1'])->assertOk();
+    expect(app(HomepagePhotos::class)->exists($shared))->toBeFalse();
+});
+
 it('saves a partial manual order and skips a foreign id', function () {
     $a = bannerRow(['urutan' => 10]);
     $b = bannerRow(['urutan' => 20]);
@@ -230,6 +256,8 @@ it('creates an upload banner and validates href/periode/gambar_key and the switc
     $this->withToken($token)->postJson('/api/v1/homepage/office/promos', ['gambar_key' => $key, 'href' => 'http://bukan-https'])
         ->assertStatus(422)->assertJsonPath('error.code', 'validation_failed');
     $this->withToken($token)->postJson('/api/v1/homepage/office/promos', ['gambar_key' => $key, 'href' => '//evil.example.com'])
+        ->assertStatus(422)->assertJsonPath('error.code', 'validation_failed');
+    $this->withToken($token)->postJson('/api/v1/homepage/office/promos', ['gambar_key' => $key, 'href' => '/\evil.example.com'])
         ->assertStatus(422)->assertJsonPath('error.code', 'validation_failed');
     $this->withToken($token)->postJson('/api/v1/homepage/office/promos', ['gambar_key' => 'hb_tidak_ada.jpg'])
         ->assertStatus(422)->assertJsonPath('error.code', 'validation_failed');

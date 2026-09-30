@@ -229,8 +229,10 @@ tie), then BD candidates — running first, then the nearest `mulai`. Each item:
   with `error.details.current`.
 
 Validation (`422 validation_failed`): `href` only `https://…` or a `/…` path
-(rejecting `//…`), `mulai ≤ selesai`, dates `YYYY-MM-DD`, `gambar_key` must name
-a stored homepage file, `tampil` a boolean.
+(rejecting `//…` and any `\`), `mulai ≤ selesai`, dates `YYYY-MM-DD`,
+`gambar_key` must name a stored homepage file, `tampil` must be a real boolean
+(not `"true"`/`1`). A PATCH that replaces `gambar_key` removes the old file once
+no other row points at it.
 
 ## Errors
 
@@ -240,7 +242,7 @@ a stored homepage file, `tampil` a boolean.
 | 403 | `module_not_granted` | Token without `homepage` |
 | 404 | `not_found` | Unknown event/banner/promo id, or no image |
 | 409 | `version_conflict` | Stale `If-Match` on a banner PATCH/DELETE (`details.current`) |
-| 422 | `validation_failed` | Toggle body without `tampil`; bad `href`/period/`gambar_key` |
+| 422 | `validation_failed` | Toggle body without a boolean `tampil`; bad `href`/period/`gambar_key` |
 | 422 | `tidak_eligible` | Switching on something that is not eligible |
 | 422 | `pakai_saklar` | DELETE of a BD row (switch it off instead) |
 | 428 | `version_required` | Banner PATCH/DELETE without `If-Match`/`?version=` |

@@ -303,7 +303,7 @@ class HomepagePromos
             'version' => (int) $row->version,
             'eligible' => $eligible,
             'alasan' => $alasan,
-            'gambar' => $this->imageOf($row, $bdPromos) !== null
+            'gambar' => $this->hasImage($row, $bdPromos)
                 ? '/api/v1/homepage/office/promos/gambar?banner='.$row->id
                 : null,
             'bd' => $promo === null ? null : self::bdInfo($promo, $today),
@@ -377,6 +377,29 @@ class HomepagePromos
         $p = $bdPromos[(string) ($row->promo_id ?? '')] ?? null;
 
         return $p === null ? null : self::posterBytes($p);
+    }
+
+    /**
+     * Whether the row has an image, WITHOUT reading the file bytes — the office
+     * list only needs to know if a preview URL makes sense.
+     */
+    private function hasImage(HomepageBanner $row, array $bdPromos): bool
+    {
+        if ($row->sumber === self::SOURCE_UPLOAD) {
+            return $this->photos->exists((string) ($row->gambar_key ?? ''));
+        }
+        $p = $bdPromos[(string) ($row->promo_id ?? '')] ?? null;
+
+        return $p !== null && self::posterBytes($p) !== null;
+    }
+
+    /** Remove a stored file unless another banner row still points at the same key. */
+    private function unlinkIfUnused(string $key, string $exceptId): bool
+    {
+        $used = HomepageBanner::query()
+            ->where('gambar_key', $key)->where('id', '!=', $exceptId)->exists();
+
+        return $used ? false : $this->photos->delete($key);
     }
 
     // ─────────────────────────── office writes ──
@@ -510,6 +533,7 @@ class HomepagePromos
                 if (! $this->photos->exists($key)) {
                     throw new RuntimeException('validation: gambar_key bukan berkas yang ada di folder homepage.');
                 }
+                $oldKey = (string) ($row->gambar_key ?? '');
                 $row->gambar_key = $key;
             }
             if (array_key_exists('mulai', $body)) {
@@ -531,6 +555,10 @@ class HomepagePromos
 
         $row->updated_by = $actor;
         $row->save();
+
+        if (isset($oldKey) && $oldKey !== '' && $oldKey !== (string) $row->gambar_key) {
+            $this->unlinkIfUnused($oldKey, (string) $row->id);
+        }
 
         [$bd] = $this->bdPromosSafe();
 
@@ -557,7 +585,7 @@ class HomepagePromos
         $key = (string) ($row->gambar_key ?? '');
         $row->delete();
         if ($key !== '') {
-            $this->photos->delete($key);
+            $this->unlinkIfUnused($key, $id);
         }
 
         return ['deleted' => true, 'id' => $id];
@@ -654,7 +682,7 @@ class HomepagePromos
             return null;
         }
         $ok = str_starts_with($s, 'https://')
-            || (str_starts_with($s, '/') && ! str_starts_with($s, '//'));
+            || (str_starts_with($s, '/') && ! str_starts_with($s, '//') && ! str_contains($s, '\\'));
         if (! $ok) {
             throw new RuntimeException('validation: href harus https:// atau path relatif yang diawali /.');
         }

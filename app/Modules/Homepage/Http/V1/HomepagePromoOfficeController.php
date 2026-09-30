@@ -102,22 +102,22 @@ class HomepagePromoOfficeController
     public function tampil(Request $r, string $id): JsonResponse
     {
         $body = $this->body($r);
-        if (! array_key_exists('tampil', $body)) {
+        if (! array_key_exists('tampil', $body) || ! is_bool($body['tampil'])) {
             return ApiResponse::error('validation_failed', 'Kirim {"tampil": true|false}.', 422);
         }
 
-        return $this->guard(fn () => ApiResponse::ok($this->promos->setTampil($id, (bool) $body['tampil'], $this->actor($r))));
+        return $this->guard(fn () => ApiResponse::ok($this->promos->setTampil($id, $body['tampil'], $this->actor($r))));
     }
 
     /** Upsert the switch of a BD promo by its BD id (404 when BD has no such promo). */
     public function bdTampil(Request $r, string $promoId): JsonResponse
     {
         $body = $this->body($r);
-        if (! array_key_exists('tampil', $body)) {
+        if (! array_key_exists('tampil', $body) || ! is_bool($body['tampil'])) {
             return ApiResponse::error('validation_failed', 'Kirim {"tampil": true|false}.', 422);
         }
 
-        return $this->guard(fn () => ApiResponse::ok($this->promos->setBdTampil($promoId, (bool) $body['tampil'], $this->actor($r))));
+        return $this->guard(fn () => ApiResponse::ok($this->promos->setBdTampil($promoId, $body['tampil'], $this->actor($r))));
     }
 
     public function urutan(Request $r): JsonResponse
