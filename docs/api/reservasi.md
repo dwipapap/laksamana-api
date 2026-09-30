@@ -4,6 +4,10 @@ This is the contract for **laksamana-office-vue**, the old laksamana-office if i
 
 - **Base URL:** `/api/v1/reservasi`
 - **Auth:** `Authorization: Bearer <token>`, obtained from `POST /api/v1/auth/login {login, pin}`. The account needs the `reservasi` **or** `service_excellent` Modul: they are two Panels of the same Backend and the same master blob. Akses Halaman inside each Panel stays in `master.perms` / `master.sePerms`, as it is in the old client-side matrix.
+- **Dana Masuk door (G-14):** holders of `cashier` or `finance` also reach the endpoints the Dana Masuk (DP) page uses — `GET /reservations`, `GET /reservations/{id}`, `PATCH /reservations/{id}`, `GET /master/{section}`, `POST /audit`, `GET /files/{key}` — as the old Office did through `deploy/reservasi/?embed=finance` (Cashier and Kas Kecil embed that page, with verify/reject rights). When such a User holds **neither** `reservasi` nor `service_excellent`, the API narrows it further:
+  - `PATCH /reservations/{id}` may only write the DP fields (`dps`, `dpStatus`, `dpMethod`, `dpAmount`, `dpProofData`, `dpProofName`) and the transfer fields (`tf` + an upper-case letter: `tfDate`, `tfStatus`, `tfOcrText`, …), plus `status` for the one move Dana Masuk owns, `Pending` → `Confirmed`. A key sent back with its current value is not a write and passes. Anything else → **403 `forbidden`** with `details.fields` listing the refused keys, and nothing is written.
+  - `GET /master/{section}` answers only `dpMethods`; any other section → **403 `module_not_granted`**.
+  - Everything else (`POST`/`PUT`/`DELETE /reservations`, `GET /master`, `GET /audit`, master writes, `PUT /files/{key}`) stays **403 `module_not_granted`**.
 - **Envelope:**
   - success: `{data, meta?}`
   - failure: `{error: {code, message, details?}}`
@@ -20,7 +24,7 @@ Status: complete. The compat core and dual lock are #32; the per-screen completi
 |---|---|---|
 | Dashboard & Recap | `GET /reservations?from&to`; `GET /master/categories`, `/master/layouts`, `/master/layoutOverrides`, `/master/layoutOverrides2`, `/master/layoutTanggal`, `/master/waitlist` | reservation status/arrival/follow-up writes; `PUT/DELETE /master/waitlist/{id}` |
 | Input Reservasi | `GET /reservations`, `/master/categories`, `/master/dpMethods`, `/master/infoSources`, `/master/waTargets` | `POST /reservations`, `PUT/PATCH/DELETE /reservations/{id}`, photo `PUT /files/{key}` |
-| Dana Masuk (DP) | reservations and their `dps[]`, `/master/dpMethods`, `/files/{key}` | `PUT/PATCH /reservations/{id}` with the DP fields (`dps[]`, `dpStatus`, `dpAmount`, `dpProofData`); `DELETE /reservations/{id}` removes the reservation and its DP files |
+| Dana Masuk (DP) — also opened to `cashier` / `finance`, see *Dana Masuk door* above | reservations and their `dps[]`, `/master/dpMethods`, `/files/{key}`; the **DP Event** tab reads `GET /api/v1/marketing/dp` (open to `marketing`, `reservasi`, `cashier`, `finance`) | `PATCH /reservations/{id}` with the DP fields (`dps[]`, `dpStatus`, `dpAmount`, `dpProofData`, `tf*`); `POST /audit`. Reservasi holders only: `PUT /reservations/{id}`, and `DELETE /reservations/{id}` (Hapus Data Demo) removes the reservation and its DP files |
 | Riwayat | `GET /reservations` (the page filters past dates, `No-show` and `Cancelled`) | the same reservation writes as Dashboard |
 | Analitik | `GET /reservations` | none; the page derives attendance, pax, source, PIC and monthly figures |
 | Master Data | `/master/tables`, `/dpMethods`, `/infoSources`, `/categories`, `/users`, `/perms`, `/waTargets`, `/dineEstMin`, `/clashLeadMin`, `/layouts`, `/layoutOverrides`, `/layoutOverrides2`, `/layoutTanggal` | `PUT /master/{section}`; `POST /audit` for the action |

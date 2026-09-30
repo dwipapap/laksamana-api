@@ -66,7 +66,7 @@ Documents: `settings`, `baseline`, `rolePerms`, `roleNav`, `menuDb`, `katalog`, 
 |---|---|---|
 | GET | `/state` | The full state in one call (same as the old `getAll`). `meta.version` = `_versi`. |
 | GET | `/events-on/{YYYY-MM-DD}` | Deal/Event Done events that day (multi-day events included, with `hari`/`totalHari`), plus Assisted VIP rows, plus `settings{serviceCharge, pb1}`. |
-| GET | `/dp?from=&to=` | Event payments and VIP DP proofs, **filtered by event date**, plus `vipTerkunci` and the `luar` (outside-range) summary. |
+| GET | `/dp?from=&to=` | Event payments and VIP DP proofs, **filtered by event date**, plus `vipTerkunci` and the `luar` (outside-range) summary. **Open to `marketing`, `reservasi`, `cashier` and `finance`** (G-15): it feeds the DP Event tab of the Dana Masuk page. It returns payments only — no CRM, pipeline or invoice — which is why it may be wider than the rest of this contract. |
 | GET | `/design-queue?active=1` | Design requests without reference images, including progress. |
 
 ## Files

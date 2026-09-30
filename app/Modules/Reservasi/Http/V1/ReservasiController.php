@@ -2,6 +2,8 @@
 
 namespace App\Modules\Reservasi\Http\V1;
 
+use App\Auth\OfficeAccess;
+use App\Modules\Reservasi\Services\DanaMasukGate;
 use App\Modules\Reservasi\Services\ReservasiConflict;
 use App\Modules\Reservasi\Services\ReservasiRecords;
 use App\Modules\Reservasi\Services\ReservasiState;
@@ -21,6 +23,7 @@ class ReservasiController
     public function __construct(
         private readonly ReservasiState $state,
         private readonly ReservasiRecords $records,
+        private readonly OfficeAccess $access,
     ) {}
 
     public function index(Request $r): JsonResponse
@@ -75,6 +78,11 @@ class ReservasiController
         if (! $cur) {
             return self::notFound();
         }
+        if ($merge && $this->danaMasukOnly($r) && ($bad = DanaMasukGate::rejectedFields($body, $cur['row'])) !== []) {
+            return ApiResponse::error('forbidden',
+                'Through Cashier / Finance only the DP and transfer fields of a reservation can be changed.',
+                403, ['fields' => $bad]);
+        }
         $row = ['id' => $id] + ($merge ? array_replace($cur['row'], $body) : $body);
 
         return $this->write(fn () => $this->records->put($row, (int) $v, true, $this->reservationAudit($r, $id)));
@@ -116,6 +124,9 @@ class ReservasiController
     {
         if ($bad = self::badSection($section)) {
             return $bad;
+        }
+        if ($this->danaMasukOnly($r) && ! in_array($section, DanaMasukGate::SECTIONS, true)) {
+            return ApiResponse::error('module_not_granted', 'Your account has no access to module [reservasi|service_excellent].', 403);
         }
         $value = $this->records->section($section);
         $version = ReservasiRecords::version($value);
@@ -238,6 +249,17 @@ class ReservasiController
     }
 
     /** The acting User always comes from the token, never from the body. */
+    /**
+     * True when the caller came in through the Dana Masuk door only: it holds
+     * cashier/finance but neither reservasi nor service_excellent (G-14).
+     */
+    private function danaMasukOnly(Request $r): bool
+    {
+        $id = (string) $r->user()->getKey();
+
+        return ! $this->access->hasModule($id, 'reservasi') && ! $this->access->hasModule($id, 'service_excellent');
+    }
+
     private function actor(Request $r): array
     {
         $user = $r->user();
