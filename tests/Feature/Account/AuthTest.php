@@ -102,3 +102,16 @@ it('gives the jadwal Akses Bawaan to a User whose Tim is FOH (#3)', function () 
 
     expect(app(OfficeAccess::class)->builtinModules('u-andry'))->toContain('jadwal');
 });
+
+it('gives radar to every account as Akses Bawaan, yet an explicit deny still removes it', function () {
+    // Legacy modul_bawaan_untuk, 27 Sep 2026: radar for everyone ("semua orang
+    // bisa lihat"). Grants are applied after built-ins, so access=0 wins.
+    $u = anyActiveUser();
+    $access = app(OfficeAccess::class);
+    expect($access->builtinModules($u['id']))->toContain('radar')
+        ->and($access->hasModule($u['id'], 'radar'))->toBeTrue();
+
+    app(AccountRepository::class)->upsertGrant($u['id'], 'radar', false, 'test');
+    $access->forgetUser($u['id']);
+    expect($access->hasModule($u['id'], 'radar'))->toBeFalse();
+});

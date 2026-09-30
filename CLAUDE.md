@@ -188,6 +188,7 @@ two agents cannot end up sharing a checkout. Details: `docs/agents/worktrees.md`
 | stock | done (19/19 files) | full contract (docs/api/stock.md) | 214/214 · frontend e2e 17/17 + 25/25 + 25/25 |
 | ticketing | done | full contract (docs/api/ticketing.md: public shop, Buyer sessions) | 83/83 · frontend e2e 15/15 |
 | menu | n/a (greenfield) | full contract (docs/api/menu.md) | n/a — no legacy |
+| radar | n/a (no backend; reads 4 modules) | read-only board (docs/api/radar.md) | n/a — no legacy backend |
 | (others) | pending — see docs/modules/README.md | | |
 
 ## Agent skills
