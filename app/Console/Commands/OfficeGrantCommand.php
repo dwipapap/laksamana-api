@@ -32,7 +32,7 @@ final class OfficeGrantCommand extends Command
     protected $description = 'Register module keys (if new) and grant them to one Office user';
 
     /** Labels for the greenfield keys; any other new key is labelled with itself. */
-    private const LABELS = ['menu' => 'Menu', 'news' => 'Berita'];
+    private const LABELS = ['menu' => 'Menu', 'news' => 'Berita', 'homepage' => 'Homepage'];
 
     public function handle(AccountRepository $users, AccountService $account, OfficeAccess $access): int
     {

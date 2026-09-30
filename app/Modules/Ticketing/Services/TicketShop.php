@@ -367,7 +367,28 @@ class TicketShop
         if (! $rows || ! self::sellable((string) ($rows[0]['status'] ?? ''))) {
             return null;
         }
-        $key = (string) ($rows[0]['poster_img']['key'] ?? '');
+
+        return $this->posterFor($rows[0]);
+    }
+
+    /**
+     * The poster of an event whatever its status — for the Office switch screen
+     * (a Planning event still has a poster to preview). Still only by event id:
+     * the folder also holds talent IDs and transfer proofs.
+     *
+     * @return array{file:string,type:string}|array{redirect:string}|null
+     */
+    public function posterAny(string $eid): ?array
+    {
+        $rows = $this->ems->emsRows('events', ['id' => $eid]);
+
+        return $rows ? $this->posterFor($rows[0]) : null;
+    }
+
+    /** @return array{file:string,type:string}|array{redirect:string}|null */
+    private function posterFor(array $event): ?array
+    {
+        $key = (string) ($event['poster_img']['key'] ?? '');
         if ($key === '') {
             return null;
         }
