@@ -27,6 +27,7 @@ source disagree, the source wins; then correct the spec.
 | stock | [stock.md](stock.md) | **done** (19/19 files) | full contract, see docs/api/stock.md | 214/214 | 70 + 17 + 25 + 25 |
 | ticketing | [ticketing.md](ticketing.md) | **done** | full contract, see docs/api/ticketing.md (public, Buyer sessions) | 83/83 | 9 + 3 |
 | menu | [menu.md](menu.md) | n/a (greenfield) | full contract, see docs/api/menu.md | n/a (no legacy) | 2 |
+| news | [news.md](news.md) | n/a (greenfield) | full contract, see docs/api/news.md | n/a (no legacy) | 2 |
 | homepage | [homepage.md](homepage.md) | n/a (greenfield) | event switch, public + office, see docs/api/homepage.md | n/a (no legacy) | 2 |
 | radar | — (reads marketing, event, reservasi, bd) | n/a (no legacy backend) | read-only board, see docs/api/radar.md | n/a | 8 unit + 6 |
 
@@ -46,7 +47,8 @@ Dependencies come first:
 8. `reservasi`, `stock`, `ticketing`.
 
 `menu` is greenfield and has no dependencies beyond `account` (for the module
-key and grants); it can be built at any point.
+key and grants); it can be built at any point. `news` is greenfield too and
+follows the same pattern.
 
 ## Conventions shared by every legacy backend (don't repeat these in the specs)
 
