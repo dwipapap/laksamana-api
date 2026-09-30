@@ -4,7 +4,7 @@
 - **Legacy URL:** `/reservasi-api-mysql/api.php`
 - **Database:** `lakk5493_db_reservasi`. About 2460 reservations; `getAll` returns roughly 2.4 MB.
 - **Data dir:** `/home/lakk5493/reservasi-db`, set with `RESERVASI_DATA_DIR`. Files go in `files/<key>.txt`. The old file-based backend (reservasi-api-OFF) shares this folder.
-- **Frontends:** `deploy/reservasi` and `service_excellent`. The Service Excellent frontend is also embedded in cashier and finance/kas.
+- **Frontends:** `deploy/reservasi` and `service_excellent`. The Reservasi **Dana Masuk** page (`?embed=finance`) is also embedded in cashier and finance/kas; in v1 those holders reach its endpoints directly (G-14, see docs/api/reservasi.md).
 - **Other callers:** the marketing frontend (VIP locks via `saveAll`) and the cocok-bri asset (DP method fixes via `saveAll`).
 
 ## Tables

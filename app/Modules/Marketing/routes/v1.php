@@ -3,11 +3,18 @@
 use App\Modules\Marketing\Http\V1\MarketingController as C;
 use Illuminate\Support\Facades\Route;
 
+// DP Event (G-15): the Dana Masuk page (Reservasi, and Cashier / Kas Kecil
+// through it) shows event & VIP payments next to reservation DPs. The legacy
+// endpoint (dpMasuk) had no module gate; this one opens to those Modules only.
+// It is deliberately narrow — payments only, no CRM, pipeline or invoice.
+Route::middleware(['auth:sanctum', 'module:marketing|reservasi|cashier|finance'])->prefix('marketing')->group(function () {
+    Route::get('dp', [C::class, 'dp']);
+});
+
 Route::middleware(['auth:sanctum', 'module:marketing'])->prefix('marketing')->group(function () {
     // bootstrap + read models
     Route::get('state', [C::class, 'state']);
     Route::get('events-on/{date}', [C::class, 'eventsOn'])->where('date', '\d{4}-\d{2}-\d{2}');
-    Route::get('dp', [C::class, 'dp']);
     Route::get('design-queue', [C::class, 'designQueue']);
     Route::put('design-requests/{id}/progress', [C::class, 'designProgress']);
     Route::put('design-options', [C::class, 'designOptions']);
