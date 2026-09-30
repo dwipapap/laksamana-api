@@ -26,4 +26,5 @@ These are deliberate:
 
 - `ping` and `stats` report `backend: 'laravel'` instead of `'php-mysql'`.
 - DB errors are masked as `kesalahan database` unless `APP_DEBUG` is on.
+- **radar** is a built-in module for EVERY account (legacy `modul_bawaan_untuk`, 27 Sep 2026), kept even when the Tim lookup fails; an explicit per-user access=0 grant still removes it. It is not listed in `aturanBawaan()` — legacy `aturan_bawaan()` does not list it either.
 - Tim "FOH" grants the built-in jadwal access: the owner-decided #3 fix, not yet in laksamana-office's legacy PHP.

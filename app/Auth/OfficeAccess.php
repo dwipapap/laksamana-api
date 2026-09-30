@@ -14,7 +14,9 @@ use Throwable;
  * call these methods. Rules kept EXACTLY as in the legacy file, including
  * their order (see comments) — each one fixed a real incident there:
  *
- *  0. built-in access from the Tim column (whole-word match):
+ *  0. built-in access. radar for EVERY account (legacy 27 Sep 2026: "semua
+ *     orang bisa lihat"; money figures are hidden on the Radar screen for
+ *     non-Heads, not here). Then from the Tim column (whole-word match):
  *       jadwal  <- shift crew words | hrd/hr/ceo | admin of * or jadwal
  *       dw      <- hrd/hr/ceo | admin of * or dw | division head
  *  1. grants '*' access=1  -> every ACTIVE module
@@ -25,7 +27,7 @@ use Throwable;
  * Admin modules = rows of `admins`, plus jadwal+dw for Tim hrd/hr (no deny).
  *
  * Failure policy (also legacy): errors while resolving built-in/restricted
- * access must never break login — built-in falls back to nothing, the
+ * access must never break login — built-in falls back to radar only, the
  * restricted check falls back to "keep".
  *
  * Registered as a scoped singleton: the per-request caches mirror the
@@ -194,7 +196,11 @@ class OfficeAccess
         if (isset($this->builtinCache[$uid])) {
             return $this->builtinCache[$uid];
         }
-        $out = [];
+        // radar for every account, OUTSIDE the try: it depends on nothing that
+        // can fail below, so an error there must not take it away (legacy
+        // modul_bawaan_untuk). An explicit per-user access=0 grant still removes
+        // it, since grants are applied after built-ins in modules().
+        $out = ['radar'];
         try {
             $u = $this->userById($uid);
             $ket = $u ? self::s($u['keterangan']) : '';
@@ -210,7 +216,7 @@ class OfficeAccess
                 $out[] = 'dw';
             }
         } catch (Throwable) {
-            $out = [];
+            $out = ['radar'];
         }
 
         return $this->builtinCache[$uid] = $out;
