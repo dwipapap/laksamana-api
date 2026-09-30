@@ -61,8 +61,9 @@ tools/parity/           old PHP vs Laravel diff runner + cases/<module>.json
 ```
 
 Module keys (config/laksamana.php): account absensi akademi bd dw event ticketing finance
-hlife hr jadwal kompas konten marketing menu reservasi stock. event+ticketing share `lakk5493_db_ems`.
-`menu` is greenfield and lives in `core` (docs/modules/menu.md).
+hlife hr jadwal kompas konten marketing menu news homepage reservasi stock. event+ticketing
+share `lakk5493_db_ems`. `menu`, `news` and `homepage` are greenfield and live in `core`
+(docs/modules/menu.md, docs/modules/homepage.md).
 
 ## 2. Porting checklist (per module)
 
@@ -188,6 +189,7 @@ two agents cannot end up sharing a checkout. Details: `docs/agents/worktrees.md`
 | stock | done (19/19 files) | full contract (docs/api/stock.md) | 214/214 · frontend e2e 17/17 + 25/25 + 25/25 |
 | ticketing | done | full contract (docs/api/ticketing.md: public shop, Buyer sessions) | 83/83 · frontend e2e 15/15 |
 | menu | n/a (greenfield) | full contract (docs/api/menu.md) | n/a — no legacy |
+| homepage | n/a (greenfield) | event switch, public + office (docs/api/homepage.md) | n/a — no legacy |
 | radar | n/a (no backend; reads 4 modules) | read-only board (docs/api/radar.md) | n/a — no legacy backend |
 | (others) | pending — see docs/modules/README.md | | |
 

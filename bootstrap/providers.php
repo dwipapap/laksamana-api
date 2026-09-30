@@ -1,5 +1,6 @@
 <?php
 
+use App\Modules\Homepage\HomepageServiceProvider;
 use App\Modules\Menu\MenuServiceProvider;
 use App\Modules\News\NewsServiceProvider;
 use App\Providers\AppServiceProvider;
@@ -12,4 +13,5 @@ return [
     ModuleServiceProvider::class,
     MenuServiceProvider::class,
     NewsServiceProvider::class,
+    HomepageServiceProvider::class,
 ];
