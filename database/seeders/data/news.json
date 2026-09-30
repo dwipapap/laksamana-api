@@ -1,0 +1,8 @@
+{
+  "kategori": [
+    { "nama": "Event", "slug": "event", "urutan": 10 },
+    { "nama": "Promo", "slug": "promo", "urutan": 20 },
+    { "nama": "Kabar", "slug": "kabar", "urutan": 30 }
+  ],
+  "artikel": []
+}

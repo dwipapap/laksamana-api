@@ -45,6 +45,9 @@ $modules = [
     // backend, no `legacy` key, no importer. `database` is unused — it only gives the
     // connection-building loop a key (config/database.php builds an unused legacy_menu).
     'menu' => ['env' => 'MENU', 'database' => 'lakk5493_db_menu', 'connection' => 'core'],
+    // news is greenfield on `core` like menu (homepage docs/12-NEWS-API-REQUEST.md):
+    // no legacy backend, no importer; `database` is unused.
+    'news' => ['env' => 'NEWS', 'database' => 'lakk5493_db_news', 'connection' => 'core'],
     'reservasi' => ['env' => 'RESERVASI', 'database' => 'lakk5493_db_reservasi', 'legacy' => 'reservasi-api-mysql', 'data_dir' => '/home/lakk5493/reservasi-db', 'server_sql_mode' => true],
     'stock' => ['env' => 'STOCK',     'database' => 'lakk5493_db_stock',     'legacy' => 'stock-api-mysql',     'data_dir' => '/home/lakk5493/data-latih', 'server_sql_mode' => true],
 ];
