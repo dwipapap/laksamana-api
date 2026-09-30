@@ -74,7 +74,7 @@ it('lists rows and BD candidates with eligible/alasan and the manual order', fun
     expect($candidates)->toHaveCount(2)
         ->and($candidates[0]['promo_id'])->toBe($running['id'])
         ->and($candidates[0]['alasan'])->toBeNull()
-        ->and($candidates[0]['gambar'])->toBe('/api/v1/homepage/office/promos/gambar?promo='.$running['id'])
+        ->and($candidates[0]['gambar'])->toBe('/api/v1/homepage/office/promos/gambar?promo='.$running['id'].'&v='.substr(sha1($running['poster']), 0, 8))
         ->and($candidates[1]['promo_id'])->toBe($upcoming['id'])
         ->and($candidates[1]['alasan'])->toBe('bd_belum_mulai');
 
@@ -281,7 +281,7 @@ it('creates an upload banner and validates href/periode/gambar_key and the switc
         ->and($ok->json('data.tampil'))->toBeFalse()
         ->and($ok->json('data.urutan'))->toBe(10)
         ->and($ok->json('data.version'))->toBe(1)
-        ->and($ok->json('data.gambar'))->toBe('/api/v1/homepage/office/promos/gambar?banner='.$ok->json('data.id'));
+        ->and($ok->json('data.gambar'))->toBe('/api/v1/homepage/office/promos/gambar?banner='.$ok->json('data.id').'&v='.substr(sha1($key), 0, 8));
 });
 
 it('uploads a photo with a server-made key', function () {
@@ -325,6 +325,11 @@ it('flags bd_gagal and keeps the rows when BD cannot be read', function () {
     $this->app->instance(BdState::class, new class extends BdState
     {
         public function setting(string $k, mixed $default): mixed
+        {
+            throw new RuntimeException('BD down');
+        }
+
+        public function settingHash(string $k): ?string
         {
             throw new RuntimeException('BD down');
         }

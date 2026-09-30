@@ -69,6 +69,21 @@ One function, `HomepagePromos::eligibility()`:
 When BD cannot be read, the public feed keeps serving uploads and the office
 list reports `bd_gagal: true`.
 
+**Reading BD cheaply.** The `promos` document carries every poster as a data URL
+(up to 400 KB each), so the lists never decode it per request:
+`HomepagePromos::bdPromos()` asks the database for `MD5(v)` of the setting
+(`BdState::settingHash`) and caches the derived index — the promos without their
+poster bytes, plus `_poster_ok` and `_poster_v` — under that hash (1 h). Any BD
+save changes the hash, so the index is never stale. Only the two image routes
+read the full document (`bdPromosFull()`), and their URLs carry `?v=` so browsers
+and a CDN keep them for a day.
+
+**Orphan uploads (ponytail).** A file sent to `POST …/promos/foto` that never
+becomes a banner (the form was closed, or the create was refused) stays in
+`storage/app/homepage/`. Same trade-off as the news covers: nothing reads it,
+and a clean-up is added when it actually accumulates. A replaced or deleted
+banner does remove its own file.
+
 ## Wiring
 
 ```php

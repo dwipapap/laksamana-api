@@ -8,6 +8,7 @@ use App\Modules\Bd\Services\BdState;
 use App\Modules\Homepage\Models\HomepageBanner;
 use App\Modules\Radar\Services\RadarRules;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Cache;
 use RuntimeException;
 use Throwable;
 
@@ -59,12 +60,34 @@ class HomepagePromos
     // ─────────────────────────── BD reading ──
 
     /**
-     * The BD `promos` document keyed by promo id; a promo without an id is
+     * The BD `promos` document keyed by promo id, WITHOUT the poster bytes: each
+     * promo carries `_poster_ok` (a valid poster decodes) and `_poster_v` (a short
+     * hash of the poster, the image URL's `?v=`). A promo without an id is
      * skipped. Throws when BD cannot be read — callers decide what to do.
+     *
+     * The document holds every poster as a data URL (up to 400 KB each), so the
+     * derived index is cached under the database's MD5 of the setting: one small
+     * query per request, and any BD save changes the key (never stale).
      *
      * @return array<string,array<string,mixed>>
      */
     public function bdPromos(): array
+    {
+        $hash = $this->bd->settingHash('promos');
+        if ($hash === null) {
+            return [];
+        }
+
+        return Cache::remember('homepage:bd-promos:'.$hash, 3600, fn (): array => self::index($this->bdPromosFull()));
+    }
+
+    /**
+     * The full BD `promos` document keyed by promo id, posters included. Only
+     * the image routes need it. Throws when BD cannot be read.
+     *
+     * @return array<string,array<string,mixed>>
+     */
+    public function bdPromosFull(): array
     {
         $doc = $this->bd->setting('promos', []);
         $out = [];
@@ -80,6 +103,59 @@ class HomepagePromos
         }
 
         return $out;
+    }
+
+    /**
+     * Drop the poster bytes, keep whether it is valid and its version hash.
+     *
+     * @param  array<string,array<string,mixed>>  $full
+     * @return array<string,array<string,mixed>>
+     */
+    public static function index(array $full): array
+    {
+        $out = [];
+        foreach ($full as $id => $p) {
+            $poster = (string) ($p['poster'] ?? '');
+            unset($p['poster']);
+            $p['_poster_ok'] = self::posterBytes(['poster' => $poster]) !== null;
+            $p['_poster_v'] = $poster === '' ? '' : substr(sha1($poster), 0, 8);
+            $out[$id] = $p;
+        }
+
+        return $out;
+    }
+
+    /** Whether a promo (full or indexed) has a valid poster. */
+    public static function hasPoster(array $p): bool
+    {
+        return array_key_exists('_poster_ok', $p) ? (bool) $p['_poster_ok'] : self::posterBytes($p) !== null;
+    }
+
+    /** The poster bytes of one BD promo, read from the full document; null on any failure. @return array{data:string,type:string}|null */
+    private function bdPoster(string $promoId): ?array
+    {
+        try {
+            $p = $this->bdPromosFull()[$promoId] ?? null;
+        } catch (Throwable $e) {
+            report($e);
+
+            return null;
+        }
+
+        return $p === null ? null : self::posterBytes($p);
+    }
+
+    /**
+     * The `?v=` of a row's image URL: it changes whenever the image does, so the
+     * day-long image cache never shows a replaced picture.
+     */
+    private function imageVersion(HomepageBanner $row, array $bdPromos): string
+    {
+        if ($row->sumber === self::SOURCE_UPLOAD) {
+            return substr(sha1((string) ($row->gambar_key ?? '')), 0, 8);
+        }
+
+        return (string) ($bdPromos[(string) ($row->promo_id ?? '')]['_poster_v'] ?? '');
     }
 
     /**
@@ -160,7 +236,7 @@ class HomepagePromos
             return [false, $reason];
         }
 
-        return self::posterBytes($p) === null ? [false, 'bd_tanpa_poster'] : [true, null];
+        return self::hasPoster($p) ? [true, null] : [false, 'bd_tanpa_poster'];
     }
 
     // ─────────────────────────── public feed ──
@@ -201,7 +277,7 @@ class HomepagePromos
         return [
             'id' => (string) $row->id,
             'sumber' => (string) $row->sumber,
-            'image' => '/api/v1/homepage/promos/'.$row->id.'/gambar',
+            'image' => '/api/v1/homepage/promos/'.$row->id.'/gambar?v='.$this->imageVersion($row, $bdPromos),
             'alt' => $this->alt($row, $bdPromos),
             'href' => $row->href === null || $row->href === '' ? null : (string) $row->href,
         ];
@@ -225,7 +301,7 @@ class HomepagePromos
             return null;
         }
 
-        return $this->imageOf($row, $bd);
+        return $this->imageOf($row);
     }
 
     // ─────────────────────────── office list ──
@@ -265,7 +341,7 @@ class HomepagePromos
             if ($status !== 'running' && $status !== 'upcoming') {
                 continue;
             }
-            if (self::posterBytes($p) === null) {
+            if (! self::hasPoster($p)) {
                 continue;
             }
             $candidates[] = $this->candidateRow($promoId, $p, $status, $today);
@@ -304,7 +380,7 @@ class HomepagePromos
             'eligible' => $eligible,
             'alasan' => $alasan,
             'gambar' => $this->hasImage($row, $bdPromos)
-                ? '/api/v1/homepage/office/promos/gambar?banner='.$row->id
+                ? '/api/v1/homepage/office/promos/gambar?banner='.$row->id.'&v='.$this->imageVersion($row, $bdPromos)
                 : null,
             'bd' => $promo === null ? null : self::bdInfo($promo, $today),
         ];
@@ -326,7 +402,7 @@ class HomepagePromos
             'version' => 0,
             'eligible' => $status === 'running',
             'alasan' => $status === 'running' ? null : 'bd_belum_mulai',
-            'gambar' => '/api/v1/homepage/office/promos/gambar?promo='.$promoId,
+            'gambar' => '/api/v1/homepage/office/promos/gambar?promo='.$promoId.'&v='.($p['_poster_v'] ?? ''),
             'bd' => self::bdInfo($p, $today, $status),
         ];
     }
@@ -354,29 +430,24 @@ class HomepagePromos
         if ($row === null) {
             return null;
         }
-        [$bd] = $this->bdPromosSafe();
 
-        return $this->imageOf($row, $bd);
+        return $this->imageOf($row);
     }
 
     /** Office preview of any BD promo with a poster, by promo id only. */
     public function officeImageByPromo(string $promoId): ?array
     {
-        [$bd] = $this->bdPromosSafe();
-        $p = $bd[$promoId] ?? null;
-
-        return $p === null ? null : self::posterBytes($p);
+        return $this->bdPoster($promoId);
     }
 
     /** @return array{data:string,type:string}|null */
-    private function imageOf(HomepageBanner $row, array $bdPromos): ?array
+    private function imageOf(HomepageBanner $row): ?array
     {
         if ($row->sumber === self::SOURCE_UPLOAD) {
             return $this->photos->read((string) ($row->gambar_key ?? ''));
         }
-        $p = $bdPromos[(string) ($row->promo_id ?? '')] ?? null;
 
-        return $p === null ? null : self::posterBytes($p);
+        return $this->bdPoster((string) ($row->promo_id ?? ''));
     }
 
     /**
@@ -390,7 +461,7 @@ class HomepagePromos
         }
         $p = $bdPromos[(string) ($row->promo_id ?? '')] ?? null;
 
-        return $p !== null && self::posterBytes($p) !== null;
+        return $p !== null && self::hasPoster($p);
     }
 
     /** Remove a stored file unless another banner row still points at the same key. */
@@ -451,7 +522,7 @@ class HomepagePromos
         }
         if ($tampil) {
             $status = RadarRules::promoStatus($p, self::today());
-            if ($status !== 'running' || self::posterBytes($p) === null) {
+            if ($status !== 'running' || ! self::hasPoster($p)) {
                 throw new RuntimeException('tidak_eligible');
             }
         }

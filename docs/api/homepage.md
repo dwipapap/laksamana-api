@@ -108,7 +108,7 @@ never deleted.
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/homepage/promos` | Rows with `tampil = true` AND eligible, `urutan ASC` then the older row first. `meta = {version}`. |
-| GET | `/homepage/promos/{id}/gambar` | The image of such a row, **by row id**. `Cache-Control: public, max-age=86400` + content `ETag`. Not found/not shown/not eligible → `404 not_found` |
+| GET | `/homepage/promos/{id}/gambar` | The image of such a row, **by row id**. `Cache-Control: public, max-age=86400` + content `ETag`. Not found/not shown/not eligible → `404 not_found`. The `?v=` the list puts on the URL is ignored here; it only makes a new image a new URL |
 
 Both send the same `Cache-Control: public, max-age=60, stale-while-revalidate=300`
 + `ETag`/`304` as the event feed (the image route answers `304` on a matching
@@ -120,7 +120,7 @@ List item — an allow-list projection:
 {
   "id": "01j…",
   "sumber": "bd",
-  "image": "/api/v1/homepage/promos/01j…/gambar",
+  "image": "/api/v1/homepage/promos/01j…/gambar?v=3f9c1a2b",
   "alt": "Kopi Kenangan",
   "href": "https://example.com/promo"
 }
@@ -206,7 +206,7 @@ tie), then BD candidates — running first, then the nearest `mulai`. Each item:
   "alt": null, "href": null, "mulai": null, "selesai": null,
   "tampil": true, "urutan": 10, "version": 2,
   "eligible": true, "alasan": null,
-  "gambar": "/api/v1/homepage/office/promos/gambar?banner=01j…",
+  "gambar": "/api/v1/homepage/office/promos/gambar?banner=01j…&v=3f9c1a2b",
   "bd": {"nama": "Kopi Kenangan", "tipe": "Diskon", "kategori": "Minuman",
          "benefit": "Diskon 10%", "mulai": "2026-09-28", "selesai": "2026-10-05",
          "status": "running"}
@@ -233,6 +233,12 @@ Validation (`422 validation_failed`): `href` only `https://…` or a `/…` path
 `gambar_key` must name a stored homepage file, `tampil` must be a real boolean
 (not `"true"`/`1`). A PATCH that replaces `gambar_key` removes the old file once
 no other row points at it.
+
+**Image URLs are versioned.** Every `image` (public) and `gambar` (office) URL
+ends in `v=<8 hex>`: a hash of the upload's `gambar_key`, or of the BD poster
+data URL. A replaced image is therefore a new URL, and the day-long image cache
+never shows the old picture. Clients use the URL as given and key any local
+cache by the whole URL, not by row id.
 
 ## Errors
 

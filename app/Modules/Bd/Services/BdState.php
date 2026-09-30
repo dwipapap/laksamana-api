@@ -185,6 +185,18 @@ class BdState
         return $v === null ? $default : $v;
     }
 
+    /**
+     * A cheap fingerprint of one setting (MD5 computed by the database), or null
+     * when the key has no row. Lets a reader cache what it derives from a large
+     * setting (the `promos` posters) without transferring and decoding it.
+     */
+    public function settingHash(string $k): ?string
+    {
+        $row = $this->db()->selectOne('SELECT MD5(`v`) AS h FROM `'.self::table('settings').'` WHERE `k` = ? LIMIT 1', [$k]);
+
+        return $row ? (string) $row->h : null;
+    }
+
     public function putSetting(string $k, mixed $v): void
     {
         RowSync::putSetting($this->db(), $k, $v, self::table('settings'), self::onCore());

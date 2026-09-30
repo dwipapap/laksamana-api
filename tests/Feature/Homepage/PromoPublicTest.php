@@ -52,14 +52,14 @@ it('serves only switched-on eligible rows, in manual order, with the allow-list 
     $first = $r->json('data.0');
     expect(array_keys($first))->toBe(['id', 'sumber', 'image', 'alt', 'href'])
         ->and($first['sumber'])->toBe('bd')
-        ->and($first['image'])->toBe('/api/v1/homepage/promos/'.$bdRow->id.'/gambar')
+        ->and($first['image'])->toBe('/api/v1/homepage/promos/'.$bdRow->id.'/gambar?v='.substr(sha1($running['poster']), 0, 8))
         ->and($first['alt'])->toBe($running['nama']) // a BD row without its own alt uses nama
         ->and($first['href'])->toBeNull();
 
     $second = $r->json('data.1');
     expect($second['sumber'])->toBe('unggah')
         ->and($second['alt'])->toBe('Banner Unggahan')
-        ->and($second['image'])->toBe('/api/v1/homepage/promos/'.$upload->id.'/gambar');
+        ->and($second['image'])->toBe('/api/v1/homepage/promos/'.$upload->id.'/gambar?v='.substr(sha1($upload->gambar_key), 0, 8));
 
     // the switched-off row and the ineligible BD rows are nowhere in the body
     $body = (string) $r->getContent();
@@ -164,6 +164,11 @@ it('keeps serving uploaded banners when BD cannot be read', function () {
         {
             throw new RuntimeException('BD down');
         }
+
+        public function settingHash(string $k): ?string
+        {
+            throw new RuntimeException('BD down');
+        }
     });
 
     $keep = bannerRow(['tampil' => true, 'urutan' => 10]);
@@ -179,4 +184,26 @@ it('answers an empty list when nothing is switched on', function () {
     bannerRow(['tampil' => false]);
 
     $this->getJson('/api/v1/homepage/promos')->assertOk()->assertJson(['data' => []]);
+});
+
+it('changes the image URL when the image changes, so the day-long cache never shows a replaced picture', function () {
+    $promo = bdPromo(['nama' => 'Poster Lama', 'poster' => bdPosterDataUrl('POSTER-A')]);
+    bdSetPromos([$promo]);
+    $bdRow = bannerRow(['sumber' => 'bd', 'promo_id' => $promo['id'], 'tampil' => true, 'urutan' => 10]);
+    $upload = bannerRow(['tampil' => true, 'urutan' => 20]);
+
+    $before = collect($this->getJson('/api/v1/homepage/promos')->json('data'))->pluck('image', 'id');
+
+    // BD OS replaces its poster; the index is keyed by the setting's MD5, so no stale cache
+    bdSetPromos([array_merge($promo, ['poster' => bdPosterDataUrl('POSTER-B')])]);
+    // staff swap the uploaded banner's file
+    $upload->update(['gambar_key' => homepagePhoto('hb_ganti001.jpg', 'IMG-B')]);
+
+    $after = collect($this->getJson('/api/v1/homepage/promos')->json('data'))->pluck('image', 'id');
+
+    expect($after[$bdRow->id])->not->toBe($before[$bdRow->id])
+        ->and($after[$upload->id])->not->toBe($before[$upload->id]);
+
+    $this->get($after[$bdRow->id])->assertOk();
+    expect($this->get($after[$bdRow->id])->getContent())->toBe('POSTER-B');
 });
