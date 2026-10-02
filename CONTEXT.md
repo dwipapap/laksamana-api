@@ -76,6 +76,14 @@ _Avoid_: Level, Role
 A User's role inside one Panel, which shapes their Akses Halaman.
 _Avoid_: Role (for Office-wide rights), Jabatan
 
+**Lingkup**:
+Whose data a User may see or change on a page that shows per-person data: only their own (`sendiri`), their Divisi’s if they are its Kepala Divisi (`divisi`), or everyone’s (`semua`). Aggregates without names stay visible.
+_Avoid_: Scope, Visibility
+
+**Kewenangan**:
+A named action a Peran may take in a Modul that is not tied to one page, such as correcting stock or reopening a closed Hari Operasional.
+_Avoid_: Permission, Ability, Hak (alone)
+
 **Admin Modul**:
 A User with admin rights on one Modul: they can change that Panel's settings and data beyond normal use.
 _Avoid_: Module admin, Moderator
@@ -125,3 +133,54 @@ _Avoid_: Pembeli (in code), Customer account, User, Member
 **Pekerja Harian**:
 A daily worker hired per need; not a User, never logs in, identified by phone number, and may work in several Divisi.
 _Avoid_: DW (as a person), Kru, Freelancer, Part-timer
+
+### Operations & stock
+
+**POS**:
+The cashier system the company runs, ESB (Esensi Solusi Buana); the source of bills, payments and menu sales, and the company’s accounting. The Office supports it and does not replace it (ADR-0008). Code keeps the name `esb`.
+_Avoid_: ESB (on screens), Kasir (for the system)
+
+**Lokasi**:
+A place that holds stock and money and has its own operating hours: today the one Outlet and the Central Kitchen, each counted separately.
+_Avoid_: Cabang, Store, Gudang (unless it is one)
+
+**Hari Operasional**:
+One opening of a Lokasi, from when it is opened to when it is closed; everything that happens inside that span belongs to its `tanggal_bisnis`, even after midnight.
+_Avoid_: Sesi (a login), Shift (crew working hours), Hari (alone)
+
+**Barang**:
+Anything the company buys, stores or uses as an ingredient; one catalogue shared by Stock and HPP.
+_Avoid_: Produk (for an ingredient), Bahan (as a separate list), Item
+
+**Satuan Dasar**:
+The smallest unit a Barang’s stock is counted in (Gram, Ml, Pcs); every quantity is stored in it.
+_Avoid_: Base unit, Satuan Terkecil
+
+**Ukuran Satuan**:
+How many of a Barang’s Satuan Dasar one of its other units holds (1 Kg = 1000 Gram, 1 Ekor = 4 Pcs); set per Barang, because the ratio differs per Barang.
+_Avoid_: Konversi (alone), Isi Pack
+
+**Pesanan Bahan**:
+An order of raw materials (Barang) to a vendor, from Stock’s Ordering and Purchasing; kept separate from PO Proyek.
+_Avoid_: PO (alone), Order
+
+**PO Proyek**:
+A purchase order raised in BD for a project or event; a different flow from Pesanan Bahan.
+_Avoid_: PO (alone), Purchase request
+
+**Pembelian Langsung**:
+A purchase paid on the spot without any order to a vendor (e.g. cash at the market); a document of its own, never a Pesanan Bahan.
+_Avoid_: Belanja PO, Direct order
+
+**Tagihan Vendor**:
+A vendor’s bill; one Tagihan Vendor may cover several orders.
+_Avoid_: Invoice (for our own invoices), Nota
+
+**Opname**:
+A physical count of the stock of one Lokasi, compared with what the system expects.
+_Avoid_: Stock take, SO (alone)
+
+**Penyesuaian Stok**:
+A correction that brings system stock in line with an Opname, decided by a User holding that Kewenangan (meant for Heads, see L11 in `docs/erp/pertanyaan-owner.md`) and always carrying a written reason; it never edits past movements.
+_Avoid_: Koreksi (alone), Adjustment
+

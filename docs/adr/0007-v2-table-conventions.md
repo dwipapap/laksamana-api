@@ -8,9 +8,9 @@ Every v2 table in `core` (ADR-0006) follows these rules. They extend ADR-0003, w
 
 **Documents.** A document has a unique `nomor`, a `status` column limited by a `CHECK` to the states in the area's lifecycle, and the time of each transition it needs (`diajukan_at`, `disetujui_at`, …). Once a document reaches a final state it is never edited or hard-deleted: it is corrected by a reversing document. The services enforce this; the delete rules make an accidental hard delete fail.
 
-**Money and quantities.** Money is `DECIMAL(15,2)` in rupiah; `FLOAT` / `DOUBLE` are never used for money or quantities, and money is never inside JSON. Whether an amount is rounded to whole rupiah, and how PB1 and service are rounded, is a business rule the service applies, not a column type. Quantities are `DECIMAL(15,4)` in the item's base unit; the unit a line was entered in is kept beside it.
+**Money and quantities.** All amounts are whole rupiah (owner, 2026-10-02): totals, prices, payments and fees are `DECIMAL(15,0)`, and a service that divides money (PIC portions, splits) rounds once and puts the remainder on a defined line. Only unit costs per base unit (Rp per gram in HPP) may carry fractions, as `DECIMAL(15,4)`. `FLOAT` / `DOUBLE` are never used for money or quantities, and money is never inside JSON. Quantities are `DECIMAL(15,4)` in the item’s base unit; the unit a line was entered in is kept beside it, and conversion happens once, when the line is written.
 
-**Time.** Instants are `TIMESTAMP`, stored in UTC (the app's timezone) and shown in WIB by clients. Business dates are `DATE`, never text. Operational documents (sales, shifts, stock movements) carry a `tanggal_bisnis` that the server derives from the business-day cut-off; until the owner sets that cut-off it is midnight WIB, and it is never computed by a client.
+**Time.** Instants are `TIMESTAMP`, stored in UTC (the app’s timezone) and shown in WIB by clients. Business dates are `DATE`, never text. Operational documents (sales, cash, shifts, stock movements) carry a `tanggal_bisnis` and a `hari_operasional_id`, derived by the server from the Lokasi’s open Hari Operasional (`docs/erp/hari-operasional.md`), with the Lokasi’s cut-off hour as fallback; a client never computes it.
 
 **Locations.** Every stock and money table references the location it belongs to (outlet, Central Kitchen, gudang), even while there is only one, so a second outlet adds rows, not columns.
 
@@ -22,6 +22,6 @@ Every v2 table in `core` (ADR-0006) follows these rules. They extend ADR-0003, w
 
 ## Considered Options
 
-- **Integer rupiah** instead of `DECIMAL(15,2)`: rejected for now. Splits (PIC portions, per-portion cost) produce cents; `DECIMAL` holds whole rupiah too, so the owner's answer on precision changes a rounding rule, not the schema.
+- **`DECIMAL(15,2)` for every amount**: rejected after the owner confirmed all rupiah are whole; cents would only invite amounts no receipt ever shows. Fractions stay possible where they are real (unit costs).
 - **Keep `bigint` millisecond timestamps as the version** (as v1 does): rejected. It ties concurrency to clock precision and makes time unreadable in SQL.
 - **`ENUM` for status**: rejected. Adding a state is an `ALTER` of the column type on the cPanel MySQL; a `VARCHAR` with a `CHECK` is easier to extend.
