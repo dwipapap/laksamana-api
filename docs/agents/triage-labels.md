@@ -13,3 +13,7 @@ The skills speak in terms of five canonical triage roles. This file maps those r
 When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding label string from this table.
 
 Edit the right-hand column to match whatever vocabulary you actually use.
+
+## Team labels
+
+Every issue also carries one team label (CLAUDE.md §6): `tim-a` (migration: v1, compat, laksamana-office-vue) or `tim-b` (platform / ERP: `core`, v2, ADRs, `CONTEXT.md`).
