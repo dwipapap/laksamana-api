@@ -1,6 +1,6 @@
 # PRD — Consolidate the legacy databases into one clean `core` database
 
-Status: accepted (grilling session 2026-09-24). Vocabulary: [`CONTEXT.md`](../../CONTEXT.md).
+Status: accepted (grilling session 2026-09-24); per-Modul consolidation in the legacy shape superseded by [ADR-0006](../adr/0006-erp-v2-redesigns-core-per-area.md) (2026-10-02). The goals below still stand, per business area. Vocabulary: [`CONTEXT.md`](../../CONTEXT.md).
 Decisions: [ADR-0001](../adr/0001-sanctum-with-legacy-sesi-until-full-cutover.md) ·
 [ADR-0002](../adr/0002-per-module-cutover-into-one-normalised-core-database.md) ·
 [ADR-0003](../adr/0003-core-schema-glossary-names-and-ulid-keys.md) ·
