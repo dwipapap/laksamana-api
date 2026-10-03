@@ -1,6 +1,7 @@
 <?php
 
 use App\Modules\Reservasi\Http\V1\ReservasiController as C;
+use App\Modules\Reservasi\Http\V1\ReservasiRecapController as Recap;
 use Illuminate\Support\Facades\Route;
 
 // Reservasi and Service Excellent are two Panels of the same Backend and the same
@@ -27,6 +28,7 @@ Route::middleware(['auth:sanctum', 'module:reservasi|service_excellent'])->prefi
 // (see DanaMasukGate): PATCH writes DP/transfer fields only, master reads
 // only `dpMethods`. Everyone else sees no difference.
 Route::middleware(['auth:sanctum', 'module:reservasi|service_excellent|cashier|finance'])->prefix('reservasi')->group(function () {
+    Route::get('recap', [Recap::class, 'show']);
     Route::get('reservations', [C::class, 'index']);
     Route::get('reservations/{id}', [C::class, 'show']);
     Route::patch('reservations/{id}', [C::class, 'patch']);
