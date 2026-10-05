@@ -1,8 +1,8 @@
 # ERP (v2) — ruang kerja Tim B
 
 Folder ini adalah titik kerja Tim B (platform & ERP). Keputusan dasarnya:
-[ADR-0006](../adr/0006-erp-v2-redesigns-core-per-area.md) (core dirancang ulang per area, v2 terpisah dari v1) dan
-[ADR-0007](../adr/0007-v2-table-conventions.md) (aturan tabel v2). Kondisi core saat ini: [audit-core.md](../db/audit-core.md).
+[ADR-0006](../adr/0006-erp-v2-redesigns-core-per-area.md) (core dirancang ulang per area, v2 terpisah dari v1),
+[ADR-0007](../adr/0007-v2-table-conventions.md) (aturan tabel v2), dan [ADR-0008](../adr/0008-laksamana-supports-esb.md) (Laksamana mendukung ESB, tidak menggantikan POS atau akuntansinya). Kondisi core saat ini: [audit-core.md](../db/audit-core.md).
 
 ## Isi folder
 
@@ -10,6 +10,8 @@ Folder ini adalah titik kerja Tim B (platform & ERP). Keputusan dasarnya:
 |---|---|
 | `README.md` | Cara kerja, urutan area, status |
 | `pertanyaan-owner.md` | Pertanyaan bisnis yang menunggu jawaban owner, dan jawabannya |
+| `akses.md` | Akses di dalam Modul: Peran, Akses Halaman, Lingkup, Kewenangan (jawaban Q1) |
+| `hari-operasional.md` | Hari bisnis yang fleksibel lewat buka/tutup per Lokasi (jawaban Q6) |
 | `<area>.md` | Rancangan satu area: kegiatan, istilah, ERD Mermaid, siklus dokumen, aturan, pemetaan dari tabel lama |
 
 Kontrak endpoint v2 ditulis di `docs/api/v2/<area>.md` **sebelum** dibangun, supaya Tim A tahu apa yang akan datang.
@@ -39,8 +41,10 @@ Contoh pola migration yang sudah benar: `menu`, `news`, `homepage` di `database/
 
 | Area | Menyentuh modul lama | Status |
 |---|---|---|
-| Master data (pihak, barang + satuan, lokasi, akun) | account, hr, stock, bd, marketing, … | menunggu jawaban owner Q1–Q3 |
-| **Pembelian & Persediaan** (pertama) | stock, bd, finance (kas kecil) | menunggu jawaban owner Q4, P1–P7 |
+| Master data (pihak, barang + satuan, lokasi) | account, hr, stock, bd, marketing, … | Q1–Q3 dijawab; daftar divisi menunggu L4, vendor bersama menunggu L5 |
+| Akses di dalam Modul | semua modul | usulan di `akses.md`, menunggu L3 |
+| Hari Operasional | finance, kompas, absensi, jadwal, stock | usulan di `hari-operasional.md`, menunggu L8–L10 |
+| **Pembelian & Persediaan** (pertama) | stock, bd, finance (kas kecil) | `pembelian-persediaan.md`; ERD dokumen menunggu L1 (cakupan ESB) |
 | Penjualan (omset, booking + DP, paket event, tiket) | finance, reservasi, event, ticketing, marketing | belum mulai |
 | Kas (kas kecil, brankas, setoran, QRIS) | finance, kompas | belum mulai |
 | SDM (absensi → jadwal → upah harian → bonus) | absensi, jadwal, dw, hr, akademi | belum mulai |
