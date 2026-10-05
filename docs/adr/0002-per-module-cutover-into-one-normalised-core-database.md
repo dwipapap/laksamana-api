@@ -1,5 +1,7 @@
 # Consolidate every Backend into one normalised `core` database, one module at a time
 
+> Amended by [ADR-0006](0006-erp-v2-redesigns-core-per-area.md): `core` is redesigned per business area for the ERP; the per-Backend tables built from this ADR are frozen.
+
 The ~16 legacy databases (`lakk5493_db_<mod>`) become one database, `core`, owned by Laravel migrations. For now the API is hybrid: unmigrated modules still read their legacy database. When a module is migrated, `core` becomes its **only** source of truth. Its compat routes then read and write the new tables and rebuild the legacy wire shapes, and its legacy database is frozen as a read-only archive. Nothing is ever written to both. `core` is not a copy of the legacy shape: fields the domain knows become typed columns, repeated parts become child tables with real foreign keys, and JSON stays only for open-ended data. Each migrated module ships an ERD.
 
 ## Considered Options

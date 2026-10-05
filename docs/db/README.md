@@ -1,5 +1,9 @@
 # `core` database
 
+> **Since 2026-10-02 (ADR-0006):** the per-Backend tables described below are frozen and no Modul cuts
+> over to them. `core` is being redesigned per business area for the ERP (`/api/v2`, `docs/erp/`, ADR-0007).
+> Identity (`docs/db/identity.md`) and `menu` / `news` / `homepage` are kept. Current state: `audit-core.md`.
+
 The `core` database consolidates the legacy Backends one Modul at a time. It is
 owned by Laravel migrations; a legacy database is read as an import source and,
 after its Modul is cut over, is frozen as an archive. No Backend is ever

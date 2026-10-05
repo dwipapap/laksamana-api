@@ -194,6 +194,24 @@ two agents cannot end up sharing a checkout. Details: `docs/agents/worktrees.md`
 | radar | n/a (no backend; reads 4 modules) | read-only board (docs/api/radar.md) | n/a — no legacy backend |
 | (others) | pending — see docs/modules/README.md | | |
 
+## 6. Two teams (since 2026-10-02)
+
+Two teams work in this repo, each with its own Claude. Neither remembers the other’s
+conversations: anything the other team needs must be written in the repo.
+
+| | Team A — migration | Team B — platform / ERP |
+|---|---|---|
+| Goal | retire the old Office safely (laksamana-office-vue on v1) | the ERP: one relational `core`, `/api/v2` |
+| Owns | `app/Modules/*`, `routes` v1/legacy, `docs/api/<module>.md`, `docs/modules`, `tools/parity`, `tests/Feature/<Module>` | `app/Core`, `app/Erp` (v2), `database/migrations` (core; a Team A greenfield module asks Team B to review its migration), `docs/adr`, `CONTEXT.md`, `docs/db`, `docs/erp`, `docs/api/v2` |
+| Issue label | `tim-a` | `tim-b` |
+
+- **Core is being redesigned (ADR-0006).** The per-Backend `core` tables (`<modul>_*`) are
+  frozen: no new tables, columns, importers or cutovers. Identity and `menu`/`news`/`homepage`
+  are kept. New tables are v2 tables designed per area in `docs/erp/` and follow ADR-0007.
+- Team A does not change the `core` schema. Team B does not change a v1 field without Team A’s
+  approval; v2 endpoints are announced in `docs/api/v2/<area>.md` before they are built.
+- Open business questions and the owner’s answers: `docs/erp/pertanyaan-owner.md`.
+
 ## Agent skills
 
 ### Issue tracker
