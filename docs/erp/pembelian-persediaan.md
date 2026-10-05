@@ -1,6 +1,6 @@
 # Area: Pembelian & Persediaan
 
-Status: **ERD draf (langkah 4, 5, 10)**, mengikuti perilaku sistem lama untuk pertanyaan yang belum dijawab (asumsi L1–L11 di [`pertanyaan-owner.md`](pertanyaan-owner.md) bagian D). Belum ada migration.
+Status: **ERD draf (langkah 4, 5, 10)**, mengikuti perilaku sistem lama untuk pertanyaan yang belum dijawab (asumsi L1–L11 di [`pertanyaan-owner.md`](pertanyaan-owner.md) bagian D). Migration master sudah ada (`2026_10_05_090000_create_erp_master_barang_tables.php`, model di `app/Erp/Master/Models`); dokumen belum.
 Istilah: `CONTEXT.md` bagian *Operations & stock*. Aturan tabel: ADR-0007.
 
 ## Yang sudah diputuskan
@@ -17,7 +17,9 @@ Istilah: `CONTEXT.md` bagian *Operations & stock*. Aturan tabel: ADR-0007.
 | Uang | Rupiah bulat `DECIMAL(15,0)`; harga per Satuan Dasar `DECIMAL(15,4)` | Q5, ADR-0007 |
 | Akuntansi | Tidak dibangun; ESB yang memegang | P7, ADR-0008 |
 
-## Master data (langkah 3, usulan)
+## Master data (langkah 3, sudah jadi migration)
+
+Tabel: `lokasi`, `satuan`, `pihak`, `pihak_rekening`, `vendor` (1:1 dengan pihak), `vendor_hari_tutup`, `kategori_barang`, `barang`, `barang_satuan`, `barang_vendor`, `barang_lokasi`, `barang_harga`. Aturan yang dijaga database (diuji di `tests/Feature/Erp/MasterBarangSchemaTest.php`): `CHECK` untuk jenis lokasi, sumber barang, ukuran > 0, qty beli > 0, hari 0–6; FK `RESTRICT`; satu vendor utama per barang (`urutan` 0); nama satuan unik tanpa peduli huruf besar-kecil; `harga_per_dasar` dihitung database. Diagram di bawah adalah rancangan awalnya.
 
 ```mermaid
 erDiagram

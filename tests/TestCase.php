@@ -39,9 +39,19 @@ abstract class TestCase extends BaseTestCase
     /** Transact all connections: core + every legacy DB. */
     protected function connectionsToTransact(): array
     {
+        // Greenfield modules registered on core (menu, news, homepage) still get an
+        // unused legacy_<env> connection from config/database.php, but their
+        // database does not exist; opening a transaction there fails every test.
+        $greenfield = [];
+        foreach (config('laksamana.modules') as $m) {
+            if (($m['connection'] ?? null) === 'core') {
+                $greenfield[] = 'legacy_'.strtolower($m['env']);
+            }
+        }
+
         $names = ['core'];
         foreach (array_keys(config('database.connections')) as $name) {
-            if (str_starts_with($name, 'legacy_')) {
+            if (str_starts_with($name, 'legacy_') && ! in_array($name, $greenfield, true)) {
                 $names[] = $name;
             }
         }
