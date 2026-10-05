@@ -1,6 +1,6 @@
 # Area: Pembelian & Persediaan
 
-Status: **ERD draf (langkah 4, 5, 10)**, mengikuti perilaku sistem lama untuk pertanyaan yang belum dijawab (asumsi L1–L11 di [`pertanyaan-owner.md`](pertanyaan-owner.md) bagian D). Migration master sudah ada (`2026_10_05_090000_create_erp_master_barang_tables.php`, model di `app/Erp/Master/Models`); dokumen belum.
+Status: **tabel master dan dokumen stok sudah jadi migration** (`2026_10_05_090000`, `_100000`, `_110000`; model di `app/Erp/Master` dan `app/Erp/Persediaan`). Pembayaran vendor (`rencana_bayar`, `tagihan_vendor`) pindah ke area Kas karena butuh master `rekening`. Pertanyaan yang belum dijawab owner memakai perilaku sistem lama (asumsi L1–L11 di [`pertanyaan-owner.md`](pertanyaan-owner.md) bagian D).
 Istilah: `CONTEXT.md` bagian *Operations & stock*. Aturan tabel: ADR-0007.
 
 ## Yang sudah diputuskan
@@ -141,7 +141,13 @@ Diperiksa di `laksamana-office/stock-mysql` dan `finance-mysql` (2026-10-05):
 
 v2 mempertahankan alur ini apa adanya, termasuk "outlet belum punya saldo". Perubahannya ada di bentuk data: semua rujukan menjadi FK, vendor tercatat di dokumen, qty dalam Satuan Dasar, dan setiap mutasi menunjuk dokumen asalnya.
 
-## ERD dokumen (draf)
+## ERD dokumen
+
+Sudah menjadi migration `2026_10_05_110000_create_erp_persediaan_tables.php`, dengan beberapa perbedaan dari diagram di bawah:
+- `rencana_bayar`, `tagihan_vendor`, dan `tagihan_vendor_pesanan` ditunda ke area Kas.
+- Setiap dokumen punya `nomor` unik, `tanggal_bisnis`, `hari_operasional_id` (nullable: CK memakai tanggal kalender, L10), dan pembatalan `dibatalkan_at`/`dibatalkan_oleh` (kecuali Pesanan Bahan, yang dibatalkan per baris, serta Opname dan Penyesuaian yang memakai status).
+- Teks lama yang tidak cocok dengan baris mana pun disimpan di kolom `*_impor` (misalnya `diajukan_oleh_impor`); v2 tidak pernah menulisnya.
+- Aturan yang dijaga database (diuji di `tests/Feature/Erp/PersediaanSchemaTest.php`): satu Hari Operasional terbuka per Lokasi; mutasi tepat satu asal yang cocok dengan `sebab`, dan satu baris asal hanya sekali menggerakkan stok; baris dari CK tanpa vendor; qty > 0; penyesuaian `disahkan` wajib `disahkan_at` dan qty ≠ 0.
 
 Master `barang`, `satuan`, `barang_satuan`, `barang_vendor`, `barang_lokasi` ada di bagian Master data di atas. `pihak`, `lokasi`, `divisi`, `user`, dan `hari_operasional` adalah tabel bersama. Kolom teknis ADR-0007 (`created_*`, `updated_*`, `version`) tidak digambar.
 
