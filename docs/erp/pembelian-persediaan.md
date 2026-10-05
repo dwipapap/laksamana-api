@@ -85,6 +85,8 @@ Diperiksa 2026-10-05 di salinan lokal `lakk5493_db_stock`. Yang dicatat di sini 
 | `hpp_bahan.qty_beli/harga_beli` | `barang_harga` (riwayat, `berlaku_dari`) | harga per satuan dasar `DECIMAL(15,4)` = harga ÷ qty, dihitung saat impor |
 | `hpp_bahan.sisi_harga`, `di_purchasing` | kolom di `barang` | arti persisnya dikonfirmasi saat merancang HPP |
 
+**Importer:** `php artisan core:import erp-barang` (`app/Erp/Master/Imports/BarangImporter.php`), hanya ke MySQL lokal. Bisa dijalankan berulang: run kedua tidak mengubah baris atau `version`. Hasil di salinan lokal 2026-10-05: 395 barang, 22 satuan, 725 baris satuan barang (80 tanpa ukuran = satuan sah yang belum bisa dikonversi, perilaku lama), 50 vendor, 332 vendor-barang, 410 barang-lokasi, 366 harga beli. Kasus yang tidak ditebak dicetak di akhir perintah: kolomnya dibiarkan kosong sampai diputuskan.
+
 **Yang harus diputuskan orang sebelum impor (bukan oleh kode):**
 
 - **19 barang** punya Satuan Dasar berbeda antara Stock dan HPP. Contohnya, Stock menghitung Asam Jawa per Pcs sedangkan HPP per Gram, dan Chicken Wings per Gram di Stock tetapi per Pcs di HPP. Memilih salah satu secara otomatis akan membuat stok atau HPP salah hitung.
