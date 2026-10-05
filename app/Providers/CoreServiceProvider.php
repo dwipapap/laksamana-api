@@ -25,6 +25,7 @@ use App\Core\Imports\ReservasiImporter;
 use App\Core\Imports\StockImporter;
 use App\Core\Imports\TicketingImporter;
 use App\Erp\Master\Imports\BarangImporter;
+use App\Erp\Persediaan\Imports\PersediaanImporter;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
 
@@ -57,6 +58,7 @@ final class CoreServiceProvider extends ServiceProvider
             $app->make(StockImporter::class),
             $app->make(TicketingImporter::class),
             $app->make(BarangImporter::class),
+            $app->make(PersediaanImporter::class),
         ));
     }
 
