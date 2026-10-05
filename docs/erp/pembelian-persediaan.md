@@ -1,6 +1,6 @@
 # Area: Pembelian & Persediaan
 
-Status: **langkah 1–5 sebagian; langkah 10 untuk master Barang sudah dipetakan**. Jawaban owner putaran 1 sudah masuk. ERD final menunggu **L1** (modul ESB apa yang dipakai, ADR-0008), L5–L7, dan L11.
+Status: **ERD draf (langkah 4, 5, 10)**, mengikuti perilaku sistem lama untuk pertanyaan yang belum dijawab (asumsi L1–L11 di [`pertanyaan-owner.md`](pertanyaan-owner.md) bagian D). Belum ada migration.
 Istilah: `CONTEXT.md` bagian *Operations & stock*. Aturan tabel: ADR-0007.
 
 ## Yang sudah diputuskan
@@ -29,10 +29,36 @@ erDiagram
     lokasi ||--o{ barang_lokasi : "disimpan di (outlet, CK, keduanya)"
     barang ||--o{ barang_lokasi : disimpan
 
-    barang { ulid id; string nama; ulid satuan_dasar_id; string kategori; string sumber "vendor | ck | keduanya"; bool aktif }
-    satuan { ulid id; string nama "Gram, Kg, Pcs, Ekor, ..." }
-    barang_satuan { ulid barang_id; ulid satuan_id; decimal ukuran "berapa satuan dasar; >0" }
-    lokasi { ulid id; string nama; string jenis "outlet | central_kitchen"; time jam_batas }
+    barang {
+
+        ulid id
+
+        string nama
+
+        ulid satuan_dasar_id
+
+        string kategori
+
+        string sumber "vendor | ck | keduanya"
+
+        bool aktif
+
+    }
+    satuan {
+        ulid id
+        string nama "Gram, Kg, Pcs, Ekor, ..."
+    }
+    barang_satuan {
+        ulid barang_id
+        ulid satuan_id
+        decimal ukuran "berapa satuan dasar; >0"
+    }
+    lokasi {
+        ulid id
+        string nama
+        string jenis "outlet | central_kitchen"
+        time jam_batas
+    }
 ```
 
 - Ukuran Satuan disimpan sebagai riwayat (`berlaku_dari`). Mutasi yang sudah ditulis menyimpan qty dalam Satuan Dasar, jadi mengubah ukuran tidak menulis ulang masa lalu. Aturan ini sudah dipegang `lib_stock_ck.php`.
@@ -94,6 +120,172 @@ Owner: opname belum dipakai (layar Daily Stock Opname lama ada, 0 baris). Arahny
 
 Dengan pola ini, setiap selisih punya jejak siapa memutuskan, kenapa, dan opname mana asalnya, tanpa mengubah riwayat mutasi.
 
-## Belum dijawab
+## Alur lama yang diikuti
 
-L1 (ESB inventory/purchasing dipakai atau tidak) menentukan apakah Laksamana memegang buku stok sendiri atau hanya melengkapi ESB. Karena itu tabel dokumen (Pesanan Bahan, penerimaan, Tagihan Vendor, mutasi) belum digambar.
+Diperiksa di `laksamana-office/stock-mysql` dan `finance-mysql` (2026-10-05):
+
+1. **Pengajuan bahan.** Kru suatu divisi (Kitchen, Bar, Floor, Office) mengajukan barang lewat Ordering, dikelompokkan dalam satu *batch* (185 batch, 2.618 baris). Setiap baris adalah satu barang, dengan qty, satuan, dan tanggal butuh.
+2. **Diproses Purchasing.** Barang ber-`sumber` vendor dipesan ke vendor utamanya, sedangkan barang CK dipenuhi Central Kitchen. Vendor **tidak** tercatat di baris pesanan.
+3. **Check-in kedatangan.** Baris ditandai Datang, beserta tanggal terima dan catatan terima. Status baris hanya Aktif atau Arsip.
+4. **Buku stok hanya ada untuk Central Kitchen** (`ck_stock`). Isinya produksi (masuk), kiriman balik dari outlet (masuk), pengajuan outlet yang datang (keluar, otomatis saat check-in), penyesuaian (+/−), dan rusak. Saldo selalu dihitung dari jumlah mutasi, tidak pernah disimpan.
+5. **Outlet tidak punya saldo stok** (tabel `stock` kosong). Yang dicatat adalah peristiwanya:
+   - Serah Terima ke Kitchen/Bar (dengan foto)
+   - Pemakaian per acara (RND, Prasmanan)
+   - Waste (Kadaluarsa, Rusak, Sisa Produksi, Lainnya, dengan foto)
+6. **Pembayaran vendor** lewat Planning Pembayaran: satu lembar per tanggal bayar, baris per vendor, dikelompokkan per rekening pembayar, dengan bukti bayar (siapa dan kapan). Rekening penerima dibaca dari Daftar Kontak Vendor.
+7. **Pembelian langsung** keluar dari Kas Kecil sebagai transaksi berkategori, tanpa efek ke stok.
+
+v2 mempertahankan alur ini apa adanya, termasuk "outlet belum punya saldo". Perubahannya ada di bentuk data: semua rujukan menjadi FK, vendor tercatat di dokumen, qty dalam Satuan Dasar, dan setiap mutasi menunjuk dokumen asalnya.
+
+## ERD dokumen (draf)
+
+Master `barang`, `satuan`, `barang_satuan`, `barang_vendor`, `barang_lokasi` ada di bagian Master data di atas. `pihak`, `lokasi`, `divisi`, `user`, dan `hari_operasional` adalah tabel bersama. Kolom teknis ADR-0007 (`created_*`, `updated_*`, `version`) tidak digambar.
+
+```mermaid
+erDiagram
+    divisi ||--o{ pesanan_bahan : mengajukan
+    lokasi ||--o{ pesanan_bahan : "untuk lokasi"
+    user ||--o{ pesanan_bahan : diajukan_oleh
+    pesanan_bahan ||--|{ pesanan_bahan_baris : berisi
+    barang ||--o{ pesanan_bahan_baris : dipesan
+    pihak ||--o{ pesanan_bahan_baris : "vendor (NULL bila dari CK)"
+    user ||--o{ pesanan_bahan_baris : diterima_oleh
+
+    lokasi ||--o{ mutasi_stok : "buku stok"
+    barang ||--o{ mutasi_stok : bergerak
+    pesanan_bahan_baris |o--o{ mutasi_stok : "keluar CK saat datang"
+    kiriman_ck_baris |o--o{ mutasi_stok : "masuk CK"
+    produksi_ck_baris |o--o{ mutasi_stok : "masuk CK"
+    penyesuaian_stok_baris |o--o{ mutasi_stok : koreksi
+    waste |o--o{ mutasi_stok : "keluar (hanya lokasi berbuku stok)"
+
+    lokasi ||--o{ kiriman_ck : "dari outlet"
+    kiriman_ck ||--|{ kiriman_ck_baris : berisi
+    lokasi ||--o{ produksi_ck : di
+    produksi_ck ||--|{ produksi_ck_baris : menghasilkan
+
+    lokasi ||--o{ serah_terima : dari
+    divisi ||--o{ serah_terima : "tujuan (Kitchen, Bar)"
+    serah_terima ||--|{ serah_terima_baris : berisi
+    lokasi ||--o{ pemakaian : di
+    pemakaian ||--|{ pemakaian_baris : berisi
+    lokasi ||--o{ waste : di
+    barang ||--o{ waste : dibuang
+
+    lokasi ||--o{ opname : dihitung
+    opname ||--|{ opname_baris : berisi
+    opname |o--o{ penyesuaian_stok : "asal (boleh tanpa opname)"
+    penyesuaian_stok ||--|{ penyesuaian_stok_baris : berisi
+
+    rencana_bayar ||--|{ tagihan_vendor : "lembar per tanggal bayar"
+    pihak ||--o{ tagihan_vendor : dibayar
+    rekening ||--o{ tagihan_vendor : "dibayar dari"
+    tagihan_vendor ||--o{ tagihan_vendor_pesanan : mencakup
+    pesanan_bahan ||--o{ tagihan_vendor_pesanan : ditagih
+
+    pesanan_bahan {
+
+        ulid id
+
+        string nomor
+
+        ulid divisi_id
+
+        ulid lokasi_id
+
+        date tanggal_bisnis
+
+        date tanggal_butuh
+
+        string catatan
+
+    }
+    pesanan_bahan_baris {
+        ulid id
+        ulid barang_id
+        decimal qty_input
+        ulid satuan_input_id
+        decimal qty_dasar
+        string sumber "vendor | ck"
+        ulid vendor_id
+        string status "diajukan | datang | batal"
+        date tanggal_datang
+        timestamp diterima_at
+        string catatan_terima
+        timestamp diarsipkan_at
+    }
+    mutasi_stok {
+        ulid id
+        ulid lokasi_id
+        ulid barang_id
+        string arah "masuk | keluar"
+        decimal qty_dasar
+        decimal qty_input
+        ulid satuan_input_id
+        string sebab "pengajuan | kiriman | produksi | penyesuaian | rusak | waste"
+        date tanggal_bisnis
+    }
+    waste {
+        ulid id
+        ulid lokasi_id
+        ulid barang_id
+        decimal qty_dasar
+        string sebab "kadaluarsa | rusak | sisa_produksi | lainnya"
+        string foto
+        string catatan
+    }
+    opname_baris {
+        ulid barang_id
+        decimal qty_sistem "NULL = belum"
+        decimal qty_fisik "NULL = belum"
+        string catatan
+    }
+    penyesuaian_stok_baris {
+        ulid barang_id
+        decimal qty_dasar "+ / -"
+        string alasan
+        string catatan
+    }
+    tagihan_vendor {
+        ulid id
+        ulid rencana_bayar_id
+        ulid pihak_id
+        decimal nominal "DECIMAL(15,0)"
+        ulid rekening_id
+        timestamp dibayar_at
+        ulid dibayar_oleh
+    }
+```
+
+### Aturan (langkah 5 dan 7)
+
+- **Pesanan Bahan:** setiap baris punya statusnya sendiri: `diajukan` → `datang`, atau `batal`. Ini persis perilaku lama, di mana check-in dilakukan per barang. Diarsipkan adalah penanda waktu (`diarsipkan_at`), bukan status, karena Arsip lama hanya menyembunyikan baris dari daftar aktif.
+- **Vendor ditulis ke baris saat diproses,** diambil dari vendor utama barang saat itu. Mengganti vendor utama tidak mengubah pesanan lama.
+- **Barang CK** (`sumber = ck`): saat baris berstatus `datang`, satu `mutasi_stok` keluar ditulis di lokasi CK. Membatalkan check-in menghapus mutasi itu. Aturan ini sama dengan `pur_ck_sinkron_order` lama: mutasi dari pengajuan hanya berubah lewat check-in.
+- **Mutasi menunjuk tepat satu asal.** Satu kolom FK nullable per jenis dokumen, ditambah `CHECK` bahwa tepat satu terisi, sesuai `sebab`. Produksi CK dan penyesuaian, yang di sistem lama berupa baris langsung di buku, di v2 mendapat dokumen kecil, supaya selalu ada "siapa, kapan, kenapa".
+- **Buku stok per Lokasi:** hari ini hanya CK yang punya buku stok (L1, perilaku lama). Serah Terima, Pemakaian, dan Waste outlet tetap dokumen tanpa mutasi. Karena setiap barisnya sudah berisi Barang dan qty Satuan Dasar, menyalakan buku stok outlet nanti cukup dengan mulai menulis mutasi, tanpa mengubah tabel.
+- **Saldo** = `SUM(masuk) − SUM(keluar)` per lokasi per barang. Tidak pernah disimpan. Sistem lama tidak menolak saldo negatif, dan v2 juga tidak; layar menandainya.
+- **Tidak ada yang dihapus permanen.** Di sistem lama Serah Terima, Pemakaian, dan Waste bisa diubah dan dihapus. v2 tetap membolehkan mengubah, tetapi menghapus menjadi pembatalan (`dibatalkan_at` + `dibatalkan_oleh`) sesuai ADR-0007, sehingga laporan bulan lalu tidak berubah diam-diam.
+- **Tagihan Vendor** adalah baris di Planning Pembayaran (L7). Satu tagihan boleh menunjuk beberapa Pesanan Bahan lewat `tagihan_vendor_pesanan` (P4). Nominal tidak dihitung dari pesanan, karena di sistem lama nilainya diketik dari nota vendor. `rekening` (rekening pembayar) adalah master milik area Kas.
+- **Tidak ada langkah persetujuan** (P5). Kalau nanti diperlukan, status `diajukan` dipecah menjadi `diajukan` → `disetujui` dan Kewenangan `pembelian.setujui` ditambahkan.
+
+### Di luar area ini
+
+- **Pembelian Langsung:** area Kas (Kas Kecil), tanpa efek stok (L6).
+- **PO Proyek (BD):** area sendiri. Berbagi `pihak` vendor (L5), tetapi tidak berbagi dokumen (Q4).
+- **HPP dan resep:** area sendiri. Memakai `barang` dan `barang_harga` dari sini.
+
+## Pemetaan tabel lama → v2 (dokumen)
+
+| Lama (`lakk5493_db_stock`) | v2 | Catatan |
+|---|---|---|
+| `orders` (per baris), `batch_id`/`batch_name` | `pesanan_bahan` (per batch) + `pesanan_bahan_baris` | 724 baris pra-batch (tanpa `batch_id`) menjadi satu pesanan per `nomor_order`; nama barang lewat tabel alias (22 nama lama) |
+| `orders.status` Aktif/Arsip, `kedatangan` Datang | `pesanan_bahan_baris.status`, `diarsipkan_at` | Datang → `datang`; 195 baris Arsip tanpa Datang → `batal` atau tetap `diajukan` + arsip (diputuskan saat impor) |
+| `orders.tim` (teks, termasuk "Floor, FOH") | `pesanan_bahan.divisi_id` | lewat pemetaan divisi L4; nilai ganda diambil yang pertama |
+| `ck_stock` | `mutasi_stok` (lokasi CK) + dokumen asal | `ref` → FK ke baris pesanan; `produksi`/`penyesuaian` lama menjadi dokumen impor dengan catatan "impor" |
+| `serah_terima` | `serah_terima` + `_baris` | `tujuan` teks → divisi; `penerima` teks tetap teks bila tidak cocok dengan User |
+| `usage_events` | `pemakaian` + `_baris` | `jenis` (RND, Prasmanan) menjadi kolom ber-`CHECK` |
+| `waste` | `waste` | foto base64 di DB dipindah ke penyimpanan berkas |
+| `opname` (0 baris) | `opname` + `_baris` | tidak ada yang diimpor |
+| `vendors` | `pihak` (peran vendor) + rekening penerima | `tutupHari`, `perluJadwalJemput` menjadi kolom |
+| `finance.bk_state.bayar` | `rencana_bayar` + `tagihan_vendor` | lembar per tanggal; bukti `{ok,at,by}` → `dibayar_at`, `dibayar_oleh` |
