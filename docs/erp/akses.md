@@ -47,12 +47,50 @@ erDiagram
     user ||--o{ penempatan_peran : ditempatkan
     peran ||--o{ penempatan_peran : berisi
 
-    halaman { ulid id; ulid modul_id; string kunci; string nama; bool bisa_ubah; bool data_per_orang }
-    peran { ulid id; ulid modul_id; string kunci; string nama; bool bawaan }
-    peran_halaman { ulid peran_id; ulid halaman_id; tinyint tingkat; string lingkup }
-    kewenangan { ulid id; ulid modul_id; string kunci; string nama }
-    peran_kewenangan { ulid peran_id; ulid kewenangan_id; string lingkup }
-    penempatan_peran { ulid user_id; ulid modul_id; ulid peran_id }
+    halaman {
+
+        ulid id
+
+        ulid modul_id
+
+        string kunci
+
+        string nama
+
+        bool bisa_ubah
+
+        bool data_per_orang
+
+    }
+    peran {
+        ulid id
+        ulid modul_id
+        string kunci
+        string nama
+        bool bawaan
+    }
+    peran_halaman {
+        ulid peran_id
+        ulid halaman_id
+        tinyint tingkat
+        string lingkup
+    }
+    kewenangan {
+        ulid id
+        ulid modul_id
+        string kunci
+        string nama
+    }
+    peran_kewenangan {
+        ulid peran_id
+        ulid kewenangan_id
+        string lingkup
+    }
+    penempatan_peran {
+        ulid user_id
+        ulid modul_id
+        ulid peran_id
+    }
 ```
 
 - `halaman` dan `kewenangan` **didaftarkan oleh kode** (seeder per modul), bukan dibuat dari layar. Halaman ada karena programnya ada. Layar admin hanya mengisi matriksnya.

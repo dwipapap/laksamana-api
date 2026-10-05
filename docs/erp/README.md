@@ -44,7 +44,7 @@ Contoh pola migration yang sudah benar: `menu`, `news`, `homepage` di `database/
 | Master data (pihak, barang + satuan, lokasi) | account, hr, stock, bd, marketing, … | Q1–Q3 dijawab; daftar divisi menunggu L4, vendor bersama menunggu L5 |
 | Akses di dalam Modul | semua modul | usulan di `akses.md`, menunggu L3 |
 | Hari Operasional | finance, kompas, absensi, jadwal, stock | usulan di `hari-operasional.md`, menunggu L8–L10 |
-| **Pembelian & Persediaan** (pertama) | stock, bd, finance (kas kecil) | `pembelian-persediaan.md`; ERD dokumen menunggu L1 (cakupan ESB) |
+| **Pembelian & Persediaan** (pertama) | stock, bd, finance (kas kecil) | ERD draf di `pembelian-persediaan.md` (asumsi perilaku lama, bagian D pertanyaan-owner) |
 | Penjualan (omset, booking + DP, paket event, tiket) | finance, reservasi, event, ticketing, marketing | belum mulai |
 | Kas (kas kecil, brankas, setoran, QRIS) | finance, kompas | belum mulai |
 | SDM (absensi → jadwal → upah harian → bonus) | absensi, jadwal, dw, hr, akademi | belum mulai |
@@ -52,6 +52,7 @@ Contoh pola migration yang sudah benar: `menu`, `news`, `homepage` di `database/
 ## Aturan kerja
 
 - Jangan menambah tabel, kolom, atau importer ke tabel core per-modul yang sekarang (`<modul>_*`). Tabel itu dibekukan (ADR-0006).
+- Pertanyaan yang belum dijawab owner memakai **perilaku sistem lama** sebagai asumsi (bentuk tabel lama tidak diikuti), dicatat di bagian D `pertanyaan-owner.md`.
 - Setiap jawaban owner langsung dicatat: istilah ke `CONTEXT.md`, keputusan ke ADR baru, jawaban mentah ke `pertanyaan-owner.md`.
   Claude di tim lain hanya tahu apa yang tertulis di repositori.
 - Query analisis hanya di MySQL lokal, tidak pernah di dev atau production (CLAUDE.md §0).
