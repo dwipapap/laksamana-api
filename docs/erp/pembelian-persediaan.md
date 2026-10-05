@@ -287,6 +287,8 @@ erDiagram
 
 ## Pemetaan tabel lama → v2 (dokumen)
 
+**Importer:** `php artisan core:import erp-persediaan` (`app/Erp/Persediaan/Imports/PersediaanImporter.php`), dijalankan **setelah** `erp-barang`, hanya ke MySQL lokal. Bisa diulang tanpa mengubah baris atau `version`. Hasil di salinan lokal 2026-10-06: 908 pesanan, 2.617 dari 2.618 baris pesanan (1 qty 0 dilewati), 207 mutasi CK (= semua baris `ck_stock`), 48 kiriman, 1 produksi, 5 penyesuaian, 32 serah terima, 4 pemakaian, 13 waste. Saldo CK per barang hasil impor sama persis dengan hitungan lama (diuji). Yang dilaporkan untuk diputuskan orang: 25 nama barang lama dibuat sebagai barang nonaktif, 149 pasangan barang+satuan tanpa ukuran (`qty_dasar` kosong), 1 batch dengan dua pengaju, 37 foto yang masih di database lama (belum dipindah ke penyimpanan berkas). Vendor pesanan lama tidak diisi, karena sistem lama tidak pernah mencatatnya.
+
 | Lama (`lakk5493_db_stock`) | v2 | Catatan |
 |---|---|---|
 | `orders` (per baris), `batch_id`/`batch_name` | `pesanan_bahan` (per batch) + `pesanan_bahan_baris` | 724 baris pra-batch (tanpa `batch_id`) menjadi satu pesanan per `nomor_order`; nama barang lewat tabel alias (22 nama lama) |
