@@ -44,10 +44,32 @@ Contoh pola migration yang sudah benar: `menu`, `news`, `homepage` di `database/
 | Master data (pihak, barang + satuan, lokasi) | account, hr, stock, bd, marketing, … | Q1–Q3 dijawab; daftar divisi menunggu L4, vendor bersama menunggu L5 |
 | Akses di dalam Modul | semua modul | usulan di `akses.md`, menunggu L3 |
 | Hari Operasional | finance, kompas, absensi, jadwal, stock | usulan di `hari-operasional.md`, menunggu L8–L10 |
-| **Pembelian & Persediaan** (pertama) | stock, bd, finance (kas kecil) | ERD draf di `pembelian-persediaan.md` (asumsi perilaku lama, bagian D pertanyaan-owner) |
+| **Pembelian & Persediaan** (pertama) | stock, bd, finance (kas kecil) | tabel master + dokumen stok + importer selesai (lihat bagian Status kerja); belum ada service/endpoint v2 |
 | Penjualan (omset, booking + DP, paket event, tiket) | finance, reservasi, event, ticketing, marketing | belum mulai |
 | Kas (kas kecil, brankas, setoran, QRIS) | finance, kompas | belum mulai |
 | SDM (absensi → jadwal → upah harian → bonus) | absensi, jadwal, dw, hr, akademi | belum mulai |
+
+## Status kerja (2026-10-06) — baca ini dulu kalau melanjutkan
+
+Sudah di `main`:
+
+| Bagian | Di mana |
+|---|---|
+| Tabel master v2 (lokasi, satuan, pihak, vendor, barang + satuan/vendor/lokasi/harga) | migration `2026_10_05_090000`, `_100000`; model `app/Erp/Master/Models` |
+| Tabel dokumen stok + `hari_operasional` | migration `2026_10_05_110000`; model `app/Erp/Persediaan/Models` |
+| Importer dari Stock/HPP lama | `core:import erp-barang`, lalu `core:import erp-persediaan` (urutan wajib); kasus yang butuh keputusan orang dicetak di akhir |
+| Tes | `php artisan test tests/Feature/Erp` (24 tes; butuh dump lama yang sudah dipulihkan, lihat CLAUDE.md §0) |
+
+Belum dikerjakan, urutan yang disarankan:
+
+1. Kontrak API v2 Pembelian & Persediaan di `docs/api/v2/pembelian-persediaan.md` (umumkan ke Tim A sebelum dibangun).
+2. Service + endpoint v2 pertama: buka/tutup Hari Operasional, pesanan bahan + check-in (menulis mutasi CK), saldo stok CK. Kode di `app/Erp/<Area>/` (`Services/`, `Http/V2/`, `routes/v2.php`); auto-load route v2 belum ada.
+3. Akses di dalam Modul (`akses.md`): tabel peran/halaman/lingkup/kewenangan + middleware v2.
+4. Area Kas: master `rekening`, Planning Pembayaran, `tagihan_vendor` (ditunda dari area ini).
+5. Uji semua migration v2 di MariaDB 10.11 (production); sejauh ini baru di MySQL 8.4 lokal.
+6. Pindahkan foto serah terima/waste dari blob database lama ke penyimpanan berkas.
+
+Menunggu orang lain: jawaban owner putaran 2 (L1–L11, `pertanyaan-owner.md`; L1 paling menentukan), dan keputusan Purchasing/Kitchen atas daftar yang dicetak importer.
 
 ## Aturan kerja
 
