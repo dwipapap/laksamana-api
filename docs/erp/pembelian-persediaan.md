@@ -1,6 +1,6 @@
 # Area: Pembelian & Persediaan
 
-Status: **langkah 1–5 sebagian**. Jawaban owner putaran 1 sudah masuk. ERD final menunggu **L1** (modul ESB apa yang dipakai, ADR-0008), L5–L7, dan L11.
+Status: **langkah 1–5 sebagian; langkah 10 untuk master Barang sudah dipetakan**. Jawaban owner putaran 1 sudah masuk. ERD final menunggu **L1** (modul ESB apa yang dipakai, ADR-0008), L5–L7, dan L11.
 Istilah: `CONTEXT.md` bagian *Operations & stock*. Aturan tabel: ADR-0007.
 
 ## Yang sudah diputuskan
@@ -38,6 +38,50 @@ erDiagram
 - Ukuran Satuan disimpan sebagai riwayat (`berlaku_dari`). Mutasi yang sudah ditulis menyimpan qty dalam Satuan Dasar, jadi mengubah ukuran tidak menulis ulang masa lalu. Aturan ini sudah dipegang `lib_stock_ck.php`.
 - `pihak` (vendor) dirancang bersama area SDM/orang; apakah Stock dan BD berbagi daftar vendor menunggu L5.
 - Barang berkunci `id`, bukan nama. Di modul lama, `products` dan `vendors` berkunci nama dan `orders.item` merujuk lewat teks; pemetaan nama → id dibuat saat impor.
+
+## Pemetaan Barang dari data lama (langkah 10, master saja)
+
+Diperiksa 2026-10-05 di salinan lokal `lakk5493_db_stock`. Yang dicatat di sini hanya jumlah dan aturannya; daftar barisnya dibuat ulang di lokal dengan SQL di bawah, tidak disimpan di repo.
+
+**Stock dan HPP sudah satu katalog (Q3 terbukti di data).** Ke-395 nama di `products` sama persis dengan ke-395 nama di `hpp_bahan`, karena HPP mengikuti nama Stock lewat `lib_hpp_nama.php`. Jadi setiap pasangan menjadi satu baris `barang`:
+
+| Asal | Menjadi | Aturan impor |
+|---|---|---|
+| `products.nama` | `barang.nama` + `legacy_id` (nama) | kunci baru ULID; nama lama disimpan supaya bisa dipetakan |
+| `products.data.satuan[]` | `barang_satuan` | satuan dinormalkan tanpa peduli huruf besar-kecil (`ML` = `Ml`) ke tabel `satuan` |
+| `products.data.satuanDasar` | `barang.satuan_dasar_id` | dari Stock; kalau kosong (132 barang), pakai `hpp_bahan.satuan` |
+| `products.data.isi` | `barang_satuan.ukuran` | hanya angka > 0 (aturan `pur_isi_normal` lama) |
+| `products.data.packIsi/packSatuan` (CK) | `barang_satuan` satuan "Pack" | digabung dengan `isi`; `isi` menang kalau keduanya ada |
+| `products.data.utama/cadangan` | `barang_vendor` (utama + cadangan) | vendor dari Stock; HPP hanya mengisi yang kosong |
+| `products.data.sumber/diOutlet/area` | `barang_lokasi` + kategori | `ck` → CK saja, `both` → keduanya, lainnya → Outlet |
+| `hpp_bahan.qty_beli/harga_beli` | `barang_harga` (riwayat, `berlaku_dari`) | harga per satuan dasar `DECIMAL(15,4)` = harga ÷ qty, dihitung saat impor |
+| `hpp_bahan.sisi_harga`, `di_purchasing` | kolom di `barang` | arti persisnya dikonfirmasi saat merancang HPP |
+
+**Yang harus diputuskan orang sebelum impor (bukan oleh kode):**
+
+- **19 barang** punya Satuan Dasar berbeda antara Stock dan HPP. Contohnya, Stock menghitung Asam Jawa per Pcs sedangkan HPP per Gram, dan Chicken Wings per Gram di Stock tetapi per Pcs di HPP. Memilih salah satu secara otomatis akan membuat stok atau HPP salah hitung.
+- **6 barang** punya vendor berbeda antara Stock dan HPP. 241 bahan HPP tidak mengisi vendor sama sekali.
+- **22 nama barang (60 baris pesanan)** di `orders` tidak ada lagi di katalog. Sebagian karena barangnya diganti nama (misalnya "Minyak Goreng 18L" menjadi "Minyak Goreng (18L)"), sebagian karena dihapus. Impor butuh tabel alias nama lama → barang, yang diisi dan disetujui orang Purchasing.
+
+**Temuan untuk rancangan dokumen:** pesanan lama (`orders`, 2.618 baris, 31 Des 2025 – 23 Sep 2026) **tidak menyimpan vendor sama sekali**. Vendor hanya ada di master barang, sehingga riwayat "dulu dibeli dari siapa" hilang setiap kali vendor utama diganti. Di v2, Pesanan Bahan menyimpan vendornya sendiri di dokumen (aturan riwayat ADR-0007).
+
+SQL untuk membuat daftar periksa di MySQL lokal (jangan di dev atau production):
+
+```sql
+USE lakk5493_db_stock;
+-- Satuan Dasar beda antara Stock dan HPP
+SELECT p.nama, JSON_UNQUOTE(JSON_EXTRACT(p.data,'$.satuanDasar')) stock, h.satuan hpp
+FROM products p JOIN hpp_bahan h ON h.nama = p.nama
+WHERE IFNULL(JSON_UNQUOTE(JSON_EXTRACT(p.data,'$.satuanDasar')),'') <> ''
+  AND LOWER(h.satuan) <> LOWER(JSON_UNQUOTE(JSON_EXTRACT(p.data,'$.satuanDasar')));
+-- vendor beda
+SELECT h.nama, JSON_UNQUOTE(JSON_EXTRACT(p.data,'$.utama')) stock, h.vendor hpp
+FROM products p JOIN hpp_bahan h ON h.nama = p.nama
+WHERE h.vendor <> '' AND LOWER(h.vendor) <> LOWER(IFNULL(JSON_UNQUOTE(JSON_EXTRACT(p.data,'$.utama')),''));
+-- nama di pesanan yang tidak ada di katalog
+SELECT item, COUNT(*) baris, MAX(LEFT(waktu,10)) terakhir
+FROM orders WHERE item NOT IN (SELECT nama FROM products) GROUP BY item ORDER BY baris DESC;
+```
 
 ## Opname & Penyesuaian Stok (cara mencatat, diserahkan ke Tim B)
 
