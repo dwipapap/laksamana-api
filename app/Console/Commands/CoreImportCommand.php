@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Core\Imports\ImporterRegistry;
+use App\Core\Imports\ReportsIssues;
 use Illuminate\Console\Command;
 
 final class CoreImportCommand extends Command
@@ -43,6 +44,15 @@ final class CoreImportCommand extends Command
         $this->components->info(
             "Imported {$rows} rows from ".implode(', ', $importer->legacyConnections())." into {$importer->targetConnection()}."
         );
+
+        if ($importer instanceof ReportsIssues) {
+            foreach ($importer->issues() as $kind => $lines) {
+                $this->components->warn(count($lines)." to decide: {$kind}");
+                foreach ($lines as $line) {
+                    $this->line("  - {$line}");
+                }
+            }
+        }
 
         return self::SUCCESS;
     }
