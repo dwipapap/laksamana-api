@@ -146,6 +146,22 @@ _Avoid_: Artist, Performer, Pengisi acara
 A Pihak that promotes the venue on social media for Konten, paid per post or visit.
 _Avoid_: Influencer, Endorser
 
+**Shift**:
+A named block of working hours (Pagi, Malam, …) a crew member is scheduled into on a date; it belongs to the Hari Operasional it starts in, and may end after midnight.
+_Avoid_: Sesi, Hari Operasional, Jam kerja (alone)
+
+**Pengajuan Jadwal**:
+A crew member's request to change their schedule (off, leave, permission, swap), approved by their Kepala Divisi and then by HRD.
+_Avoid_: Request, Izin (it is one of the kinds)
+
+**Ketukan Absen**:
+One clock-in or clock-out of a User or a Pekerja Harian, keeping where it was, whose face it was and which shift applied at that moment; a doubtful one waits for a decision.
+_Avoid_: Punch (in Indonesian text), Absen (alone), Check-in (tickets)
+
+**Penugasan DW**:
+One Pekerja Harian booked for one shift, at the wage of that day; attendance (hadir, telat, alfa) is recorded on it and it is paid in a weekly transfer.
+_Avoid_: Ajuan (old name), Booking DW
+
 **Buyer**:
 A member of the public who buys event tickets on the public ticket shop with an email and password. A Buyer is not a User: separate accounts (`tix_users`), their own sessions, no Akses, and never listed on the Roster.
 _Avoid_: Pembeli (in code), Customer account, User, Member
