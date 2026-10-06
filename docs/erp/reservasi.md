@@ -1,6 +1,6 @@
 # Area: Tamu — Reservasi
 
-Status: **rancangan + migration** (`2026_10_07_150000_create_erp_reservasi_tables.php`), di atas area [Kas](kas.md) (`metode_bayar`). Importer belum ditulis, karena butuh dump lama untuk diuji.
+Status: **rancangan + migration + importer** (`2026_10_07_150000`, `2026_10_08_110000`; `core:import erp-reservasi` setelah `erp-kas`, `app/Erp/Tamu/Imports/ReservasiImporter.php`, tes `ReservasiImportTest`).
 Area Tamu dipecah tiga: **Reservasi** (dokumen ini), Event & Tiket, dan Acara Marketing (klien, booking paket, DP event).
 
 ## Sumber di sistem lama (diperiksa 2026-10-06)
@@ -134,8 +134,16 @@ Tidak ada nilai master yang dibaca ulang oleh reservasi lama; nama kategori/sumb
 | `settings.tables` + denah | `meja` | `cap` → `kapasitas`; x/y/w/h → `tata_letak` |
 | `settings.waitlist` | `daftar_tunggu` | `seated` → `duduk` + `reservasi_id` |
 
+## Hasil impor (salinan lokal produksi, 2026-10-06)
+
+- 2.828 reservasi, 2.698 kedatangan, 652 cicilan DP (total 178.443.300, sama dengan data lama), 133 meja dari tujuh denah. Waiting list kosong. Idempoten.
+- **Meja lama berupa teks bebas**, sering beberapa meja sekaligus ("11, 12"). Teksnya selalu disimpan di `reservasi.meja_impor` (migration `2026_10_08_110000`); `meja_id` hanya diisi bila teksnya tepat satu kode meja di denah (2.352 reservasi). Reservasi multi-meja butuh tabel banyak-ke-banyak bila nanti diperlukan; diputuskan saat layar v2 dibangun.
+- **Metode DP tanpa padanan** di `metode_bayar`: QRIS (568), Transfer BRI (32), Transfer BCA (13), Transfer Mandiri (2). Teksnya disimpan di `metode_impor`. Perlu keputusan: QRIS yang mana, dan apakah transfer ke BRI/BCA/Mandiri menjadi metode bayar sendiri.
+- Bukti transfer dan dokumen tetap di folder berkas lama: kunci `@f:…` disimpan apa adanya (`bukti_key`, `dokumen_key`).
+- Kategori dan sumber info di luar daftar master (mis. "General Guests") dibuat nonaktif.
+
 ## Belum dikerjakan
 
-1. Importer `core:import erp-reservasi` (setelah `erp-kas`). Butuh dump `reservasi` dan folder berkasnya.
+1. ~~Importer `core:import erp-reservasi`~~: selesai. Berkasnya (bukti, dokumen) belum dipindah.
 2. DP sebagai uang: pencocokan dengan mutasi bank (Kompas `bri_mutasi`) dan masuknya ke `arus_kas`, bersama area Acara Marketing (DP event memakai pola yang sama).
 3. Denah per tanggal (`layoutOverrides`), review/feedback (Service Excellent).

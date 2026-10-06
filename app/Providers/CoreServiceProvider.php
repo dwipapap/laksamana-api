@@ -32,6 +32,7 @@ use App\Erp\Persediaan\Imports\PersediaanImporter;
 use App\Erp\Proyek\Imports\KerjaTimImporter;
 use App\Erp\Proyek\Imports\PoProyekImporter;
 use App\Erp\Resep\Imports\ResepImporter;
+use App\Erp\Tamu\Imports\ReservasiImporter as ErpReservasiImporter;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
 
@@ -77,6 +78,8 @@ final class CoreServiceProvider extends ServiceProvider
             $app->make(PoProyekImporter::class),
             // ERP team tools, shared log and notifications: after erp-po-proyek
             $app->make(KerjaTimImporter::class),
+            // ERP reservations: after erp-kas (metode_bayar)
+            $app->make(ErpReservasiImporter::class),
         ));
     }
 
