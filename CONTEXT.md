@@ -208,13 +208,95 @@ _Avoid_: PO (alone), Order
 A purchase order raised in BD for a project or event; a different flow from Pesanan Bahan.
 _Avoid_: PO (alone), Purchase request
 
+**Proyek**:
+A BD project or event with a budget, a stage (idea to completed) and one or more PICs; its spend is the sum of what its PO Proyek really cost.
+_Avoid_: Project (in Indonesian text), Program, Event (for the BD record)
+
+**Pengajuan Pembelian**:
+BD's weekly purchase request sheet (PR): the PO Proyek lines of that week, approved by named people one by one.
+_Avoid_: PR (alone in prose), Purchase request, Pesanan Bahan
+
 **Pembelian Langsung**:
 A purchase paid on the spot without any order to a vendor (e.g. cash at the market); a document of its own, never a Pesanan Bahan.
 _Avoid_: Belanja PO, Direct order
 
 **Tagihan Vendor**:
-A vendor’s bill; one Tagihan Vendor may cover several orders.
+A vendor’s bill, paid as a Pembayaran to that vendor; one Tagihan Vendor may cover several orders.
 _Avoid_: Invoice (for our own invoices), Nota
+
+**Reservasi**:
+A guest's booking of a table on a business date: party size, status (pending, confirmed, datang, cancelled, no-show), arrivals as they come in, and any DP. A walk-in seated from the waiting list is a Reservasi too.
+_Avoid_: Booking (in Indonesian text), Order, Tamu (for the record)
+
+**DP**:
+Money a guest pays ahead for a Reservasi or an event booking, possibly in instalments; each instalment is verified against its transfer proof.
+_Avoid_: Deposit, Uang muka (on screens it is fine), Down payment
+**Omset Harian**:
+One business day's sales of a Lokasi as entered in Input Omset Harian (food, beverage, other, discount, service, tax, bills, traffic), with its breakdown by source and PIC. Three totals come from it and all three are right on their own screen: net (Dashboard Omset), tagihan (Rekap Penjualan) and net sales (CFO report, tagihan minus compliment).
+_Avoid_: Omset (alone, it is ambiguous), Revenue, Sales
+**Report Daily**:
+The cashier's count for one business day: per Metode Bayar, what the POS says and what is actually there; Rekap Penjualan later adds what reached the bank.
+_Avoid_: Laporan Harian (alone), Closing, EOD
+**Porsi PIC**:
+The part of a day's sales credited to one PIC (Marketing, Event, Kasir) in the breakdown, counting an Open Bill only while it is ticked.
+_Avoid_: Commission, Omset PIC (as a stored number)
+**Compliment**:
+Goods given to a guest without payment; on the Report Daily it is a payment method, in the CFO report a discount.
+_Avoid_: Free, Gratis, Entertain
+**Bon**:
+A guest's unpaid bill, shown as a gap in the Report Daily until it is settled on a date through a Metode Bayar.
+_Avoid_: Piutang (alone), Hutang tamu, Receivable
+**Void**:
+An item cancelled from a POS bill after it was entered, recorded with who entered it, who erred and why.
+_Avoid_: Cancel, Refund
+
+**Dompet**:
+A place company money sits whose balance the Office computes: a bank account, the brankas cash, or a Kas Kecil pos. Its balance is its opening balance plus every Arus Kas, never a stored number.
+_Avoid_: Wallet (on screens it is fine), Wadah, Rekening (for the cash or a pos), Account
+
+**Arus Kas**:
+One amount going into or out of a Dompet, always pointing at the one document that moved it.
+_Avoid_: Mutasi (alone), Transaction, Cash flow statement
+
+**Kas Kecil**:
+The petty-cash book: transactions split over pos, each marked whether it is already in the books and whether its receipt (bon) is in hand.
+_Avoid_: Petty cash, Kas (alone)
+
+**Mutasi Wallet**:
+Money moved by hand between two Dompet, or put into or taken out of one from outside the Office.
+_Avoid_: Transfer (alone), Mutasi (alone)
+
+**Setoran**:
+Cash carried from the brankas to a bank, covering the takings of one or more days; never more than what is left of each day's cash.
+_Avoid_: Deposit, Setor (as a noun)
+
+**Planning Pembayaran**:
+The sheets of payments to be made on a payment date, grouped by the Dompet they are paid from; a payment only lowers a balance once it is marked paid.
+_Avoid_: Payment plan, Jadwal bayar
+
+**Pembayaran**:
+One line of Planning Pembayaran: what is paid, to whom if anyone, from which Dompet, and when it was paid and proven.
+_Avoid_: Payment, Transfer
+
+**Metode Bayar**:
+How a guest paid (cash, QRIS BRI, EDC BCA, QR Order, …), and the Dompet that money lands in.
+_Avoid_: Payment type, Channel
+
+**Investor**:
+A Pihak that put capital into the company and is paid it back over time from a Dompet (Pengembalian Modal).
+_Avoid_: Shareholder, Pemodal
+**Resep**:
+How one base, menu or prasmanan dish is made: lines of Barang or other Resep with a quantity, cooking-step notes, and a yield. Food and drink Resep may share a name; a line finds its sub-Resep in its own kind first.
+_Avoid_: Recipe, BOM, Menu (for the recipe itself)
+**Modal**:
+What one yield of a Resep costs in Barang, computed from current purchase prices through every sub-Resep; a menu's Modal adds the Spare once. Never stored on the Resep; a report that needs it keeps a copy.
+_Avoid_: HPP (for one dish; HPP is the module), Cost, Biaya
+**Spare**:
+A percentage added once to a menu's Modal to cover shrinkage and uneven portions, set in Pengaturan HPP; never added to a base.
+_Avoid_: Buffer (old setting name), Margin
+**Kontrol Bahan Baku**:
+The monthly check of one Lokasi: per Barang, opening stock, purchases, closing count, and what Resep, spoil, team meals, RND and compliments should have used; the gap shows as a green, yellow or red light.
+_Avoid_: Stock control, COGS bulanan
 
 **Opname**:
 A physical count of the stock of one Lokasi, compared with what the system expects.
