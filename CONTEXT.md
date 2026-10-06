@@ -176,6 +176,14 @@ _Avoid_: Belanja PO, Direct order
 A vendor’s bill, paid as a Pembayaran to that vendor; one Tagihan Vendor may cover several orders.
 _Avoid_: Invoice (for our own invoices), Nota
 
+**Reservasi**:
+A guest's booking of a table on a business date: party size, status (pending, confirmed, datang, cancelled, no-show), arrivals as they come in, and any DP. A walk-in seated from the waiting list is a Reservasi too.
+_Avoid_: Booking (in Indonesian text), Order, Tamu (for the record)
+
+**DP**:
+Money a guest pays ahead for a Reservasi or an event booking, possibly in instalments; each instalment is verified against its transfer proof.
+_Avoid_: Deposit, Uang muka (on screens it is fine), Down payment
+
 **Dompet**:
 A place company money sits whose balance the Office computes: a bank account, the brankas cash, or a Kas Kecil pos. Its balance is its opening balance plus every Arus Kas, never a stored number.
 _Avoid_: Wallet (on screens it is fine), Wadah, Rekening (for the cash or a pos), Account
