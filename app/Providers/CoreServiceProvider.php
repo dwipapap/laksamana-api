@@ -24,6 +24,7 @@ use App\Core\Imports\MarketingImporter;
 use App\Core\Imports\ReservasiImporter;
 use App\Core\Imports\StockImporter;
 use App\Core\Imports\TicketingImporter;
+use App\Erp\Kas\Imports\KasImporter;
 use App\Erp\Master\Imports\BarangImporter;
 use App\Erp\Master\Imports\OrangImporter;
 use App\Erp\Persediaan\Imports\PersediaanImporter;
@@ -65,6 +66,8 @@ final class CoreServiceProvider extends ServiceProvider
             $app->make(OrangImporter::class),
             // ERP recipes: after erp-barang
             $app->make(ResepImporter::class),
+            // ERP cash: after account (names) and erp-orang
+            $app->make(KasImporter::class),
         ));
     }
 

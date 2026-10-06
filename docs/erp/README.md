@@ -62,7 +62,7 @@ Semua area di bawah sudah punya rancangan, migration, model, dan tes skema di `m
 | Akses di dalam Modul | `akses.md` | semua | middleware `halaman:`, seeder halaman, impor matriks lama |
 | Orang & Divisi | `orang-divisi.md` | account, hr, akademi, marketing, konten, bd, stock, dw, event | — (importer `erp-orang` selesai; asumsi L4, L5) |
 | Resep & HPP | `resep-hpp.md` | stock (hpp) | service Modal (importer `erp-resep` selesai) |
-| Kas | `kas.md` | finance, kompas | importer `erp-kas`, service saldo (asumsi L6, L7, M1) |
+| Kas | `kas.md` | finance, kompas | service saldo (importer `erp-kas` selesai; asumsi L6, L7, M1) |
 | Penjualan Harian | `penjualan-harian.md` | kompas, finance | importer `erp-penjualan`, service tiga angka omset, impor ESB |
 | Proyek & PO Proyek | `po-proyek.md` | bd | importer `erp-po-proyek` |
 | Kerja Tim, Log, Notifikasi | `kerja-tim.md` | bd, semua (log/notifikasi) | importer, helper log |
