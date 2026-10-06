@@ -55,6 +55,6 @@ it('refuses values outside the pipeline and quotation rules', function (Closure 
     }],
     'zero payment' => [fn (array $f) => AcaraPembayaran::create(['acara_id' => $f['acara']->id, 'nomor_kwitansi' => 'KW-X', 'nominal' => 0, 'tanggal' => '2026-10-07'])],
     'decided without a time' => [fn (array $f) => AcaraPersetujuan::create(['acara_id' => $f['acara']->id, 'status' => 'disetujui'])],
-    'unknown task state' => [fn (array $f) => AcaraTugas::create(['acara_id' => $f['acara']->id, 'tugas' => 'X', 'status' => 'Done'])],
+    'unknown task state' => [fn (array $f) => AcaraTugas::create(['acara_id' => $f['acara']->id, 'tugas' => 'X', 'status' => 'selesai'])],
     'follow-up about nothing' => [fn (array $f) => TindakLanjutKlien::create(['dicatat_at' => now(), 'catatan' => 'x'])],
 ]);
