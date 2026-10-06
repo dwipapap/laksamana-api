@@ -27,6 +27,7 @@ use App\Core\Imports\TicketingImporter;
 use App\Erp\Master\Imports\BarangImporter;
 use App\Erp\Master\Imports\OrangImporter;
 use App\Erp\Persediaan\Imports\PersediaanImporter;
+use App\Erp\Resep\Imports\ResepImporter;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
 
@@ -62,6 +63,8 @@ final class CoreServiceProvider extends ServiceProvider
             $app->make(PersediaanImporter::class),
             // ERP people and Divisi: after `account` (Users, shift Divisi)
             $app->make(OrangImporter::class),
+            // ERP recipes: after erp-barang
+            $app->make(ResepImporter::class),
         ));
     }
 

@@ -165,6 +165,8 @@ final class BarangImporter implements Importer, ReportsIssues
             'kategori_id' => $kategori !== '' ? KategoriBarang::withTrashed()->firstOrCreate(['nama' => $kategori])->id : null,
             'sumber' => $sumber,
             'aktif' => ($d->aktif ?? true) !== false,
+            // HPP "Perlu ada di Purchasing?" (water, own ice: no); not known = yes, as legacy
+            'dipesan' => ! $hpp || ! property_exists($hpp, 'di_purchasing') || (bool) $hpp->di_purchasing,
         ]);
 
         $this->importSatuan($barang, $d, $satuanDasar);
