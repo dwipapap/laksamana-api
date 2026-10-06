@@ -176,6 +176,14 @@ _Avoid_: Project (in Indonesian text), Program, Event (for the BD record)
 BD's weekly purchase request sheet (PR): the PO Proyek lines of that week, approved by named people one by one.
 _Avoid_: PR (alone in prose), Purchase request, Pesanan Bahan
 
+**Permintaan Koordinasi**:
+A request from one Divisi to another (from BD's board) for something it needs done, moving Diminta → Diproses → Review → Selesai.
+_Avoid_: Ticket, Request (alone), Tugas (a team task)
+
+**Log Aktivitas**:
+The one record of who did what to which object in any Modul; it outlives the object it describes.
+_Avoid_: Audit (alone), History, Riwayat (for this table)
+
 **Pembelian Langsung**:
 A purchase paid on the spot without any order to a vendor (e.g. cash at the market); a document of its own, never a Pesanan Bahan.
 _Avoid_: Belanja PO, Direct order

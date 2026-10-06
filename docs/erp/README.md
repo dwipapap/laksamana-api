@@ -13,6 +13,7 @@ Folder ini adalah titik kerja Tim B (platform & ERP). Keputusan dasarnya:
 | `akses.md` | Akses di dalam Modul: Peran, Akses Halaman, Lingkup, Kewenangan (jawaban Q1) |
 | `hari-operasional.md` | Hari bisnis yang fleksibel lewat buka/tutup per Lokasi (jawaban Q6) |
 | `po-proyek.md` | Proyek BD, Pengajuan Pembelian mingguan + penyetuju, PO Proyek + realisasi |
+| `kerja-tim.md` | Tugas tim, rutinitas, permintaan koordinasi, agenda (BD OS); log aktivitas dan notifikasi bersama semua Modul |
 | `<area>.md` | Rancangan satu area: kegiatan, istilah, ERD Mermaid, siklus dokumen, aturan, pemetaan dari tabel lama |
 
 Kontrak endpoint v2 ditulis di `docs/api/v2/<area>.md` **sebelum** dibangun, supaya Tim A tahu apa yang akan datang.
@@ -47,6 +48,7 @@ Contoh pola migration yang sudah benar: `menu`, `news`, `homepage` di `database/
 | Hari Operasional | finance, kompas, absensi, jadwal, stock | usulan di `hari-operasional.md`, menunggu L8–L10 |
 | **Pembelian & Persediaan** (pertama) | stock, bd, finance (kas kecil) | tabel master + dokumen stok + importer selesai (lihat bagian Status kerja); belum ada service/endpoint v2 |
 | Proyek & PO Proyek (`po-proyek.md`) | bd | ERD + tabel selesai; importer `erp-po-proyek` belum |
+| Kerja Tim, Log, Notifikasi (`kerja-tim.md`) | bd, semua modul (log/notifikasi) | ERD + tabel selesai, di atas PO Proyek; importer belum |
 | Penjualan (omset, booking + DP, paket event, tiket) | finance, reservasi, event, ticketing, marketing | belum mulai |
 | Kas (kas kecil, brankas, setoran, QRIS) | finance, kompas | belum mulai |
 | SDM (absensi → jadwal → upah harian → bonus) | absensi, jadwal, dw, hr, akademi | belum mulai |
@@ -61,6 +63,7 @@ Sudah di `main`:
 | Tabel dokumen stok + `hari_operasional` | migration `2026_10_05_110000`; model `app/Erp/Persediaan/Models` |
 | Importer dari Stock/HPP lama | `core:import erp-barang`, lalu `core:import erp-persediaan` (urutan wajib); kasus yang butuh keputusan orang dicetak di akhir |
 | Tabel Proyek & PO Proyek (`proyek`, `proyek_pic`, `pengajuan_pembelian` + penyetuju, `po_proyek`) | migration `2026_10_07_140000`; model `app/Erp/Proyek/Models` |
+| Tabel Kerja Tim (`tugas_tim` + PIC, `permintaan_koordinasi`, `rutinitas_tim`, `agenda_tim`) + `log_aktivitas`, `notifikasi` | migration `2026_10_07_220000`; model `app/Erp/Proyek/Models`, `app/Core/Models` |
 | Tes | `php artisan test tests/Feature/Erp` (24 tes; butuh dump lama yang sudah dipulihkan, lihat CLAUDE.md §0) |
 
 Belum dikerjakan, urutan yang disarankan:
