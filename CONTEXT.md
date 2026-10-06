@@ -196,6 +196,10 @@ _Avoid_: Belanja PO, Direct order
 A vendor’s bill, paid as a Pembayaran to that vendor; one Tagihan Vendor may cover several orders.
 _Avoid_: Invoice (for our own invoices), Nota
 
+**Acara**:
+A Klien's booking of the venue and F&B (gathering, birthday, package) sold by a Marketing PIC; it moves Lead → Prospect → Approval → Quotation → Deal → done, or Lost, with its quotation lines, payments and tasks.
+_Avoid_: Event (the EMS record the venue runs itself), Booking, Order
+
 **Dompet**:
 A place company money sits whose balance the Office computes: a bank account, the brankas cash, or a Kas Kecil pos. Its balance is its opening balance plus every Arus Kas, never a stored number.
 _Avoid_: Wallet (on screens it is fine), Wadah, Rekening (for the cash or a pos), Account
