@@ -19,6 +19,7 @@ Folder ini adalah titik kerja Tim B (platform & ERP). Keputusan dasarnya:
 | `penjualan-harian.md` | Omset Harian + breakdown PIC, Report Daily per Metode Bayar, Compliment, Bon, Void, target |
 | `resep-hpp.md` | Resep, harga jual, Pengaturan HPP, Kontrol Bahan Baku; aturan hitung Modal dari layar HPP lama |
 | `orang-divisi.md` | Master orang dan divisi: `karyawan`, peran Pihak (klien, talent, KOL, pekerja harian), divisi shift/kantor |
+| `akademi.md` | SDM — Akademi: materi, program belajar, progres, log |
 | `sdm.md` | SDM — Jadwal (shift, pengajuan), Absensi (ketukan, wajah, lokasi), Pekerja Harian (permintaan, penugasan, upah, transfer) |
 | `event-tiket.md` | Tamu — Event (persetujuan, vendor, sponsor), kelas tiket, kursi, Buyer, pesanan, tiket, check-in, refund, jadwal & pembayaran talent |
 | `<area>.md` | Rancangan satu area: kegiatan, istilah, ERD Mermaid, siklus dokumen, aturan, pemetaan dari tabel lama |
@@ -60,6 +61,8 @@ Contoh pola migration yang sudah benar: `menu`, `news`, `homepage` di `database/
 | Tamu — Event & Tiket (`event-tiket.md`) | event, ticketing | ERD + tabel selesai, di atas Orang & Divisi; importer `erp-event` belum |
 | Tamu — Reservasi, Acara Marketing | reservasi, marketing | Reservasi: PR terpisah; Acara Marketing belum mulai |
 | Kas (kas kecil, brankas, setoran, QRIS) | finance, kompas | belum mulai |
+| SDM — Akademi (`akademi.md`) | akademi | ERD + tabel selesai, di atas Orang & Divisi; importer `erp-akademi` belum |
+| SDM — Jadwal/Absensi/DW, HR | jadwal, absensi, dw, hr | Jadwal/Absensi/DW: PR terpisah; HR belum mulai |
 | SDM — Jadwal, Absensi, Pekerja Harian (`sdm.md`) | jadwal, absensi, dw | ERD + tabel selesai, di atas Orang & Divisi; importer `erp-sdm` belum |
 | SDM — HR (kinerja, KPI), Akademi | hr, akademi | belum mulai |
 | Tamu — Reservasi (`reservasi.md`) | reservasi | ERD + tabel selesai, di atas Kas; importer `erp-reservasi` belum |
@@ -89,6 +92,7 @@ Sudah di `main`:
 | Tabel Resep & HPP (`resep`, `resep_baris`, `resep_harga`, `pengaturan_hpp`, `kontrol_bahan` + baris), kolom baru `satuan.keluarga/faktor`, `barang.dipesan` | migration `2026_10_07_100000`; model `app/Erp/Resep/Models` |
 | Tes | `php artisan test tests/Feature/Erp` (24 tes; butuh dump lama yang sudah dipulihkan, lihat CLAUDE.md §0) |
 | Tabel orang & divisi (`karyawan`, `klien`, `talent`, `kol`, `pekerja_harian` + divisi), kolom baru `divisi.nama/jenis/aktif`, `pihak.email/alamat/instagram` | migration `2026_10_07_090000`; model `app/Erp/Master/Models` |
+| Tabel Akademi (`materi`, `materi_divisi`, `program_belajar`, `program_materi`, `progres_materi`, `progres_program`, `aktivitas_akademi`, pengaturan) | migration `2026_10_07_180000`; model `app/Erp/Akademi/Models` |
 | Tabel SDM (`shift`, `jadwal_kru`, `pengajuan_jadwal`, `ketukan_absen`, `wajah_terdaftar`, `lokasi_absen`, `permintaan_dw`, `penugasan_dw`, `pembayaran_dw`, tarif, pengaturan) | migration `2026_10_07_170000`; model `app/Erp/Sdm/Models` |
 | Tabel Event & Tiket (`event`, `kelas_tiket`, `kursi`, `buyer`, `pesanan_tiket`, `tiket`, `checkin_tiket`, `refund_tiket`, jadwal/pembayaran talent, …) | migration `2026_10_07_160000`; model `app/Erp/Tamu/Models` |
 | Tes | `php artisan test tests/Feature/Erp` (30 tes; tes importer butuh dump lama yang sudah dipulihkan, lihat CLAUDE.md §0; tes skema cukup database kosong) |
