@@ -2,7 +2,7 @@
 
 Jawaban owner Q1 (2026-10-02): semua kru adalah User Office. Owner juga meminta agar **di dalam modul** kru tertentu tidak melihat atau tidak bisa memakai sebagian fitur.
 Dokumen ini merancang bagaimana permintaan itu dijaga oleh server untuk semua modul, bukan oleh layar per modul.
-Status: **usulan**, menunggu L3 di [`pertanyaan-owner.md`](pertanyaan-owner.md).
+Status: **tabel jadi** (migration `2026_10_07_120000_create_erp_akses_tables.php`, model `app/Erp/Akses/Models`). Middleware dan seeder halaman per Modul belum. L3 di [`pertanyaan-owner.md`](pertanyaan-owner.md) hanya menentukan siapa yang boleh mengubah matriks, bukan bentuk tabelnya.
 
 ## Kondisi sekarang
 
@@ -99,6 +99,19 @@ erDiagram
 - `penempatan_peran` memiliki kunci unik `(user_id, modul_id)`: satu Peran per User per Modul. User tanpa baris di sini memakai peran `bawaan = true` milik Modul itu.
 - `tingkat` dibatasi `CHECK (tingkat IN (0,1,2))`; `lingkup` dibatasi `CHECK (lingkup IN ('sendiri','divisi','semua'))`.
 - Lingkup `divisi` dihitung dari **Kepala Divisi** dan Penempatan Divisi yang sudah ada di core. Tidak ada daftar head kedua.
+
+### Keputusan saat dijadikan migration (2026-10-07)
+
+- **Satu Modul per baris matriks, dijaga database.** `peran_halaman`, `peran_kewenangan`, dan `penempatan_peran` menyimpan `modul_id` dan memakai FK komposit `(peran_id, modul_id)`, `(halaman_id, modul_id)`, `(kewenangan_id, modul_id)`. Peran Kas tidak bisa diberi halaman Stock, dan penempatan di Stock tidak bisa menunjuk peran Kas.
+- **Peran bawaan:** kolom `bawaan` bernilai `1` atau `NULL`, dengan unik `(modul_id, bawaan)`: paling banyak satu per Modul. Tanpa kolom generated, karena MariaDB menolak sebagian bentuknya (lihat PR #208).
+- **Matriks tersimpan utuh, bukan selisih.** Matriks lama (`kk_akses`) hanya menyimpan sel yang berbeda dari bawaan di kode. Di v2 bawaan per Peran ditulis oleh seeder saat sebuah halaman didaftarkan. Halaman baru tetap langsung punya bawaan, dan isi matriks bisa dibaca dari database tanpa kode.
+- **Hapus:** matriks ikut terhapus bersama Peran-nya (`CASCADE`); Peran yang masih dipegang User tidak bisa dihapus (`RESTRICT`); User yang dihapus membawa penempatannya (`CASCADE`, sama dengan `izin_akses`).
+
+Dijaga service, tidak database:
+
+- `halaman.bisa_ubah = false` menjepit Tingkat ke 1 (beda tabel).
+- `lingkup` di `peran_halaman` hanya diisi untuk halaman `data_per_orang`.
+- Admin Modul selalu Tingkat 2 dengan Lingkup `semua`, apa pun Peran-nya.
 
 ### Penegakan
 
