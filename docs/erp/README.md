@@ -66,7 +66,7 @@ Belum dikerjakan, urutan yang disarankan:
 2. Service + endpoint v2 pertama: buka/tutup Hari Operasional, pesanan bahan + check-in (menulis mutasi CK), saldo stok CK. Kode di `app/Erp/<Area>/` (`Services/`, `Http/V2/`, `routes/v2.php`); auto-load route v2 belum ada.
 3. Akses di dalam Modul (`akses.md`): tabel peran/halaman/lingkup/kewenangan + middleware v2.
 4. Area Kas: master `rekening`, Planning Pembayaran, `tagihan_vendor` (ditunda dari area ini).
-5. Uji semua migration v2 di MariaDB 10.11 (production); sejauh ini baru di MySQL 8.4 lokal.
+5. ~~Uji semua migration v2 di MariaDB 10.11~~ (2026-10-06: semua migration + tes skema `tests/Feature/Erp` lolos di MariaDB 10.11 setelah `hari_operasional.lokasi_buka` diperbaiki, MariaDB menolak kolom stored `CASE … THEN <kolom CHAR>`; tes importer belum, butuh dump lama). Kolom generated v2 berikutnya: uji di MariaDB juga.
 6. Pindahkan foto serah terima/waste dari blob database lama ke penyimpanan berkas.
 
 Menunggu orang lain: jawaban owner putaran 2 (L1–L11, `pertanyaan-owner.md`; L1 paling menentukan), dan keputusan Purchasing/Kitchen atas daftar yang dicetak importer.
