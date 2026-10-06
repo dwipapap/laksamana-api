@@ -67,7 +67,7 @@ Semua area di bawah sudah punya rancangan, migration, model, dan tes skema di `m
 | Proyek & PO Proyek | `po-proyek.md` | bd | — (importer `erp-po-proyek` selesai) |
 | Kerja Tim, Log, Notifikasi | `kerja-tim.md` | bd, semua (log/notifikasi) | helper log (importer `erp-kerja-tim` selesai) |
 | Tamu — Reservasi | `reservasi.md` | reservasi | DP ke `arus_kas`; metode DP tanpa padanan (importer selesai) |
-| Tamu — Event & Tiket | `event-tiket.md` | event, ticketing | importer `erp-event`, uang tiket ke `arus_kas` |
+| Tamu — Event & Tiket | `event-tiket.md` | event, ticketing | uang tiket ke `arus_kas` (importer `erp-event` selesai) |
 | Tamu — Acara Marketing | `acara-marketing.md` | marketing | importer `erp-acara`; VIP (M6) |
 | SDM — Jadwal, Absensi, DW | `sdm.md` | jadwal, absensi, dw | importer `erp-sdm`, service upah DW |
 | SDM — HR | `hr.md` | hr | importer `erp-hr`, service People Score (M5, M7) |
@@ -75,25 +75,47 @@ Semua area di bawah sudah punya rancangan, migration, model, dan tes skema di `m
 | Konten | `konten.md` | konten | importer `erp-konten` |
 | Di luar ERP (usulan) | `peta-core.md` | hlife | menunggu M2 |
 
-## Status kerja (2026-10-07) — baca ini dulu kalau melanjutkan
+## Status kerja (2026-10-08) — Tim B DIPENDING, baca ini dulu kalau melanjutkan
 
-Sudah di `main`: semua migration v2 `2026_10_05_*` dan `2026_10_07_*` (daftar tabel per area di `peta-core.md`), model di `app/Erp/<Area>/Models` (+ `app/Core/Models` untuk log dan notifikasi), tes skema `tests/Feature/Erp/*SchemaTest.php`, importer `erp-barang` dan `erp-persediaan`.
+Pekerjaan Tim B **dihentikan sementara** atas keputusan owner proyek. Semua yang di bawah tertulis supaya siapa pun bisa melanjutkan tanpa ingatan sesi sebelumnya.
 
-Tes:
+### Sudah di `main`
 
-- `php artisan test tests/Feature/Erp --filter=Schema`: cukup database kosong (tidak butuh dump). Per 2026-10-07 lolos di Docker MariaDB 10.11 dan MySQL 8.4, termasuk `migrate` → `migrate:rollback` → `migrate`.
-- Tes importer (`*ImportTest.php`) butuh dump lama yang sudah dipulihkan (CLAUDE.md §0).
+Rancangan, migration, model, dan tes skema untuk semua area di tabel "Urutan area dan status" (PR #204–#225). Peta: `peta-core.md`.
 
-Belum dikerjakan, urutan yang disarankan:
+### Di PR #226 `feat/erp-importers` (belum di-merge)
 
-1. **Importer per area** (`core:import erp-orang`, lalu area lain sesuai urutan di `peta-core.md`), dengan pencocok nama → User bersama. Butuh mesin dengan dump lama.
-2. **Service** aturan yang dulu dihitung di peramban: Modal resep, saldo dompet, tiga angka omset, upah DW, People Score. Bandingkan dengan layar lama.
-3. **Kontrak API v2** per area di `docs/api/v2/<area>.md` (umumkan ke Tim A sebelum dibangun), lalu auto-load route `app/Erp/*/routes/v2.php` dan middleware Akses.
-4. **Uang ke `arus_kas`** dari tiket, DP reservasi, pembayaran acara, honor talent, transfer DW, realisasi PO Proyek.
-5. Pindahkan foto/bukti dari blob database lama ke penyimpanan berkas.
-6. Migration penghapus tabel `core` per-modul yang dibekukan, setelah Modul-nya pindah ke v2.
+Importer yang sudah ditulis dan dicocokkan dengan **salinan lokal produksi** (total uang sama sampai rupiah, idempoten):
 
-Menunggu orang lain: jawaban owner putaran 2 (L1–L11) dan 3 (M1–M8) di `pertanyaan-owner.md`; keputusan Purchasing/Kitchen atas daftar yang dicetak importer Barang/Persediaan.
+| Urutan | Importer | Dari |
+|---|---|---|
+| 1 | `account` (identitas, sudah lama) | account, jadwal |
+| 2 | `erp-barang`, `erp-persediaan` (sudah lama) | stock |
+| 3 | `erp-orang` | hr, dw, ems, marketing, konten, bd |
+| 4 | `erp-resep` | stock (hpp) |
+| 5 | `erp-kas` | finance, kompas |
+| 6 | `erp-po-proyek`, `erp-kerja-tim` | bd (+ log semua modul) |
+| 7 | `erp-reservasi` | reservasi |
+| 8 | `erp-event` | ems |
+| 9 | `erp-penjualan` (jalankan **paling akhir**, menautkan sumber breakdown ke acara/reservasi/event) | kompas |
+
+Juga di PR itu: migration `2026_10_08_090000`–`120000` (kolom yang ternyata dibutuhkan data asli), `PencocokUser` (id Office → username → nama), `MenulisImpor` (helper bersama). Hasil dan kasus yang perlu diputuskan tercatat di bagian "Hasil impor" tiap dokumen area.
+
+### Belum dikerjakan
+
+1. Importer `erp-sdm` (jadwal, dw; **absensi tidak ada dump produksi**, hanya dev), `erp-akademi`, `erp-acara` (lalu ulang `erp-penjualan`), `erp-hr`, `erp-konten`.
+2. Service aturan yang dulu dihitung di peramban (Modal resep, saldo dompet, tiga angka omset, upah DW, People Score) dan pembandingnya dengan layar lama.
+3. Kontrak dan endpoint API v2 (`docs/api/v2/`, route `app/Erp/*/routes/v2.php`, middleware Akses).
+4. Uang ke `arus_kas` dari tiket, DP, pembayaran acara, honor talent, transfer DW, realisasi PO.
+5. Pemindahan berkas (bukti, poster, foto) dari folder data lama.
+6. Keputusan owner: putaran 2 (L1–L11), putaran 3 (M1–M8), dan kasus "to decide" dari importer.
+
+### Menyiapkan data lokal untuk melanjutkan
+
+1. Ekspor database lama dari phpMyAdmin (SQL, gzip, satu berkas per database, nama = nama database) ke `../db-backup/` (di luar repo).
+2. Restore ke MariaDB 10.11 lokal (versi produksi), mis. Docker dengan `--character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci`; buat juga `lakk5493_laksamana_core`, `lakk5493_laksamana_core_test`, dan database kosong untuk modul yang tidak punya dump (absensi).
+3. `php artisan migrate --database=core`, lalu jalankan importer sesuai urutan di atas. `core:import` hanya menerima host `127.0.0.1`/`localhost`: jalankan PHP di host yang sama dengan databasenya (pada Docker: `--network container:<db>`).
+4. Tes: `php artisan test tests/Feature/Erp` (skema + importer), terhadap data yang sama.
 
 ## Aturan kerja
 
