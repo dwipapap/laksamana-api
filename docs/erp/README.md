@@ -13,6 +13,7 @@ Folder ini adalah titik kerja Tim B (platform & ERP). Keputusan dasarnya:
 | `akses.md` | Akses di dalam Modul: Peran, Akses Halaman, Lingkup, Kewenangan (jawaban Q1) |
 | `hari-operasional.md` | Hari bisnis yang fleksibel lewat buka/tutup per Lokasi (jawaban Q6) |
 | `orang-divisi.md` | Master orang dan divisi: `karyawan`, peran Pihak (klien, talent, KOL, pekerja harian), divisi shift/kantor |
+| `event-tiket.md` | Tamu — Event (persetujuan, vendor, sponsor), kelas tiket, kursi, Buyer, pesanan, tiket, check-in, refund, jadwal & pembayaran talent |
 | `<area>.md` | Rancangan satu area: kegiatan, istilah, ERD Mermaid, siklus dokumen, aturan, pemetaan dari tabel lama |
 
 Kontrak endpoint v2 ditulis di `docs/api/v2/<area>.md` **sebelum** dibangun, supaya Tim A tahu apa yang akan datang.
@@ -47,7 +48,8 @@ Contoh pola migration yang sudah benar: `menu`, `news`, `homepage` di `database/
 | Akses di dalam Modul | semua modul | usulan di `akses.md`, menunggu L3 |
 | Hari Operasional | finance, kompas, absensi, jadwal, stock | usulan di `hari-operasional.md`, menunggu L8–L10 |
 | **Pembelian & Persediaan** (pertama) | stock, bd, finance (kas kecil) | tabel master + dokumen stok + importer selesai (lihat bagian Status kerja); belum ada service/endpoint v2 |
-| Penjualan (omset, booking + DP, paket event, tiket) | finance, reservasi, event, ticketing, marketing | belum mulai |
+| Tamu — Event & Tiket (`event-tiket.md`) | event, ticketing | ERD + tabel selesai, di atas Orang & Divisi; importer `erp-event` belum |
+| Tamu — Reservasi, Acara Marketing | reservasi, marketing | Reservasi: PR terpisah; Acara Marketing belum mulai |
 | Kas (kas kecil, brankas, setoran, QRIS) | finance, kompas | belum mulai |
 | SDM (absensi → jadwal → upah harian → bonus) | absensi, jadwal, dw, hr, akademi | belum mulai |
 
@@ -61,6 +63,7 @@ Sudah di `main`:
 | Tabel dokumen stok + `hari_operasional` | migration `2026_10_05_110000`; model `app/Erp/Persediaan/Models` |
 | Importer dari Stock/HPP lama | `core:import erp-barang`, lalu `core:import erp-persediaan` (urutan wajib); kasus yang butuh keputusan orang dicetak di akhir |
 | Tabel orang & divisi (`karyawan`, `klien`, `talent`, `kol`, `pekerja_harian` + divisi), kolom baru `divisi.nama/jenis/aktif`, `pihak.email/alamat/instagram` | migration `2026_10_07_090000`; model `app/Erp/Master/Models` |
+| Tabel Event & Tiket (`event`, `kelas_tiket`, `kursi`, `buyer`, `pesanan_tiket`, `tiket`, `checkin_tiket`, `refund_tiket`, jadwal/pembayaran talent, …) | migration `2026_10_07_160000`; model `app/Erp/Tamu/Models` |
 | Tes | `php artisan test tests/Feature/Erp` (30 tes; tes importer butuh dump lama yang sudah dipulihkan, lihat CLAUDE.md §0; tes skema cukup database kosong) |
 
 Belum dikerjakan, urutan yang disarankan:

@@ -146,6 +146,26 @@ _Avoid_: Artist, Performer, Pengisi acara
 A Pihak that promotes the venue on social media for Konten, paid per post or visit.
 _Avoid_: Influencer, Endorser
 
+**Event**:
+A night or programme the venue runs, from Planning through approval to Upcoming and Event Done; only an Upcoming Event may sell tickets.
+_Avoid_: Acara (for the EMS record), Show, Proyek (BD's record)
+
+**Kelas Tiket**:
+A kind of ticket for one Event with its price, quota and sale window; a seated class is sold per seat or table.
+_Avoid_: Ticket type, Tier (a seat attribute)
+
+**Pesanan Tiket**:
+A Buyer's (or an on-site guest's) order of tickets for one Event; paid only when the payment gateway says so.
+_Avoid_: Order (alone), Booking, Transaksi
+
+**Tiket**:
+One issued ticket with its QR code, checked in at the gate; a check-in is undone by a correction, never deleted.
+_Avoid_: E-ticket (on screens it is fine), Voucher
+
+**Jadwal Talent**:
+One performance a Talent is booked for, at the fee agreed then; Talent are paid per month for the performances done.
+_Avoid_: Booking talent, Gig
+
 **Buyer**:
 A member of the public who buys event tickets on the public ticket shop with an email and password. A Buyer is not a User: separate accounts (`tix_users`), their own sessions, no Akses, and never listed on the Roster.
 _Avoid_: Pembeli (in code), Customer account, User, Member
