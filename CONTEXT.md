@@ -146,6 +146,14 @@ _Avoid_: Artist, Performer, Pengisi acara
 A Pihak that promotes the venue on social media for Konten, paid per post or visit.
 _Avoid_: Influencer, Endorser
 
+**Konten**:
+One piece of social-media content for a brand (a Reel, a Story, a carousel, …) moving from idea to posted, approved stage by stage, with its performance kept per platform.
+_Avoid_: Post (alone), Content (in Indonesian text); the Konten Modul is the panel, not one piece
+
+**Iklan**:
+A paid ad of a brand on an ad platform, with its budget, objective, status and the money spent on it day by day including VAT.
+_Avoid_: Ads (in Indonesian text), Promo (a BD record), Boost
+
 **Buyer**:
 A member of the public who buys event tickets on the public ticket shop with an email and password. A Buyer is not a User: separate accounts (`tix_users`), their own sessions, no Akses, and never listed on the Roster.
 _Avoid_: Pembeli (in code), Customer account, User, Member
