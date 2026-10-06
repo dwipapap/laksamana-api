@@ -64,8 +64,8 @@ Semua area di bawah sudah punya rancangan, migration, model, dan tes skema di `m
 | Resep & HPP | `resep-hpp.md` | stock (hpp) | service Modal (importer `erp-resep` selesai) |
 | Kas | `kas.md` | finance, kompas | service saldo (importer `erp-kas` selesai; asumsi L6, L7, M1) |
 | Penjualan Harian | `penjualan-harian.md` | kompas, finance | service tiga angka omset, impor ESB (importer `erp-penjualan` selesai) |
-| Proyek & PO Proyek | `po-proyek.md` | bd | importer `erp-po-proyek` |
-| Kerja Tim, Log, Notifikasi | `kerja-tim.md` | bd, semua (log/notifikasi) | importer, helper log |
+| Proyek & PO Proyek | `po-proyek.md` | bd | — (importer `erp-po-proyek` selesai) |
+| Kerja Tim, Log, Notifikasi | `kerja-tim.md` | bd, semua (log/notifikasi) | helper log (importer `erp-kerja-tim` selesai) |
 | Tamu — Reservasi | `reservasi.md` | reservasi | importer `erp-reservasi`, DP ke `arus_kas` |
 | Tamu — Event & Tiket | `event-tiket.md` | event, ticketing | importer `erp-event`, uang tiket ke `arus_kas` |
 | Tamu — Acara Marketing | `acara-marketing.md` | marketing | importer `erp-acara`; VIP (M6) |
