@@ -193,21 +193,53 @@ A purchase paid on the spot without any order to a vendor (e.g. cash at the mark
 _Avoid_: Belanja PO, Direct order
 
 **Tagihan Vendor**:
-A vendor’s bill; one Tagihan Vendor may cover several orders.
+A vendor’s bill, paid as a Pembayaran to that vendor; one Tagihan Vendor may cover several orders.
 _Avoid_: Invoice (for our own invoices), Nota
 
+**Dompet**:
+A place company money sits whose balance the Office computes: a bank account, the brankas cash, or a Kas Kecil pos. Its balance is its opening balance plus every Arus Kas, never a stored number.
+_Avoid_: Wallet (on screens it is fine), Wadah, Rekening (for the cash or a pos), Account
+
+**Arus Kas**:
+One amount going into or out of a Dompet, always pointing at the one document that moved it.
+_Avoid_: Mutasi (alone), Transaction, Cash flow statement
+
+**Kas Kecil**:
+The petty-cash book: transactions split over pos, each marked whether it is already in the books and whether its receipt (bon) is in hand.
+_Avoid_: Petty cash, Kas (alone)
+
+**Mutasi Wallet**:
+Money moved by hand between two Dompet, or put into or taken out of one from outside the Office.
+_Avoid_: Transfer (alone), Mutasi (alone)
+
+**Setoran**:
+Cash carried from the brankas to a bank, covering the takings of one or more days; never more than what is left of each day's cash.
+_Avoid_: Deposit, Setor (as a noun)
+
+**Planning Pembayaran**:
+The sheets of payments to be made on a payment date, grouped by the Dompet they are paid from; a payment only lowers a balance once it is marked paid.
+_Avoid_: Payment plan, Jadwal bayar
+
+**Pembayaran**:
+One line of Planning Pembayaran: what is paid, to whom if anyone, from which Dompet, and when it was paid and proven.
+_Avoid_: Payment, Transfer
+
+**Metode Bayar**:
+How a guest paid (cash, QRIS BRI, EDC BCA, QR Order, …), and the Dompet that money lands in.
+_Avoid_: Payment type, Channel
+
+**Investor**:
+A Pihak that put capital into the company and is paid it back over time from a Dompet (Pengembalian Modal).
+_Avoid_: Shareholder, Pemodal
 **Resep**:
 How one base, menu or prasmanan dish is made: lines of Barang or other Resep with a quantity, cooking-step notes, and a yield. Food and drink Resep may share a name; a line finds its sub-Resep in its own kind first.
 _Avoid_: Recipe, BOM, Menu (for the recipe itself)
-
 **Modal**:
 What one yield of a Resep costs in Barang, computed from current purchase prices through every sub-Resep; a menu's Modal adds the Spare once. Never stored on the Resep; a report that needs it keeps a copy.
 _Avoid_: HPP (for one dish; HPP is the module), Cost, Biaya
-
 **Spare**:
 A percentage added once to a menu's Modal to cover shrinkage and uneven portions, set in Pengaturan HPP; never added to a base.
 _Avoid_: Buffer (old setting name), Margin
-
 **Kontrol Bahan Baku**:
 The monthly check of one Lokasi: per Barang, opening stock, purchases, closing count, and what Resep, spoil, team meals, RND and compliments should have used; the gap shows as a green, yellow or red light.
 _Avoid_: Stock control, COGS bulanan
