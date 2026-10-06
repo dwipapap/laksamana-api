@@ -144,7 +144,7 @@ v2 mempertahankan alur ini apa adanya, termasuk "outlet belum punya saldo". Peru
 ## ERD dokumen
 
 Sudah menjadi migration `2026_10_05_110000_create_erp_persediaan_tables.php`, dengan beberapa perbedaan dari diagram di bawah:
-- `rencana_bayar`, `tagihan_vendor`, dan `tagihan_vendor_pesanan` ditunda ke area Kas.
+- `rencana_bayar`, `tagihan_vendor`, dan `tagihan_vendor_pesanan` ditunda ke area Kas, dan di sana menjadi `rencana_bayar`, `pembayaran`, `pembayaran_pesanan`, dengan `dompet` sebagai rekening pembayar ([`kas.md`](kas.md)).
 - Setiap dokumen punya `nomor` unik, `tanggal_bisnis`, `hari_operasional_id` (nullable: CK memakai tanggal kalender, L10), dan pembatalan `dibatalkan_at`/`dibatalkan_oleh` (kecuali Pesanan Bahan, yang dibatalkan per baris, serta Opname dan Penyesuaian yang memakai status).
 - Teks lama yang tidak cocok dengan baris mana pun disimpan di kolom `*_impor` (misalnya `diajukan_oleh_impor`); v2 tidak pernah menulisnya.
 - Aturan yang dijaga database (diuji di `tests/Feature/Erp/PersediaanSchemaTest.php`): satu Hari Operasional terbuka per Lokasi; mutasi tepat satu asal yang cocok dengan `sebab`, dan satu baris asal hanya sekali menggerakkan stok; baris dari CK tanpa vendor; qty > 0; penyesuaian `disahkan` wajib `disahkan_at` dan qty ≠ 0.
