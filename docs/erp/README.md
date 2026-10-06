@@ -14,6 +14,7 @@ Folder ini adalah titik kerja Tim B (platform & ERP). Keputusan dasarnya:
 | `akses.md` | Akses di dalam Modul: Peran, Akses Halaman, Lingkup, Kewenangan (jawaban Q1) |
 | `hari-operasional.md` | Hari bisnis yang fleksibel lewat buka/tutup per Lokasi (jawaban Q6) |
 | `orang-divisi.md` | Master orang dan divisi: `karyawan`, peran Pihak (klien, talent, KOL, pekerja harian), divisi shift/kantor |
+| `konten.md` | Modul pendukung — Konten: brand, konten + tayang per platform, persetujuan, iklan + biaya, dana iklan, KOL, tugas produksi |
 | `hr.md` | SDM — HR: People Score (KPI, input bulanan, review berlapis, feedback, pelanggaran, kehadiran Talenta), skor bulanan yang ditutup |
 | `kas.md` | Dompet, Arus Kas, Kas Kecil, Mutasi Wallet, Setoran, Planning Pembayaran, Pengembalian Modal |
 | `acara-marketing.md` | Tamu — Acara Marketing: booking klien, quotation, pembayaran, persetujuan, tugas, tindak lanjut |
@@ -80,6 +81,7 @@ Contoh pola migration yang sudah benar: `menu`, `news`, `homepage` di `database/
 | Penjualan (omset, booking + DP, paket event, tiket) | finance, reservasi, event, ticketing, marketing | belum mulai |
 | Kas (`kas.md`) | finance, kompas | ERD + tabel selesai (asumsi L6, L7); importer `erp-kas` dan service saldo belum (butuh dump) |
 | SDM (absensi → jadwal → upah harian → bonus) | absensi, jadwal, dw, hr, akademi | belum mulai |
+| Modul pendukung — Konten (`konten.md`) | konten | ERD + tabel selesai, di atas Orang & Divisi; importer `erp-konten` belum |
 
 ## Status kerja (2026-10-07) — baca ini dulu kalau melanjutkan
 
@@ -91,6 +93,7 @@ Sudah di `main`:
 | Tabel dokumen stok + `hari_operasional` | migration `2026_10_05_110000`; model `app/Erp/Persediaan/Models` |
 | Importer dari Stock/HPP lama | `core:import erp-barang`, lalu `core:import erp-persediaan` (urutan wajib); kasus yang butuh keputusan orang dicetak di akhir |
 | Tabel orang & divisi (`karyawan`, `klien`, `talent`, `kol`, `pekerja_harian` + divisi), kolom baru `divisi.nama/jenis/aktif`, `pihak.email/alamat/instagram` | migration `2026_10_07_090000`; model `app/Erp/Master/Models` |
+| Tabel Konten (`brand_konten`, `konten`, `konten_tayang`, `konten_persetujuan`, `iklan` + biaya, `dana_iklan`, `kol_tarif`, `kunjungan_kol`, `tugas_produksi`, `ide_konten`, `kru_konten`) | migration `2026_10_07_210000`; model `app/Erp/Konten/Models` |
 | Tabel HR (`kpi_template`/`kpi_item`/`kpi_realisasi`, `input_bulanan_hr`, `review_kinerja` + nilai, `feedback_kinerja`, `pelanggaran`, `impor_kehadiran`/`kehadiran_talenta`, `skor_kinerja`, pengaturan) | migration `2026_10_07_200000`; model `app/Erp/Sdm/Models` |
 | Tabel Acara Marketing (`acara`, `acara_rincian`, `acara_pembayaran`, `acara_persetujuan`, `acara_tugas`, `template_tugas_acara`, `tindak_lanjut_klien`) | migration `2026_10_07_190000`; model `app/Erp/Tamu/Models` |
 | Tes | `php artisan test tests/Feature/Erp` (30 tes; tes importer butuh dump lama yang sudah dipulihkan, lihat CLAUDE.md §0; tes skema cukup database kosong) |

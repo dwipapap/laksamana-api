@@ -150,10 +150,16 @@ _Avoid_: Artist, Performer, Pengisi acara
 A Pihak that promotes the venue on social media for Konten, paid per post or visit.
 _Avoid_: Influencer, Endorser
 
+**Konten**:
+One piece of social-media content for a brand (a Reel, a Story, a carousel, …) moving from idea to posted, approved stage by stage, with its performance kept per platform.
+_Avoid_: Post (alone), Content (in Indonesian text); the Konten Modul is the panel, not one piece
+
+**Iklan**:
+A paid ad of a brand on an ad platform, with its budget, objective, status and the money spent on it day by day including VAT.
+_Avoid_: Ads (in Indonesian text), Promo (a BD record), Boost
 **Materi**:
 A lesson in Akademi made of ordered steps (text, video, quiz) for some or all Divisi, with its own passing score or the default one.
 _Avoid_: Course, Modul (the Office term), Training (HR's record)
-
 **Program Belajar**:
 A month's set of Materi with a deadline; a learner's progress is kept per Materi and per Program, and outlives a retired Materi.
 _Avoid_: Program (alone), Curriculum
