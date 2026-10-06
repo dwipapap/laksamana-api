@@ -107,8 +107,8 @@ A User's free-text job label (e.g. "Kitchen Bar", "Kasir Office", "Head Marketin
 _Avoid_: Team, Keterangan, Organization
 
 **Divisi**:
-One of the four shift units — bar, kitchen, floor, cashier — that shift crew work in. A User belongs to at most one: their Penempatan Divisi if set, otherwise the first Divisi their Tim names, unless the Tim marks them as office staff.
-_Avoid_: Department, Tim, Organization (the HR field is separate data)
+A unit of the organisation, one list for every Modul (owner, Q2). A **shift** Divisi (bar, kitchen, floor, cashier) is where shift crew work; Jadwal, Penempatan Divisi and Kepala Divisi only ever name these. A **kantor** Divisi (Finance, Event, Marketing & Digital, …) groups office staff for HR, Akademi and KPI. In Jadwal a User belongs to at most one shift Divisi: their Penempatan Divisi if set, otherwise the first Divisi their Tim names, unless the Tim marks them as office staff. Separately, their Karyawan record names the one Divisi they belong to in the organisation.
+_Avoid_: Department, Tim, Organization (the Roster field is separate free text)
 
 **Nonshift**:
 A User outside every Divisi: office staff (Tim says Office/Kantor) or anyone whose Tim names no Divisi.
@@ -126,12 +126,32 @@ _Avoid_: Head, Leader, Manager
 A User whose Tim marks them as a head (the word "Head"), which counts for leader bonuses; unrelated to Kepala Divisi.
 _Avoid_: Head, Kepala Divisi
 
+**Karyawan**:
+The HR record of a User: their organisational Divisi, their superior, contract and probation dates; one per User. Every Karyawan is a User; a Pekerja Harian, Talent or Klien never is.
+_Avoid_: Employee, Pegawai, Staf, Kru
+
+**Pihak**:
+A person or organisation outside the Users that the company deals with. What it is to us is a role it holds — vendor, Klien, Talent, KOL, Pekerja Harian — and one Pihak may hold several.
+_Avoid_: Party, Kontak, Partner, Customer
+
+**Klien**:
+A Pihak that books or buys events and packages through Marketing, followed up by a Marketing PIC.
+_Avoid_: Client, Customer, Tamu (a walk-in or reservation guest)
+
+**Talent**:
+A Pihak that performs at the venue (band, DJ, singer) and is paid per performance.
+_Avoid_: Artist, Performer, Pengisi acara
+
+**KOL**:
+A Pihak that promotes the venue on social media for Konten, paid per post or visit.
+_Avoid_: Influencer, Endorser
+
 **Buyer**:
 A member of the public who buys event tickets on the public ticket shop with an email and password. A Buyer is not a User: separate accounts (`tix_users`), their own sessions, no Akses, and never listed on the Roster.
 _Avoid_: Pembeli (in code), Customer account, User, Member
 
 **Pekerja Harian**:
-A daily worker hired per need; not a User, never logs in, identified by phone number, and may work in several Divisi.
+A daily worker hired per need; a Pihak, not a User, never logs in to the Office, identified by phone number, and may work in several Divisi.
 _Avoid_: DW (as a person), Kru, Freelancer, Part-timer
 
 ### Operations & stock
@@ -168,6 +188,14 @@ _Avoid_: PO (alone), Order
 A purchase order raised in BD for a project or event; a different flow from Pesanan Bahan.
 _Avoid_: PO (alone), Purchase request
 
+**Proyek**:
+A BD project or event with a budget, a stage (idea to completed) and one or more PICs; its spend is the sum of what its PO Proyek really cost.
+_Avoid_: Project (in Indonesian text), Program, Event (for the BD record)
+
+**Pengajuan Pembelian**:
+BD's weekly purchase request sheet (PR): the PO Proyek lines of that week, approved by named people one by one.
+_Avoid_: PR (alone in prose), Purchase request, Pesanan Bahan
+
 **Pembelian Langsung**:
 A purchase paid on the spot without any order to a vendor (e.g. cash at the market); a document of its own, never a Pesanan Bahan.
 _Avoid_: Belanja PO, Direct order
@@ -183,6 +211,24 @@ _Avoid_: Booking (in Indonesian text), Order, Tamu (for the record)
 **DP**:
 Money a guest pays ahead for a Reservasi or an event booking, possibly in instalments; each instalment is verified against its transfer proof.
 _Avoid_: Deposit, Uang muka (on screens it is fine), Down payment
+**Omset Harian**:
+One business day's sales of a Lokasi as entered in Input Omset Harian (food, beverage, other, discount, service, tax, bills, traffic), with its breakdown by source and PIC. Three totals come from it and all three are right on their own screen: net (Dashboard Omset), tagihan (Rekap Penjualan) and net sales (CFO report, tagihan minus compliment).
+_Avoid_: Omset (alone, it is ambiguous), Revenue, Sales
+**Report Daily**:
+The cashier's count for one business day: per Metode Bayar, what the POS says and what is actually there; Rekap Penjualan later adds what reached the bank.
+_Avoid_: Laporan Harian (alone), Closing, EOD
+**Porsi PIC**:
+The part of a day's sales credited to one PIC (Marketing, Event, Kasir) in the breakdown, counting an Open Bill only while it is ticked.
+_Avoid_: Commission, Omset PIC (as a stored number)
+**Compliment**:
+Goods given to a guest without payment; on the Report Daily it is a payment method, in the CFO report a discount.
+_Avoid_: Free, Gratis, Entertain
+**Bon**:
+A guest's unpaid bill, shown as a gap in the Report Daily until it is settled on a date through a Metode Bayar.
+_Avoid_: Piutang (alone), Hutang tamu, Receivable
+**Void**:
+An item cancelled from a POS bill after it was entered, recorded with who entered it, who erred and why.
+_Avoid_: Cancel, Refund
 
 **Dompet**:
 A place company money sits whose balance the Office computes: a bank account, the brankas cash, or a Kas Kecil pos. Its balance is its opening balance plus every Arus Kas, never a stored number.
@@ -219,6 +265,18 @@ _Avoid_: Payment type, Channel
 **Investor**:
 A Pihak that put capital into the company and is paid it back over time from a Dompet (Pengembalian Modal).
 _Avoid_: Shareholder, Pemodal
+**Resep**:
+How one base, menu or prasmanan dish is made: lines of Barang or other Resep with a quantity, cooking-step notes, and a yield. Food and drink Resep may share a name; a line finds its sub-Resep in its own kind first.
+_Avoid_: Recipe, BOM, Menu (for the recipe itself)
+**Modal**:
+What one yield of a Resep costs in Barang, computed from current purchase prices through every sub-Resep; a menu's Modal adds the Spare once. Never stored on the Resep; a report that needs it keeps a copy.
+_Avoid_: HPP (for one dish; HPP is the module), Cost, Biaya
+**Spare**:
+A percentage added once to a menu's Modal to cover shrinkage and uneven portions, set in Pengaturan HPP; never added to a base.
+_Avoid_: Buffer (old setting name), Margin
+**Kontrol Bahan Baku**:
+The monthly check of one Lokasi: per Barang, opening stock, purchases, closing count, and what Resep, spoil, team meals, RND and compliments should have used; the gap shows as a green, yellow or red light.
+_Avoid_: Stock control, COGS bulanan
 
 **Opname**:
 A physical count of the stock of one Lokasi, compared with what the system expects.
