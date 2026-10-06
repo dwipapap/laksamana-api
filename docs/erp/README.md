@@ -12,6 +12,7 @@ Folder ini adalah titik kerja Tim B (platform & ERP). Keputusan dasarnya:
 | `pertanyaan-owner.md` | Pertanyaan bisnis yang menunggu jawaban owner, dan jawabannya |
 | `akses.md` | Akses di dalam Modul: Peran, Akses Halaman, Lingkup, Kewenangan (jawaban Q1) |
 | `hari-operasional.md` | Hari bisnis yang fleksibel lewat buka/tutup per Lokasi (jawaban Q6) |
+| `kas.md` | Dompet, Arus Kas, Kas Kecil, Mutasi Wallet, Setoran, Planning Pembayaran, Pengembalian Modal |
 | `<area>.md` | Rancangan satu area: kegiatan, istilah, ERD Mermaid, siklus dokumen, aturan, pemetaan dari tabel lama |
 
 Kontrak endpoint v2 ditulis di `docs/api/v2/<area>.md` **sebelum** dibangun, supaya Tim A tahu apa yang akan datang.
@@ -46,7 +47,7 @@ Contoh pola migration yang sudah benar: `menu`, `news`, `homepage` di `database/
 | Hari Operasional | finance, kompas, absensi, jadwal, stock | usulan di `hari-operasional.md`, menunggu L8–L10 |
 | **Pembelian & Persediaan** (pertama) | stock, bd, finance (kas kecil) | tabel master + dokumen stok + importer selesai (lihat bagian Status kerja); belum ada service/endpoint v2 |
 | Penjualan (omset, booking + DP, paket event, tiket) | finance, reservasi, event, ticketing, marketing | belum mulai |
-| Kas (kas kecil, brankas, setoran, QRIS) | finance, kompas | belum mulai |
+| Kas (`kas.md`) | finance, kompas | ERD + tabel selesai (asumsi L6, L7); importer `erp-kas` dan service saldo belum (butuh dump) |
 | SDM (absensi → jadwal → upah harian → bonus) | absensi, jadwal, dw, hr, akademi | belum mulai |
 
 ## Status kerja (2026-10-06) — baca ini dulu kalau melanjutkan
@@ -58,6 +59,7 @@ Sudah di `main`:
 | Tabel master v2 (lokasi, satuan, pihak, vendor, barang + satuan/vendor/lokasi/harga) | migration `2026_10_05_090000`, `_100000`; model `app/Erp/Master/Models` |
 | Tabel dokumen stok + `hari_operasional` | migration `2026_10_05_110000`; model `app/Erp/Persediaan/Models` |
 | Importer dari Stock/HPP lama | `core:import erp-barang`, lalu `core:import erp-persediaan` (urutan wajib); kasus yang butuh keputusan orang dicetak di akhir |
+| Tabel Kas (`dompet`, `arus_kas`, `kas_kecil`, `mutasi_dompet`, `setoran`, `rencana_bayar`, `pembayaran`, `investor`, `pengembalian_modal`, …) | migration `2026_10_07_110000`; model `app/Erp/Kas/Models` |
 | Tes | `php artisan test tests/Feature/Erp` (24 tes; butuh dump lama yang sudah dipulihkan, lihat CLAUDE.md §0) |
 
 Belum dikerjakan, urutan yang disarankan:
@@ -65,7 +67,7 @@ Belum dikerjakan, urutan yang disarankan:
 1. Kontrak API v2 Pembelian & Persediaan di `docs/api/v2/pembelian-persediaan.md` (umumkan ke Tim A sebelum dibangun).
 2. Service + endpoint v2 pertama: buka/tutup Hari Operasional, pesanan bahan + check-in (menulis mutasi CK), saldo stok CK. Kode di `app/Erp/<Area>/` (`Services/`, `Http/V2/`, `routes/v2.php`); auto-load route v2 belum ada.
 3. Akses di dalam Modul (`akses.md`): tabel peran/halaman/lingkup/kewenangan + middleware v2.
-4. Area Kas: master `rekening`, Planning Pembayaran, `tagihan_vendor` (ditunda dari area ini).
+4. ~~Area Kas~~: rancangan + tabel di `kas.md` (`dompet`, `pembayaran` menggantikan `rekening`/`tagihan_vendor`); importer belum.
 5. ~~Uji semua migration v2 di MariaDB 10.11~~ (2026-10-06: semua migration + tes skema `tests/Feature/Erp` lolos di MariaDB 10.11 setelah `hari_operasional.lokasi_buka` diperbaiki, MariaDB menolak kolom stored `CASE … THEN <kolom CHAR>`; tes importer belum, butuh dump lama). Kolom generated v2 berikutnya: uji di MariaDB juga.
 6. Pindahkan foto serah terima/waste dari blob database lama ke penyimpanan berkas.
 
