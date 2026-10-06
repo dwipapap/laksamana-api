@@ -19,6 +19,7 @@ Folder ini adalah titik kerja Tim B (platform & ERP). Keputusan dasarnya:
 | `kas.md` | Dompet, Arus Kas, Kas Kecil, Mutasi Wallet, Setoran, Planning Pembayaran, Pengembalian Modal |
 | `acara-marketing.md` | Tamu — Acara Marketing: booking klien, quotation, pembayaran, persetujuan, tugas, tindak lanjut |
 | `po-proyek.md` | Proyek BD, Pengajuan Pembelian mingguan + penyetuju, PO Proyek + realisasi |
+| `kerja-tim.md` | Tugas tim, rutinitas, permintaan koordinasi, agenda (BD OS); log aktivitas dan notifikasi bersama semua Modul |
 | `reservasi.md` | Tamu — Reservasi: booking, kedatangan, DP per cicilan, meja, waiting list |
 | `penjualan-harian.md` | Omset Harian + breakdown PIC, Report Daily per Metode Bayar, Compliment, Bon, Void, target |
 | `resep-hpp.md` | Resep, harga jual, Pengaturan HPP, Kontrol Bahan Baku; aturan hitung Modal dari layar HPP lama |
@@ -61,6 +62,9 @@ Contoh pola migration yang sudah benar: `menu`, `news`, `homepage` di `database/
 | Akses di dalam Modul | semua modul | usulan di `akses.md`, menunggu L3 |
 | Hari Operasional | finance, kompas, absensi, jadwal, stock | usulan di `hari-operasional.md`, menunggu L8–L10 |
 | **Pembelian & Persediaan** (pertama) | stock, bd, finance (kas kecil) | tabel master + dokumen stok + importer selesai (lihat bagian Status kerja); belum ada service/endpoint v2 |
+| Proyek & PO Proyek (`po-proyek.md`) | bd | ERD + tabel selesai; importer `erp-po-proyek` belum |
+| Kerja Tim, Log, Notifikasi (`kerja-tim.md`) | bd, semua modul (log/notifikasi) | ERD + tabel selesai, di atas PO Proyek; importer belum |
+| Penjualan (omset, booking + DP, paket event, tiket) | finance, reservasi, event, ticketing, marketing | belum mulai |
 | Tamu — Acara Marketing (`acara-marketing.md`) | marketing | ERD + tabel selesai, di atas Orang & Divisi + Kas; importer `erp-acara` belum |
 | Tamu — Reservasi, Event & Tiket | reservasi, event, ticketing | PR terpisah |
 | Tamu — Event & Tiket (`event-tiket.md`) | event, ticketing | ERD + tabel selesai, di atas Orang & Divisi; importer `erp-event` belum |
@@ -99,6 +103,7 @@ Sudah di `main`:
 | Tes | `php artisan test tests/Feature/Erp` (30 tes; tes importer butuh dump lama yang sudah dipulihkan, lihat CLAUDE.md §0; tes skema cukup database kosong) |
 | Tabel Kas (`dompet`, `arus_kas`, `kas_kecil`, `mutasi_dompet`, `setoran`, `rencana_bayar`, `pembayaran`, `investor`, `pengembalian_modal`, …) | migration `2026_10_07_110000`; model `app/Erp/Kas/Models` |
 | Tabel Proyek & PO Proyek (`proyek`, `proyek_pic`, `pengajuan_pembelian` + penyetuju, `po_proyek`) | migration `2026_10_07_140000`; model `app/Erp/Proyek/Models` |
+| Tabel Kerja Tim (`tugas_tim` + PIC, `permintaan_koordinasi`, `rutinitas_tim`, `agenda_tim`) + `log_aktivitas`, `notifikasi` | migration `2026_10_07_220000`; model `app/Erp/Proyek/Models`, `app/Core/Models` |
 | Tabel Akses (`halaman`, `peran`, `peran_halaman`, `kewenangan`, `peran_kewenangan`, `penempatan_peran`) | migration `2026_10_07_120000`; model `app/Erp/Akses/Models` |
 | Tabel Reservasi (`reservasi` + kedatangan/tindak lanjut/DP, `meja`, `daftar_tunggu`, kategori, sumber info) | migration `2026_10_07_150000`; model `app/Erp/Tamu/Models` |
 | Tabel Penjualan Harian (`omset_harian`, `omset_porsi`, `laporan_kasir` + bayar, `compliment`, `bon`, `void_item`, target, pengaturan); `arus_kas` sebab `omset` | migration `2026_10_07_130000`; model `app/Erp/Penjualan/Models` |
