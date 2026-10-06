@@ -50,7 +50,7 @@ it('refuses a coordination request to the same Divisi', function () {
     $bar = ktRow('divisi', ['kode' => 'uji_bar']);
     $kitchen = ktRow('divisi', ['kode' => 'uji_kitchen']);
 
-    expect(PermintaanKoordinasi::create(['judul' => 'Es batu', 'dari_divisi_id' => $bar, 'ke_divisi_id' => $kitchen])->status)->toBe('diminta')
+    expect(PermintaanKoordinasi::create(['judul' => 'Es batu', 'dari_divisi_id' => $bar, 'ke_divisi_id' => $kitchen])->fresh()->status)->toBe('diminta')
         ->and(fn () => PermintaanKoordinasi::create(['judul' => 'X', 'dari_divisi_id' => $bar, 'ke_divisi_id' => $bar]))->toThrow(QueryException::class);
 });
 
