@@ -76,3 +76,18 @@ Setiap asumsi di bawah dipakai sampai owner menjawab lain. Kalau jawabannya berb
 | L9 | Jam buka-tutup **tidak** diambil dari ESB | ekspor ESB yang diurai Analytics tidak memakai kolom shift | kalau ekspor punya End of Day: diimpor ke `hari_operasional` |
 | L10 | Central Kitchen memakai **tanggal kalender** (tanpa buka-tutup) | `ck_stock.tanggal` diisi tanggal kalender | CK diberi Hari Operasional seperti outlet |
 | L11 | Penyesuaian stok boleh dibuat oleh **Kepala Divisi** lokasi/area barangnya dan oleh admin modul Stock; tanpa batas nilai; alasan wajib | CK sudah mencatat `penyesuaian` masuk/keluar langsung di buku stok | tambah status `menunggu` untuk koreksi di atas batas |
+
+## E. Putaran 3 — dari rancangan area 7 Oktober 2026 (menunggu owner)
+
+Muncul saat area Kas sampai Konten dirancang ([`peta-core.md`](peta-core.md)). Sementara itu dipakai asumsi di kolom kedua; jawaban lain hanya mengubah baris yang disebut, bukan bentuk tabel.
+
+| # | Pertanyaan | Asumsi sementara | Kalau owner menjawab lain |
+|---|---|---|---|
+| M1 | Apakah kategori di **Kas Kecil** dan kategori di **Planning Pembayaran** (Bahan baku, Gaji, Pajak, Sewa, …) boleh menjadi **satu daftar**? | satu daftar `kategori_kas` (`kas.md`) | tambah kolom `dipakai_di` pada kategori |
+| M2 | **Howandi Life** (bisnis, aset, target, keuangan pribadi pemilik) ikut ERP, atau tetap terpisah? | tetap di database lamanya, di luar ERP (audit core) | dirancang sebagai area sendiri |
+| M3 | Tamu **reservasi** (nama + HP) perlu dikenali sebagai orang yang sama dari kunjungan ke kunjungan (riwayat, member), atau cukup dicatat per reservasi seperti sekarang? | dicatat per reservasi; ringkasan tamu dikelompokkan lewat HP (`reservasi.md`) | tamu menjadi Pihak berperan `tamu` |
+| M4 | Apakah **Buyer** tiket online dan **Klien** Marketing perlu disatukan bila orangnya sama? | tidak: Buyer akun publik, Klien pihak bisnis (`event-tiket.md`) | tautan opsional `buyer.pihak_id` |
+| M5 | Tiga **career path** di HR dan koleksi HR lain yang kosong (badge, reward, coaching, OKR, mood, saran, suksesi, kompetensi): masih akan dipakai? | tidak dirancang sampai dipakai (`hr.md`) | dirancang sebagai area SDM tambahan |
+| M6 | **VIP** di Marketing itu apa (daftar tamu VIP, member, atau paket)? Dan **rokok** di Kompas: titipan pihak lain atau stok sendiri? | belum dirancang | VIP → Pihak/Reservasi; rokok → Persediaan atau dokumen titipan |
+| M7 | Siapa yang **menutup bulan** People Score (sehingga skornya dibekukan untuk ranking/promosi)? | HRD, lewat Kewenangan `hr.tutup_bulan` (`hr.md`) | hanya siapa pemegang Kewenangannya |
+| M8 | Pembayaran tiket online (Xendit), DP reservasi, pembayaran acara, honor talent, dan transfer DW masuk/keluar **dompet mana**? | dipetakan per metode bayar seperti omset; transfer keluar memilih dompet saat dicatat (`kas.md`) | hanya pemetaan `metode_bayar` → dompet |
