@@ -239,6 +239,9 @@ _Avoid_: Belanja PO, Direct order
 A vendor’s bill, paid as a Pembayaran to that vendor; one Tagihan Vendor may cover several orders.
 _Avoid_: Invoice (for our own invoices), Nota
 
+**Acara**:
+A Klien's booking of the venue and F&B (gathering, birthday, package) sold by a Marketing PIC; it moves Lead → Prospect → Approval → Quotation → Deal → done, or Lost, with its quotation lines, payments and tasks.
+_Avoid_: Event (the EMS record the venue runs itself), Booking, Order
 **Reservasi**:
 A guest's booking of a table on a business date: party size, status (pending, confirmed, datang, cancelled, no-show), arrivals as they come in, and any DP. A walk-in seated from the waiting list is a Reservasi too.
 _Avoid_: Booking (in Indonesian text), Order, Tamu (for the record)

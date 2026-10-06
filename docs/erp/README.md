@@ -13,12 +13,13 @@ Folder ini adalah titik kerja Tim B (platform & ERP). Keputusan dasarnya:
 | `pertanyaan-owner.md` | Pertanyaan bisnis yang menunggu jawaban owner, dan jawabannya |
 | `akses.md` | Akses di dalam Modul: Peran, Akses Halaman, Lingkup, Kewenangan (jawaban Q1) |
 | `hari-operasional.md` | Hari bisnis yang fleksibel lewat buka/tutup per Lokasi (jawaban Q6) |
-| `po-proyek.md` | Proyek BD, Pengajuan Pembelian mingguan + penyetuju, PO Proyek + realisasi |
+| `orang-divisi.md` | Master orang dan divisi: `karyawan`, peran Pihak (klien, talent, KOL, pekerja harian), divisi shift/kantor |
 | `kas.md` | Dompet, Arus Kas, Kas Kecil, Mutasi Wallet, Setoran, Planning Pembayaran, Pengembalian Modal |
+| `acara-marketing.md` | Tamu — Acara Marketing: booking klien, quotation, pembayaran, persetujuan, tugas, tindak lanjut |
+| `po-proyek.md` | Proyek BD, Pengajuan Pembelian mingguan + penyetuju, PO Proyek + realisasi |
 | `reservasi.md` | Tamu — Reservasi: booking, kedatangan, DP per cicilan, meja, waiting list |
 | `penjualan-harian.md` | Omset Harian + breakdown PIC, Report Daily per Metode Bayar, Compliment, Bon, Void, target |
 | `resep-hpp.md` | Resep, harga jual, Pengaturan HPP, Kontrol Bahan Baku; aturan hitung Modal dari layar HPP lama |
-| `orang-divisi.md` | Master orang dan divisi: `karyawan`, peran Pihak (klien, talent, KOL, pekerja harian), divisi shift/kantor |
 | `akademi.md` | SDM — Akademi: materi, program belajar, progres, log |
 | `sdm.md` | SDM — Jadwal (shift, pengajuan), Absensi (ketukan, wajah, lokasi), Pekerja Harian (permintaan, penugasan, upah, transfer) |
 | `event-tiket.md` | Tamu — Event (persetujuan, vendor, sponsor), kelas tiket, kursi, Buyer, pesanan, tiket, check-in, refund, jadwal & pembayaran talent |
@@ -58,6 +59,8 @@ Contoh pola migration yang sudah benar: `menu`, `news`, `homepage` di `database/
 | Akses di dalam Modul | semua modul | usulan di `akses.md`, menunggu L3 |
 | Hari Operasional | finance, kompas, absensi, jadwal, stock | usulan di `hari-operasional.md`, menunggu L8–L10 |
 | **Pembelian & Persediaan** (pertama) | stock, bd, finance (kas kecil) | tabel master + dokumen stok + importer selesai (lihat bagian Status kerja); belum ada service/endpoint v2 |
+| Tamu — Acara Marketing (`acara-marketing.md`) | marketing | ERD + tabel selesai, di atas Orang & Divisi + Kas; importer `erp-acara` belum |
+| Tamu — Reservasi, Event & Tiket | reservasi, event, ticketing | PR terpisah |
 | Tamu — Event & Tiket (`event-tiket.md`) | event, ticketing | ERD + tabel selesai, di atas Orang & Divisi; importer `erp-event` belum |
 | Tamu — Reservasi, Acara Marketing | reservasi, marketing | Reservasi: PR terpisah; Acara Marketing belum mulai |
 | Kas (kas kecil, brankas, setoran, QRIS) | finance, kompas | belum mulai |
@@ -84,18 +87,19 @@ Sudah di `main`:
 | Tabel master v2 (lokasi, satuan, pihak, vendor, barang + satuan/vendor/lokasi/harga) | migration `2026_10_05_090000`, `_100000`; model `app/Erp/Master/Models` |
 | Tabel dokumen stok + `hari_operasional` | migration `2026_10_05_110000`; model `app/Erp/Persediaan/Models` |
 | Importer dari Stock/HPP lama | `core:import erp-barang`, lalu `core:import erp-persediaan` (urutan wajib); kasus yang butuh keputusan orang dicetak di akhir |
+| Tabel orang & divisi (`karyawan`, `klien`, `talent`, `kol`, `pekerja_harian` + divisi), kolom baru `divisi.nama/jenis/aktif`, `pihak.email/alamat/instagram` | migration `2026_10_07_090000`; model `app/Erp/Master/Models` |
+| Tabel Acara Marketing (`acara`, `acara_rincian`, `acara_pembayaran`, `acara_persetujuan`, `acara_tugas`, `template_tugas_acara`, `tindak_lanjut_klien`) | migration `2026_10_07_190000`; model `app/Erp/Tamu/Models` |
+| Tes | `php artisan test tests/Feature/Erp` (30 tes; tes importer butuh dump lama yang sudah dipulihkan, lihat CLAUDE.md §0; tes skema cukup database kosong) |
+| Tabel Kas (`dompet`, `arus_kas`, `kas_kecil`, `mutasi_dompet`, `setoran`, `rencana_bayar`, `pembayaran`, `investor`, `pengembalian_modal`, …) | migration `2026_10_07_110000`; model `app/Erp/Kas/Models` |
 | Tabel Proyek & PO Proyek (`proyek`, `proyek_pic`, `pengajuan_pembelian` + penyetuju, `po_proyek`) | migration `2026_10_07_140000`; model `app/Erp/Proyek/Models` |
 | Tabel Akses (`halaman`, `peran`, `peran_halaman`, `kewenangan`, `peran_kewenangan`, `penempatan_peran`) | migration `2026_10_07_120000`; model `app/Erp/Akses/Models` |
-| Tabel Kas (`dompet`, `arus_kas`, `kas_kecil`, `mutasi_dompet`, `setoran`, `rencana_bayar`, `pembayaran`, `investor`, `pengembalian_modal`, …) | migration `2026_10_07_110000`; model `app/Erp/Kas/Models` |
 | Tabel Reservasi (`reservasi` + kedatangan/tindak lanjut/DP, `meja`, `daftar_tunggu`, kategori, sumber info) | migration `2026_10_07_150000`; model `app/Erp/Tamu/Models` |
 | Tabel Penjualan Harian (`omset_harian`, `omset_porsi`, `laporan_kasir` + bayar, `compliment`, `bon`, `void_item`, target, pengaturan); `arus_kas` sebab `omset` | migration `2026_10_07_130000`; model `app/Erp/Penjualan/Models` |
 | Tabel Resep & HPP (`resep`, `resep_baris`, `resep_harga`, `pengaturan_hpp`, `kontrol_bahan` + baris), kolom baru `satuan.keluarga/faktor`, `barang.dipesan` | migration `2026_10_07_100000`; model `app/Erp/Resep/Models` |
 | Tes | `php artisan test tests/Feature/Erp` (24 tes; butuh dump lama yang sudah dipulihkan, lihat CLAUDE.md §0) |
-| Tabel orang & divisi (`karyawan`, `klien`, `talent`, `kol`, `pekerja_harian` + divisi), kolom baru `divisi.nama/jenis/aktif`, `pihak.email/alamat/instagram` | migration `2026_10_07_090000`; model `app/Erp/Master/Models` |
 | Tabel Akademi (`materi`, `materi_divisi`, `program_belajar`, `program_materi`, `progres_materi`, `progres_program`, `aktivitas_akademi`, pengaturan) | migration `2026_10_07_180000`; model `app/Erp/Akademi/Models` |
 | Tabel SDM (`shift`, `jadwal_kru`, `pengajuan_jadwal`, `ketukan_absen`, `wajah_terdaftar`, `lokasi_absen`, `permintaan_dw`, `penugasan_dw`, `pembayaran_dw`, tarif, pengaturan) | migration `2026_10_07_170000`; model `app/Erp/Sdm/Models` |
 | Tabel Event & Tiket (`event`, `kelas_tiket`, `kursi`, `buyer`, `pesanan_tiket`, `tiket`, `checkin_tiket`, `refund_tiket`, jadwal/pembayaran talent, …) | migration `2026_10_07_160000`; model `app/Erp/Tamu/Models` |
-| Tes | `php artisan test tests/Feature/Erp` (30 tes; tes importer butuh dump lama yang sudah dipulihkan, lihat CLAUDE.md §0; tes skema cukup database kosong) |
 
 Belum dikerjakan, urutan yang disarankan:
 
