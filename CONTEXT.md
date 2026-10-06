@@ -130,6 +130,10 @@ _Avoid_: Head, Kepala Divisi
 The HR record of a User: their organisational Divisi, their superior, contract and probation dates; one per User. Every Karyawan is a User; a Pekerja Harian, Talent or Klien never is.
 _Avoid_: Employee, Pegawai, Staf, Kru
 
+**People Score**:
+A Karyawan's monthly performance score from seven weighted components (attendance, KPI, training, guest review, discipline, teamwork, initiative); below the completeness threshold it is shown as "data kurang" and not used for ranking. Once a month is closed the score is kept as it was.
+_Avoid_: KPI (one component), Rating, Nilai (alone)
+
 **Pihak**:
 A person or organisation outside the Users that the company deals with. What it is to us is a role it holds — vendor, Klien, Talent, KOL, Pekerja Harian — and one Pihak may hold several.
 _Avoid_: Party, Kontak, Partner, Customer
