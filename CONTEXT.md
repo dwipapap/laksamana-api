@@ -204,6 +204,30 @@ _Avoid_: Belanja PO, Direct order
 A vendor’s bill, paid as a Pembayaran to that vendor; one Tagihan Vendor may cover several orders.
 _Avoid_: Invoice (for our own invoices), Nota
 
+**Omset Harian**:
+One business day's sales of a Lokasi as entered in Input Omset Harian (food, beverage, other, discount, service, tax, bills, traffic), with its breakdown by source and PIC. Three totals come from it and all three are right on their own screen: net (Dashboard Omset), tagihan (Rekap Penjualan) and net sales (CFO report, tagihan minus compliment).
+_Avoid_: Omset (alone, it is ambiguous), Revenue, Sales
+
+**Report Daily**:
+The cashier's count for one business day: per Metode Bayar, what the POS says and what is actually there; Rekap Penjualan later adds what reached the bank.
+_Avoid_: Laporan Harian (alone), Closing, EOD
+
+**Porsi PIC**:
+The part of a day's sales credited to one PIC (Marketing, Event, Kasir) in the breakdown, counting an Open Bill only while it is ticked.
+_Avoid_: Commission, Omset PIC (as a stored number)
+
+**Compliment**:
+Goods given to a guest without payment; on the Report Daily it is a payment method, in the CFO report a discount.
+_Avoid_: Free, Gratis, Entertain
+
+**Bon**:
+A guest's unpaid bill, shown as a gap in the Report Daily until it is settled on a date through a Metode Bayar.
+_Avoid_: Piutang (alone), Hutang tamu, Receivable
+
+**Void**:
+An item cancelled from a POS bill after it was entered, recorded with who entered it, who erred and why.
+_Avoid_: Cancel, Refund
+
 **Dompet**:
 A place company money sits whose balance the Office computes: a bank account, the brankas cash, or a Kas Kecil pos. Its balance is its opening balance plus every Arus Kas, never a stored number.
 _Avoid_: Wallet (on screens it is fine), Wadah, Rekening (for the cash or a pos), Account

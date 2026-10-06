@@ -15,6 +15,7 @@ Folder ini adalah titik kerja Tim B (platform & ERP). Keputusan dasarnya:
 | `hari-operasional.md` | Hari bisnis yang fleksibel lewat buka/tutup per Lokasi (jawaban Q6) |
 | `po-proyek.md` | Proyek BD, Pengajuan Pembelian mingguan + penyetuju, PO Proyek + realisasi |
 | `kas.md` | Dompet, Arus Kas, Kas Kecil, Mutasi Wallet, Setoran, Planning Pembayaran, Pengembalian Modal |
+| `penjualan-harian.md` | Omset Harian + breakdown PIC, Report Daily per Metode Bayar, Compliment, Bon, Void, target |
 | `resep-hpp.md` | Resep, harga jual, Pengaturan HPP, Kontrol Bahan Baku; aturan hitung Modal dari layar HPP lama |
 | `orang-divisi.md` | Master orang dan divisi: `karyawan`, peran Pihak (klien, talent, KOL, pekerja harian), divisi shift/kantor |
 | `<area>.md` | Rancangan satu area: kegiatan, istilah, ERD Mermaid, siklus dokumen, aturan, pemetaan dari tabel lama |
@@ -53,6 +54,8 @@ Contoh pola migration yang sudah benar: `menu`, `news`, `homepage` di `database/
 | Akses di dalam Modul | semua modul | usulan di `akses.md`, menunggu L3 |
 | Hari Operasional | finance, kompas, absensi, jadwal, stock | usulan di `hari-operasional.md`, menunggu L8–L10 |
 | **Pembelian & Persediaan** (pertama) | stock, bd, finance (kas kecil) | tabel master + dokumen stok + importer selesai (lihat bagian Status kerja); belum ada service/endpoint v2 |
+| Penjualan Harian (`penjualan-harian.md`) | kompas, finance (omset, rekap) | ERD + tabel selesai, di atas Kas; importer `erp-penjualan`, service tiga angka omset, dan impor ESB belum |
+| Tamu & Penjualan (booking + DP, paket event, tiket, klien) | reservasi, event, ticketing, marketing | belum mulai |
 | Proyek & PO Proyek (`po-proyek.md`) | bd | ERD + tabel selesai; importer `erp-po-proyek` belum |
 | Resep & HPP (`resep-hpp.md`) | stock (hpp) | ERD + tabel selesai; importer `erp-resep` dan service Modal belum (butuh dump) |
 | Penjualan (omset, booking + DP, paket event, tiket) | finance, reservasi, event, ticketing, marketing | belum mulai |
@@ -71,6 +74,7 @@ Sudah di `main`:
 | Tabel Proyek & PO Proyek (`proyek`, `proyek_pic`, `pengajuan_pembelian` + penyetuju, `po_proyek`) | migration `2026_10_07_140000`; model `app/Erp/Proyek/Models` |
 | Tabel Akses (`halaman`, `peran`, `peran_halaman`, `kewenangan`, `peran_kewenangan`, `penempatan_peran`) | migration `2026_10_07_120000`; model `app/Erp/Akses/Models` |
 | Tabel Kas (`dompet`, `arus_kas`, `kas_kecil`, `mutasi_dompet`, `setoran`, `rencana_bayar`, `pembayaran`, `investor`, `pengembalian_modal`, …) | migration `2026_10_07_110000`; model `app/Erp/Kas/Models` |
+| Tabel Penjualan Harian (`omset_harian`, `omset_porsi`, `laporan_kasir` + bayar, `compliment`, `bon`, `void_item`, target, pengaturan); `arus_kas` sebab `omset` | migration `2026_10_07_130000`; model `app/Erp/Penjualan/Models` |
 | Tabel Resep & HPP (`resep`, `resep_baris`, `resep_harga`, `pengaturan_hpp`, `kontrol_bahan` + baris), kolom baru `satuan.keluarga/faktor`, `barang.dipesan` | migration `2026_10_07_100000`; model `app/Erp/Resep/Models` |
 | Tes | `php artisan test tests/Feature/Erp` (24 tes; butuh dump lama yang sudah dipulihkan, lihat CLAUDE.md §0) |
 | Tabel orang & divisi (`karyawan`, `klien`, `talent`, `kol`, `pekerja_harian` + divisi), kolom baru `divisi.nama/jenis/aktif`, `pihak.email/alamat/instagram` | migration `2026_10_07_090000`; model `app/Erp/Master/Models` |
