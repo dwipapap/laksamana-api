@@ -201,7 +201,8 @@ final class AccountImporter implements Importer
             $this->sync('sesi_legacy', 'token', $sesi, true, false);
 
             // 3. parents whose source is gone
-            $this->prune('divisi', 'kode', array_keys($divisiRows));
+            // Only shift Divisi come from legacy; kantor Divisi are v2 rows (docs/erp/orang-divisi.md).
+            $this->prune('divisi', 'kode', array_keys($divisiRows), ['jenis' => 'shift']);
             $this->prune('modul', 'kunci', array_keys($modulRows));
             $this->prune('user', 'legacy_id', array_keys($userRows));
 
@@ -260,9 +261,10 @@ final class AccountImporter implements Importer
     }
 
     /** @param  list<string|int>  $keep */
-    private function prune(string $table, string $key, array $keep): void
+    /** @param array<string,string> $only prune only rows matching these columns */
+    private function prune(string $table, string $key, array $keep, array $only = []): void
     {
-        $gone = $this->core()->table($table)->whereNotNull($key)->pluck($key)
+        $gone = $this->core()->table($table)->whereNotNull($key)->where($only)->pluck($key)
             ->reject(fn ($k) => in_array((string) $k, array_map('strval', $keep), true));
         foreach ($gone->chunk(500) as $chunk) {
             $this->core()->table($table)->whereIn($key, $chunk->all())->delete();
