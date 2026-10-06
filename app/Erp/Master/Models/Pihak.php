@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-/** A party the company deals with; today only vendors. */
+/** A person or organisation outside the Users; what it is to us is the roles it holds. */
 final class Pihak extends CoreRecord
 {
     use SoftDeletes;
@@ -28,5 +28,29 @@ final class Pihak extends CoreRecord
     public function vendor(): HasOne
     {
         return $this->hasOne(Vendor::class, 'pihak_id');
+    }
+
+    /** @return HasOne<Klien, $this> */
+    public function klien(): HasOne
+    {
+        return $this->hasOne(Klien::class, 'pihak_id');
+    }
+
+    /** @return HasOne<Talent, $this> */
+    public function talent(): HasOne
+    {
+        return $this->hasOne(Talent::class, 'pihak_id');
+    }
+
+    /** @return HasOne<Kol, $this> */
+    public function kol(): HasOne
+    {
+        return $this->hasOne(Kol::class, 'pihak_id');
+    }
+
+    /** @return HasOne<PekerjaHarian, $this> */
+    public function pekerjaHarian(): HasOne
+    {
+        return $this->hasOne(PekerjaHarian::class, 'pihak_id');
     }
 }
