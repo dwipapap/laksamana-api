@@ -52,6 +52,9 @@ $modules = [
     // `homepage_event` switch (which EMS event is on the public website). The
     // event data itself stays in EMS and is read through EventState.
     'homepage' => ['env' => 'HOMEPAGE', 'database' => 'lakk5493_db_homepage', 'connection' => 'core'],
+    // infopagi owns no database: it only reads event+marketing for the 07:00
+    // briefing. Registered so the maintenance middleware resolves; the gate
+    // stays `module:reservasi` (same n8n token as the recap endpoint).
     'reservasi' => ['env' => 'RESERVASI', 'database' => 'lakk5493_db_reservasi', 'legacy' => 'reservasi-api-mysql', 'data_dir' => '/home/lakk5493/reservasi-db', 'server_sql_mode' => true],
     'stock' => ['env' => 'STOCK',     'database' => 'lakk5493_db_stock',     'legacy' => 'stock-api-mysql',     'data_dir' => '/home/lakk5493/data-latih', 'server_sql_mode' => true],
 ];
