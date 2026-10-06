@@ -19,6 +19,7 @@ Folder ini adalah titik kerja Tim B (platform & ERP). Keputusan dasarnya:
 | `penjualan-harian.md` | Omset Harian + breakdown PIC, Report Daily per Metode Bayar, Compliment, Bon, Void, target |
 | `resep-hpp.md` | Resep, harga jual, Pengaturan HPP, Kontrol Bahan Baku; aturan hitung Modal dari layar HPP lama |
 | `orang-divisi.md` | Master orang dan divisi: `karyawan`, peran Pihak (klien, talent, KOL, pekerja harian), divisi shift/kantor |
+| `event-tiket.md` | Tamu — Event (persetujuan, vendor, sponsor), kelas tiket, kursi, Buyer, pesanan, tiket, check-in, refund, jadwal & pembayaran talent |
 | `<area>.md` | Rancangan satu area: kegiatan, istilah, ERD Mermaid, siklus dokumen, aturan, pemetaan dari tabel lama |
 
 Kontrak endpoint v2 ditulis di `docs/api/v2/<area>.md` **sebelum** dibangun, supaya Tim A tahu apa yang akan datang.
@@ -55,6 +56,9 @@ Contoh pola migration yang sudah benar: `menu`, `news`, `homepage` di `database/
 | Akses di dalam Modul | semua modul | usulan di `akses.md`, menunggu L3 |
 | Hari Operasional | finance, kompas, absensi, jadwal, stock | usulan di `hari-operasional.md`, menunggu L8–L10 |
 | **Pembelian & Persediaan** (pertama) | stock, bd, finance (kas kecil) | tabel master + dokumen stok + importer selesai (lihat bagian Status kerja); belum ada service/endpoint v2 |
+| Tamu — Event & Tiket (`event-tiket.md`) | event, ticketing | ERD + tabel selesai, di atas Orang & Divisi; importer `erp-event` belum |
+| Tamu — Reservasi, Acara Marketing | reservasi, marketing | Reservasi: PR terpisah; Acara Marketing belum mulai |
+| Kas (kas kecil, brankas, setoran, QRIS) | finance, kompas | belum mulai |
 | Tamu — Reservasi (`reservasi.md`) | reservasi | ERD + tabel selesai, di atas Kas; importer `erp-reservasi` belum |
 | Tamu — Event & Tiket, Acara Marketing | event, ticketing, marketing | belum mulai |
 | Penjualan Harian (`penjualan-harian.md`) | kompas, finance (omset, rekap) | ERD + tabel selesai, di atas Kas; importer `erp-penjualan`, service tiga angka omset, dan impor ESB belum |
@@ -82,6 +86,7 @@ Sudah di `main`:
 | Tabel Resep & HPP (`resep`, `resep_baris`, `resep_harga`, `pengaturan_hpp`, `kontrol_bahan` + baris), kolom baru `satuan.keluarga/faktor`, `barang.dipesan` | migration `2026_10_07_100000`; model `app/Erp/Resep/Models` |
 | Tes | `php artisan test tests/Feature/Erp` (24 tes; butuh dump lama yang sudah dipulihkan, lihat CLAUDE.md §0) |
 | Tabel orang & divisi (`karyawan`, `klien`, `talent`, `kol`, `pekerja_harian` + divisi), kolom baru `divisi.nama/jenis/aktif`, `pihak.email/alamat/instagram` | migration `2026_10_07_090000`; model `app/Erp/Master/Models` |
+| Tabel Event & Tiket (`event`, `kelas_tiket`, `kursi`, `buyer`, `pesanan_tiket`, `tiket`, `checkin_tiket`, `refund_tiket`, jadwal/pembayaran talent, …) | migration `2026_10_07_160000`; model `app/Erp/Tamu/Models` |
 | Tes | `php artisan test tests/Feature/Erp` (30 tes; tes importer butuh dump lama yang sudah dipulihkan, lihat CLAUDE.md §0; tes skema cukup database kosong) |
 
 Belum dikerjakan, urutan yang disarankan:
@@ -104,4 +109,5 @@ Menunggu orang lain: jawaban owner putaran 2 (L1–L11, `pertanyaan-owner.md`; L
 - Pertanyaan yang belum dijawab owner memakai **perilaku sistem lama** sebagai asumsi (bentuk tabel lama tidak diikuti), dicatat di bagian D `pertanyaan-owner.md`.
 - Setiap jawaban owner langsung dicatat: istilah ke `CONTEXT.md`, keputusan ke ADR baru, jawaban mentah ke `pertanyaan-owner.md`.
   Claude di tim lain hanya tahu apa yang tertulis di repositori.
+- `CHECK (kolom IN (...))` pada kolom teks membandingkan dengan collation `utf8mb4_unicode_ci`, jadi **tidak membedakan huruf besar-kecil** (`'PAID'` = `'paid'`). Semua perbandingan di database juga begitu, jadi tidak ada salah hitung, tetapi ejaan baku (huruf kecil) dijaga service dan importer, bukan database.
 - Query analisis hanya di MySQL lokal, tidak pernah di dev atau production (CLAUDE.md §0).
