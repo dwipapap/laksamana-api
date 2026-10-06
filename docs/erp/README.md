@@ -14,6 +14,7 @@ Folder ini adalah titik kerja Tim B (platform & ERP). Keputusan dasarnya:
 | `akses.md` | Akses di dalam Modul: Peran, Akses Halaman, Lingkup, Kewenangan (jawaban Q1) |
 | `hari-operasional.md` | Hari bisnis yang fleksibel lewat buka/tutup per Lokasi (jawaban Q6) |
 | `orang-divisi.md` | Master orang dan divisi: `karyawan`, peran Pihak (klien, talent, KOL, pekerja harian), divisi shift/kantor |
+| `hr.md` | SDM — HR: People Score (KPI, input bulanan, review berlapis, feedback, pelanggaran, kehadiran Talenta), skor bulanan yang ditutup |
 | `kas.md` | Dompet, Arus Kas, Kas Kecil, Mutasi Wallet, Setoran, Planning Pembayaran, Pengembalian Modal |
 | `acara-marketing.md` | Tamu — Acara Marketing: booking klien, quotation, pembayaran, persetujuan, tugas, tindak lanjut |
 | `po-proyek.md` | Proyek BD, Pengajuan Pembelian mingguan + penyetuju, PO Proyek + realisasi |
@@ -64,6 +65,8 @@ Contoh pola migration yang sudah benar: `menu`, `news`, `homepage` di `database/
 | Tamu — Event & Tiket (`event-tiket.md`) | event, ticketing | ERD + tabel selesai, di atas Orang & Divisi; importer `erp-event` belum |
 | Tamu — Reservasi, Acara Marketing | reservasi, marketing | Reservasi: PR terpisah; Acara Marketing belum mulai |
 | Kas (kas kecil, brankas, setoran, QRIS) | finance, kompas | belum mulai |
+| SDM — HR (`hr.md`) | hr | ERD + tabel selesai, di atas Orang & Divisi; importer `erp-hr` dan service People Score belum |
+| SDM — Jadwal/Absensi/DW, Akademi | jadwal, absensi, dw, akademi | PR terpisah |
 | SDM — Akademi (`akademi.md`) | akademi | ERD + tabel selesai, di atas Orang & Divisi; importer `erp-akademi` belum |
 | SDM — Jadwal/Absensi/DW, HR | jadwal, absensi, dw, hr | Jadwal/Absensi/DW: PR terpisah; HR belum mulai |
 | SDM — Jadwal, Absensi, Pekerja Harian (`sdm.md`) | jadwal, absensi, dw | ERD + tabel selesai, di atas Orang & Divisi; importer `erp-sdm` belum |
@@ -88,6 +91,7 @@ Sudah di `main`:
 | Tabel dokumen stok + `hari_operasional` | migration `2026_10_05_110000`; model `app/Erp/Persediaan/Models` |
 | Importer dari Stock/HPP lama | `core:import erp-barang`, lalu `core:import erp-persediaan` (urutan wajib); kasus yang butuh keputusan orang dicetak di akhir |
 | Tabel orang & divisi (`karyawan`, `klien`, `talent`, `kol`, `pekerja_harian` + divisi), kolom baru `divisi.nama/jenis/aktif`, `pihak.email/alamat/instagram` | migration `2026_10_07_090000`; model `app/Erp/Master/Models` |
+| Tabel HR (`kpi_template`/`kpi_item`/`kpi_realisasi`, `input_bulanan_hr`, `review_kinerja` + nilai, `feedback_kinerja`, `pelanggaran`, `impor_kehadiran`/`kehadiran_talenta`, `skor_kinerja`, pengaturan) | migration `2026_10_07_200000`; model `app/Erp/Sdm/Models` |
 | Tabel Acara Marketing (`acara`, `acara_rincian`, `acara_pembayaran`, `acara_persetujuan`, `acara_tugas`, `template_tugas_acara`, `tindak_lanjut_klien`) | migration `2026_10_07_190000`; model `app/Erp/Tamu/Models` |
 | Tes | `php artisan test tests/Feature/Erp` (30 tes; tes importer butuh dump lama yang sudah dipulihkan, lihat CLAUDE.md §0; tes skema cukup database kosong) |
 | Tabel Kas (`dompet`, `arus_kas`, `kas_kecil`, `mutasi_dompet`, `setoran`, `rencana_bayar`, `pembayaran`, `investor`, `pengembalian_modal`, …) | migration `2026_10_07_110000`; model `app/Erp/Kas/Models` |
