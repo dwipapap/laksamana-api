@@ -9,6 +9,7 @@ Folder ini adalah titik kerja Tim B (platform & ERP). Keputusan dasarnya:
 | File | Isi |
 |---|---|
 | `README.md` | Cara kerja, urutan area, status |
+| `peta-core.md` | Peta seluruh `core` v2: area, tabel bersama, hubungan antar-area, urutan merge PR |
 | `pertanyaan-owner.md` | Pertanyaan bisnis yang menunggu jawaban owner, dan jawabannya |
 | `akses.md` | Akses di dalam Modul: Peran, Akses Halaman, Lingkup, Kewenangan (jawaban Q1) |
 | `hari-operasional.md` | Hari bisnis yang fleksibel lewat buka/tutup per Lokasi (jawaban Q6) |
