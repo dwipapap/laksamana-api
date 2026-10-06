@@ -2,7 +2,7 @@
 
 Satu halaman untuk melihat seluruh rancangan ERP (ADR-0006): area apa saja, tabel mana yang dipakai bersama, bagaimana area saling merujuk, dan urutan merge PR yang masih bertumpuk. Rincian tiap area ada di dokumen areanya; aturan tabel di ADR-0007.
 
-Status per 2026-10-07: semua area di bawah sudah punya rancangan, migration, model, dan tes skema. **Importer dan service belum**, karena butuh dump database lama.
+Status per 2026-10-07: semua area di bawah (#209–#223) sudah punya rancangan, migration, model, dan tes skema. **Importer dan service belum**, karena butuh dump database lama.
 
 ## Area dan tabelnya
 
@@ -24,6 +24,7 @@ Status per 2026-10-07: semua area di bawah sudah punya rancangan, migration, mod
 | Tamu — Acara Marketing | [acara-marketing.md](acara-marketing.md) | `acara` (+ rincian, pembayaran, persetujuan, tugas), `template_tugas_acara`, `tindak_lanjut_klien` | #219 (di atas #209 + #211) |
 | SDM — HR | [hr.md](hr.md) | `pengaturan_hr` (+ grade, potongan), `kpi_template`, `kpi_item`, `kpi_realisasi`, `input_bulanan_hr`, `review_kinerja` (+ nilai), `feedback_kinerja`, `pelanggaran`, `impor_kehadiran`, `kehadiran_talenta`, `skor_kinerja` | #220 (di atas #209) |
 | Konten | [konten.md](konten.md) | `brand_konten`, `kampanye_konten`, `konten` (+ tayang, persetujuan), `iklan` (+ biaya), `dana_iklan`, `kol_tarif`, `kunjungan_kol`, `tugas_produksi`, `ide_konten`, `kru_konten` (+ brand) | #221 (di atas #209) |
+| Kerja Tim, Log, Notifikasi | [kerja-tim.md](kerja-tim.md) | `tugas_tim` (+ PIC), `permintaan_koordinasi`, `rutinitas_tim`, `agenda_tim`, `log_aktivitas`, `notifikasi` | #223 (di atas #214) |
 
 ## Tabel bersama dan siapa yang merujuknya
 
@@ -74,10 +75,11 @@ Hubungan yang **direncanakan** tetapi belum dibuat (dicatat di "Belum dikerjakan
 
 PR bertumpuk otomatis dipindah base-nya ke `main` oleh GitHub setelah PR dasarnya di-merge dan branch-nya dihapus.
 
-1. #209 Orang & Divisi, #210 Resep & HPP, #211 Kas, #212 Akses, #214 PO Proyek (semuanya langsung di atas `main`, boleh urutan apa pun).
+1. #209 Orang & Divisi, #210 Resep & HPP, #211 Kas, #212 Akses, #214 PO Proyek, #222 peta ini (semuanya langsung di atas `main`, boleh urutan apa pun).
 2. Setelah #211: #213 Penjualan Harian, #215 Reservasi.
 3. Setelah #209: #216 Event & Tiket, #217 SDM, #218 Akademi, #220 HR, #221 Konten.
-4. Setelah #209 **dan** #211: #219 Acara Marketing (ia memuat merge branch Kas; diff-nya mengecil sendiri begitu #211 masuk).
+4. Setelah #214: #223 Kerja Tim.
+5. Setelah #209 **dan** #211: #219 Acara Marketing (ia memuat merge branch Kas; diff-nya mengecil sendiri begitu #211 masuk).
 
 `CONTEXT.md` dan `docs/erp/README.md` disentuh hampir semua PR (baris istilah dan status). Konflik di sana selalu berupa dua penambahan di tempat yang sama: simpan keduanya.
 
@@ -94,7 +96,6 @@ Tabel `core` per-modul yang dibekukan (`jadwal_*`, `dw_*`, `abs_*`, `marketing_*
 | Modul lama | Kenapa |
 |---|---|
 | Howandi Life (`hlife`) | audit core: di luar ERP (catatan pribadi pemilik: bisnis, aset, target, keuangan pribadi). Usul: tetap di database lamanya; perlu konfirmasi owner |
-| BD OS: tugas, rutinitas, permintaan koordinasi, agenda | alat kerja tim, bukan dokumen bisnis; dirancang bersama fitur log & notifikasi bersama |
 | Investor (`investor/`, laporan Kompas) | baca-saja dari area Penjualan Harian dan Kas |
 | Analytics, Radar | layar baca-saja di atas area lain + impor ESB |
 | VIP Marketing, rokok Kompas, aset & shooting Konten | bentuknya perlu dicek / tabel lama kosong |
