@@ -64,7 +64,7 @@ it('refuses order and event values that cannot be right', function (Closure $wri
     expect(fn () => $write(evtFixture()))->toThrow(QueryException::class);
 })->with([
     'total not subtotal + fee' => [fn (array $f) => pesanan($f, ['total' => 1])],
-    'legacy payment spelling' => [fn (array $f) => pesanan($f, ['status_bayar' => 'EXPIRED'])],
+    'unknown payment state' => [fn (array $f) => pesanan($f, ['status_bayar' => 'kedaluwarsa'])],
     'event ends before it starts' => [fn (array $f) => Event::create(['nama' => 'X', 'mulai_at' => '2026-10-31 13:00:00', 'selesai_at' => '2026-10-31 12:00:00'])],
     'legacy event status' => [fn (array $f) => Event::create(['nama' => 'X', 'status' => 'Today'])],
     'decision without a time' => [fn (array $f) => $f['event']->update(['keputusan' => 'disetujui'])],

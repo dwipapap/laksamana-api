@@ -84,4 +84,5 @@ Menunggu orang lain: jawaban owner putaran 2 (L1–L11, `pertanyaan-owner.md`; L
 - Pertanyaan yang belum dijawab owner memakai **perilaku sistem lama** sebagai asumsi (bentuk tabel lama tidak diikuti), dicatat di bagian D `pertanyaan-owner.md`.
 - Setiap jawaban owner langsung dicatat: istilah ke `CONTEXT.md`, keputusan ke ADR baru, jawaban mentah ke `pertanyaan-owner.md`.
   Claude di tim lain hanya tahu apa yang tertulis di repositori.
+- `CHECK (kolom IN (...))` pada kolom teks membandingkan dengan collation `utf8mb4_unicode_ci`, jadi **tidak membedakan huruf besar-kecil** (`'PAID'` = `'paid'`). Semua perbandingan di database juga begitu, jadi tidak ada salah hitung, tetapi ejaan baku (huruf kecil) dijaga service dan importer, bukan database.
 - Query analisis hanya di MySQL lokal, tidak pernah di dev atau production (CLAUDE.md §0).
