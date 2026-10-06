@@ -113,11 +113,12 @@ class InfoPagi
     {
         $db = $this->conn('marketing', $source);
         $batas = date('Y-m-d', strtotime($date.' 00:00:00 -60 days'));
+        // No JOIN: the users table layout differs per environment; PIC names
+        // resolve from the decoded data blob (mktPIC) where present, else ''.
         $rows = $db->select(
-            'SELECT e.id, e.nama, e.tanggal, e.status, e.pax, e.mkt_pic, e.data, u.name AS pic_name'
-            .' FROM `events` e LEFT JOIN `users` u ON u.id = e.mkt_pic'
-            ." WHERE e.status IN ('Deal', 'Event Done') AND e.tanggal <= ? AND e.tanggal >= ?"
-            .' ORDER BY e.nama',
+            'SELECT id, nama, tanggal, status, pax, mkt_pic, data'
+            .' FROM `events` WHERE status IN (\'Deal\', \'Event Done\') AND tanggal <= ? AND tanggal >= ?'
+            .' ORDER BY nama',
             [$date, $batas]
         );
         $events = [];
@@ -143,7 +144,7 @@ class InfoPagi
                 'nama' => (string) ($r->nama ?? ''),
                 'status' => (string) ($r->status ?? ''),
                 'pax' => (int) ($r->pax ?? 0),
-                'picName' => (string) ($r->pic_name ?? ''),
+                'picName' => isset($d['mktPICName']) ? (string) $d['mktPICName'] : '',
                 'menuFix' => isset($d['menuFix']) ? (string) $d['menuFix'] : '',
                 'selesai' => $selesai,
                 'hari' => $hari,
@@ -151,13 +152,20 @@ class InfoPagi
             ];
         }
 
-        return ['events' => $events, 'vip' => $this->vipOn($db, $date)];
+        return ['events' => $events, 'vip' => $this->vipOn($db, $date, false, $source)];
     }
 
     /** Assisted, not-cancelled VIP rows of one day. Mirrors MarketingQueries::vipOn(). */
-    private function vipOn(ConnectionInterface $db, string $date): array
+    private function vipOn(ConnectionInterface $db, string $date, bool $core, string $source): array
     {
-        $rows = $db->select('SELECT data FROM `vip` ORDER BY created_at');
+        if ($core) {
+            $rows = $db->select('SELECT data FROM `marketing_vip` ORDER BY urutan');
+        } else {
+            // Legacy layout (dev or PROD pin): JSON list under settings key extra:vip.
+            $row = $db->selectOne('SELECT v FROM `settings` WHERE k = ?', ['extra:vip']);
+            $list = $row ? (json_decode((string) $row->v, true) ?: []) : [];
+            $rows = array_map(fn ($v) => (object) ['data' => json_encode($v)], is_array($list) ? $list : []);
+        }
         $pick = [];
         foreach ($rows as $row) {
             $v = json_decode((string) ($row->data ?? ''), true);
@@ -172,52 +180,23 @@ class InfoPagi
         if ($pick === []) {
             return [];
         }
-        $userIds = $clientIds = [];
-        foreach ($pick as $v) {
-            if (! empty($v['mktPIC'])) {
-                $userIds[(string) $v['mktPIC']] = 1;
-            }
-            if (! empty($v['clientId'])) {
-                $clientIds[(string) $v['clientId']] = 1;
-            }
-        }
-        $userName = $this->column($db, 'users', 'id', 'name', array_keys($userIds));
-        $clientCo = $this->column($db, 'clients', 'id', 'perusahaan', array_keys($clientIds));
-        $clientName = $this->column($db, 'clients', 'id', 'nama', array_keys($clientIds));
+        // No lookups: users/clients layouts differ per environment; the VIP
+        // row already carries perusahaan + PIC name where the app stored them.
         $out = [];
         foreach ($pick as $v) {
-            $cid = (string) ($v['clientId'] ?? '');
-            $pt = ($cid !== '' && isset($clientCo[$cid]) && $clientCo[$cid] !== '')
-                ? $clientCo[$cid]
-                : (($cid !== '' && isset($clientName[$cid])) ? $clientName[$cid] : (string) ($v['perusahaan'] ?? ''));
-            $pid = (string) ($v['mktPIC'] ?? '');
             $out[] = [
                 'nama' => (string) ($v['nama'] ?? ''),
-                'perusahaan' => $pt,
+                'perusahaan' => (string) ($v['perusahaan'] ?? ''),
                 'jam' => trim(implode(' - ', array_filter([(string) ($v['jamMulai'] ?? ''), (string) ($v['jamSelesai'] ?? '')]))),
                 'pax' => (int) (! empty($v['paxMax']) ? $v['paxMax'] : ($v['paxMin'] ?? 0)),
                 'meja' => isset($v['meja']) && is_array($v['meja']) ? array_values($v['meja']) : [],
                 'nominal' => (int) round((float) ($v['nominal'] ?? 0)),
-                'picName' => ($pid !== '' && isset($userName[$pid])) ? $userName[$pid] : null,
+                'picName' => (string) ($v['mktPICName'] ?? ''),
                 'menuFix' => isset($v['menuFix']) ? (string) $v['menuFix'] : '',
             ];
         }
 
         return $out;
-    }
-
-    private function column(ConnectionInterface $db, string $table, string $idCol, string $col, array $ids): array
-    {
-        if ($ids === []) {
-            return [];
-        }
-        $ph = implode(',', array_fill(0, count($ids), '?'));
-        $map = [];
-        foreach ($db->select("SELECT `$idCol` AS id, `$col` AS v FROM `$table` WHERE `$idCol` IN ($ph)", array_values($ids)) as $r) {
-            $map[(string) $r->id] = (string) ($r->v ?? '');
-        }
-
-        return $map;
     }
 
     // ── connections ─────────────────────────────────────────────
