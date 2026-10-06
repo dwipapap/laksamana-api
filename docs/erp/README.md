@@ -12,6 +12,7 @@ Folder ini adalah titik kerja Tim B (platform & ERP). Keputusan dasarnya:
 | `pertanyaan-owner.md` | Pertanyaan bisnis yang menunggu jawaban owner, dan jawabannya |
 | `akses.md` | Akses di dalam Modul: Peran, Akses Halaman, Lingkup, Kewenangan (jawaban Q1) |
 | `hari-operasional.md` | Hari bisnis yang fleksibel lewat buka/tutup per Lokasi (jawaban Q6) |
+| `po-proyek.md` | Proyek BD, Pengajuan Pembelian mingguan + penyetuju, PO Proyek + realisasi |
 | `kas.md` | Dompet, Arus Kas, Kas Kecil, Mutasi Wallet, Setoran, Planning Pembayaran, Pengembalian Modal |
 | `resep-hpp.md` | Resep, harga jual, Pengaturan HPP, Kontrol Bahan Baku; aturan hitung Modal dari layar HPP lama |
 | `orang-divisi.md` | Master orang dan divisi: `karyawan`, peran Pihak (klien, talent, KOL, pekerja harian), divisi shift/kantor |
@@ -51,6 +52,7 @@ Contoh pola migration yang sudah benar: `menu`, `news`, `homepage` di `database/
 | Akses di dalam Modul | semua modul | usulan di `akses.md`, menunggu L3 |
 | Hari Operasional | finance, kompas, absensi, jadwal, stock | usulan di `hari-operasional.md`, menunggu L8–L10 |
 | **Pembelian & Persediaan** (pertama) | stock, bd, finance (kas kecil) | tabel master + dokumen stok + importer selesai (lihat bagian Status kerja); belum ada service/endpoint v2 |
+| Proyek & PO Proyek (`po-proyek.md`) | bd | ERD + tabel selesai; importer `erp-po-proyek` belum |
 | Resep & HPP (`resep-hpp.md`) | stock (hpp) | ERD + tabel selesai; importer `erp-resep` dan service Modal belum (butuh dump) |
 | Penjualan (omset, booking + DP, paket event, tiket) | finance, reservasi, event, ticketing, marketing | belum mulai |
 | Kas (`kas.md`) | finance, kompas | ERD + tabel selesai (asumsi L6, L7); importer `erp-kas` dan service saldo belum (butuh dump) |
@@ -65,6 +67,7 @@ Sudah di `main`:
 | Tabel master v2 (lokasi, satuan, pihak, vendor, barang + satuan/vendor/lokasi/harga) | migration `2026_10_05_090000`, `_100000`; model `app/Erp/Master/Models` |
 | Tabel dokumen stok + `hari_operasional` | migration `2026_10_05_110000`; model `app/Erp/Persediaan/Models` |
 | Importer dari Stock/HPP lama | `core:import erp-barang`, lalu `core:import erp-persediaan` (urutan wajib); kasus yang butuh keputusan orang dicetak di akhir |
+| Tabel Proyek & PO Proyek (`proyek`, `proyek_pic`, `pengajuan_pembelian` + penyetuju, `po_proyek`) | migration `2026_10_07_140000`; model `app/Erp/Proyek/Models` |
 | Tabel Akses (`halaman`, `peran`, `peran_halaman`, `kewenangan`, `peran_kewenangan`, `penempatan_peran`) | migration `2026_10_07_120000`; model `app/Erp/Akses/Models` |
 | Tabel Kas (`dompet`, `arus_kas`, `kas_kecil`, `mutasi_dompet`, `setoran`, `rencana_bayar`, `pembayaran`, `investor`, `pengembalian_modal`, …) | migration `2026_10_07_110000`; model `app/Erp/Kas/Models` |
 | Tabel Resep & HPP (`resep`, `resep_baris`, `resep_harga`, `pengaturan_hpp`, `kontrol_bahan` + baris), kolom baru `satuan.keluarga/faktor`, `barang.dipesan` | migration `2026_10_07_100000`; model `app/Erp/Resep/Models` |

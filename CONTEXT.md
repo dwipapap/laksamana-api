@@ -188,6 +188,14 @@ _Avoid_: PO (alone), Order
 A purchase order raised in BD for a project or event; a different flow from Pesanan Bahan.
 _Avoid_: PO (alone), Purchase request
 
+**Proyek**:
+A BD project or event with a budget, a stage (idea to completed) and one or more PICs; its spend is the sum of what its PO Proyek really cost.
+_Avoid_: Project (in Indonesian text), Program, Event (for the BD record)
+
+**Pengajuan Pembelian**:
+BD's weekly purchase request sheet (PR): the PO Proyek lines of that week, approved by named people one by one.
+_Avoid_: PR (alone in prose), Purchase request, Pesanan Bahan
+
 **Pembelian Langsung**:
 A purchase paid on the spot without any order to a vendor (e.g. cash at the market); a document of its own, never a Pesanan Bahan.
 _Avoid_: Belanja PO, Direct order
