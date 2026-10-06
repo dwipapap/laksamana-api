@@ -13,6 +13,7 @@ Folder ini adalah titik kerja Tim B (platform & ERP). Keputusan dasarnya:
 | `akses.md` | Akses di dalam Modul: Peran, Akses Halaman, Lingkup, Kewenangan (jawaban Q1) |
 | `hari-operasional.md` | Hari bisnis yang fleksibel lewat buka/tutup per Lokasi (jawaban Q6) |
 | `orang-divisi.md` | Master orang dan divisi: `karyawan`, peran Pihak (klien, talent, KOL, pekerja harian), divisi shift/kantor |
+| `akademi.md` | SDM — Akademi: materi, program belajar, progres, log |
 | `<area>.md` | Rancangan satu area: kegiatan, istilah, ERD Mermaid, siklus dokumen, aturan, pemetaan dari tabel lama |
 
 Kontrak endpoint v2 ditulis di `docs/api/v2/<area>.md` **sebelum** dibangun, supaya Tim A tahu apa yang akan datang.
@@ -49,7 +50,8 @@ Contoh pola migration yang sudah benar: `menu`, `news`, `homepage` di `database/
 | **Pembelian & Persediaan** (pertama) | stock, bd, finance (kas kecil) | tabel master + dokumen stok + importer selesai (lihat bagian Status kerja); belum ada service/endpoint v2 |
 | Penjualan (omset, booking + DP, paket event, tiket) | finance, reservasi, event, ticketing, marketing | belum mulai |
 | Kas (kas kecil, brankas, setoran, QRIS) | finance, kompas | belum mulai |
-| SDM (absensi → jadwal → upah harian → bonus) | absensi, jadwal, dw, hr, akademi | belum mulai |
+| SDM — Akademi (`akademi.md`) | akademi | ERD + tabel selesai, di atas Orang & Divisi; importer `erp-akademi` belum |
+| SDM — Jadwal/Absensi/DW, HR | jadwal, absensi, dw, hr | Jadwal/Absensi/DW: PR terpisah; HR belum mulai |
 
 ## Status kerja (2026-10-07) — baca ini dulu kalau melanjutkan
 
@@ -61,6 +63,7 @@ Sudah di `main`:
 | Tabel dokumen stok + `hari_operasional` | migration `2026_10_05_110000`; model `app/Erp/Persediaan/Models` |
 | Importer dari Stock/HPP lama | `core:import erp-barang`, lalu `core:import erp-persediaan` (urutan wajib); kasus yang butuh keputusan orang dicetak di akhir |
 | Tabel orang & divisi (`karyawan`, `klien`, `talent`, `kol`, `pekerja_harian` + divisi), kolom baru `divisi.nama/jenis/aktif`, `pihak.email/alamat/instagram` | migration `2026_10_07_090000`; model `app/Erp/Master/Models` |
+| Tabel Akademi (`materi`, `materi_divisi`, `program_belajar`, `program_materi`, `progres_materi`, `progres_program`, `aktivitas_akademi`, pengaturan) | migration `2026_10_07_180000`; model `app/Erp/Akademi/Models` |
 | Tes | `php artisan test tests/Feature/Erp` (30 tes; tes importer butuh dump lama yang sudah dipulihkan, lihat CLAUDE.md §0; tes skema cukup database kosong) |
 
 Belum dikerjakan, urutan yang disarankan:

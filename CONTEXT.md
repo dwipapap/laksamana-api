@@ -146,6 +146,14 @@ _Avoid_: Artist, Performer, Pengisi acara
 A Pihak that promotes the venue on social media for Konten, paid per post or visit.
 _Avoid_: Influencer, Endorser
 
+**Materi**:
+A lesson in Akademi made of ordered steps (text, video, quiz) for some or all Divisi, with its own passing score or the default one.
+_Avoid_: Course, Modul (the Office term), Training (HR's record)
+
+**Program Belajar**:
+A month's set of Materi with a deadline; a learner's progress is kept per Materi and per Program, and outlives a retired Materi.
+_Avoid_: Program (alone), Curriculum
+
 **Buyer**:
 A member of the public who buys event tickets on the public ticket shop with an email and password. A Buyer is not a User: separate accounts (`tix_users`), their own sessions, no Akses, and never listed on the Roster.
 _Avoid_: Pembeli (in code), Customer account, User, Member
