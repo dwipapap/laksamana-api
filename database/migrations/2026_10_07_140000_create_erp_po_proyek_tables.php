@@ -88,8 +88,9 @@ return new class extends Migration
             $t->timestamp('disetujui_at')->nullable();
             $t->foreignUlid('disetujui_oleh')->nullable()->constrained('user')->nullOnDelete();
             $tech($t);
-            $t->unique(['pengajuan_pembelian_id', 'user_id']);
-            $t->unique(['pengajuan_pembelian_id', 'urutan']);
+            // Explicit names: the defaults pass MySQL's 64-character limit.
+            $t->unique(['pengajuan_pembelian_id', 'user_id'], 'pengajuan_penyetuju_user_unique');
+            $t->unique(['pengajuan_pembelian_id', 'urutan'], 'pengajuan_penyetuju_urutan_unique');
         });
 
         $s->create('po_proyek', function (Blueprint $t) use ($divisi, $tech): void {
