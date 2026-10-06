@@ -27,6 +27,7 @@ use App\Core\Imports\TicketingImporter;
 use App\Erp\Kas\Imports\KasImporter;
 use App\Erp\Master\Imports\BarangImporter;
 use App\Erp\Master\Imports\OrangImporter;
+use App\Erp\Penjualan\Imports\PenjualanImporter;
 use App\Erp\Persediaan\Imports\PersediaanImporter;
 use App\Erp\Resep\Imports\ResepImporter;
 use Illuminate\Contracts\Foundation\Application;
@@ -68,6 +69,8 @@ final class CoreServiceProvider extends ServiceProvider
             $app->make(ResepImporter::class),
             // ERP cash: after account (names) and erp-orang
             $app->make(KasImporter::class),
+            // ERP daily sales: after erp-kas; again after erp-acara/-reservasi/-event to link sources
+            $app->make(PenjualanImporter::class),
         ));
     }
 

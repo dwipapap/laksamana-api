@@ -1,6 +1,6 @@
 # Area: Penjualan Harian
 
-Status: **rancangan + migration** (`2026_10_07_130000_create_erp_penjualan_harian_tables.php`). Dibangun di atas area [Kas](kas.md) (`metode_bayar`, `dompet`, `arus_kas`, `setoran`). Importer belum ditulis, karena butuh dump lama untuk diuji.
+Status: **rancangan + migration + importer** (`2026_10_07_130000`, `2026_10_08_100000`; `core:import erp-penjualan` setelah `erp-kas`, dan diulang setelah `erp-acara`/`erp-reservasi`/`erp-event` untuk menautkan sumber breakdown; `app/Erp/Penjualan/Imports/PenjualanImporter.php`, tes `PenjualanImportTest`). Service tiga angka omset dan impor ESB belum.
 Dasar: ADR-0007, ADR-0008 (ESB adalah POS dan sumber bill; Laksamana mencocokkan, tidak menjadi POS kedua), [`hari-operasional.md`](hari-operasional.md).
 
 ## Sumber di sistem lama (diperiksa 2026-10-06)
@@ -176,9 +176,18 @@ Target dan persen pajak/service void berlaku-dari. Porsi PIC disimpan per hari d
 | `void_setting` | `pengaturan_penjualan` | berlaku dari `2000-01-01` |
 | `settings` + `employees{divi}[].target` | `target_omset` + `target_omset_pic` | berlaku dari `2000-01-01` |
 
+## Hasil impor (salinan lokal produksi, 2026-10-06)
+
+- 63 hari omset, 520 baris breakdown, 66 Report Daily (645 baris metode bayar), 606 compliment, 74 bon (57 lunas), 1 void, target dan pengaturan pajak/service void (bawaan 10%/5%).
+- Semua total cocok dengan blob Kompas sampai rupiah: omset per komponen, porsi Marketing (nominal + pajak + service), porsi kasir, POS dan actual per metode, compliment, bon. Tidak ada kasus yang perlu diputuskan; semua PIC cocok lewat id Office. Idempoten.
+- 487 baris `arus_kas` sebab `omset` (uang ke dompet menurut aturan Brankas). 63 hari setoran tertaut ke Report Daily-nya.
+- **Kolom tambahan** yang ternyata dibutuhkan data asli (migration `2026_10_08_100000`): urutan, shift (daftar, disimpan dipisah koma), kasir **libur** (`off`), dan sumber baris (Acara `mkt:`, Reservasi VIP `vip:`, Event `evt:`) di `omset_porsi`; tipe (tamu/staff/owner), nomor bill, metode, PIC di `bon`; subtotal/pajak/service dan **pemberi** di `compliment`; waktu dan pengirim Report Daily.
+- Kode metode bayar mengikuti Report Daily; kunci kelompok Rekap `qr_order`/`transfer` dipetakan ke `qris_esb`/`transfer_uob`. Kunci per-bank lama (`bri`, `mandiri`, `bca`, sebelum 12 Agu 2026) tidak ada di produksi.
+- Tidak diimpor: `bd.abaikan` (status layar), `rokok`, `owners`.
+
 ## Belum dikerjakan
 
-1. Importer `core:import erp-penjualan` (setelah `erp-kas` dan `erp-orang`). Butuh dump `kompas`.
+1. ~~Importer `core:import erp-penjualan`~~: selesai.
 2. Service tiga angka penjualan, porsi PIC, MDR, dan selisih Report Daily, dibandingkan dengan layar lama per hari.
 3. **Impor ESB** (ADR-0008): tabel `pos_bill` dan `pos_penjualan_menu` berkunci nomor bill / kode menu ESB, diisi dari ekspor Bill Report dan Menu Report di server. Tanggal bisnisnya diambil dari Hari Operasional yang memuat jam bill. Dirancang setelah contoh berkas ekspor tersedia.
 4. Rokok.
