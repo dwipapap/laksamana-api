@@ -83,7 +83,9 @@ return new class extends Migration
             $t->boolean('ditutup_otomatis')->default(false);
             $t->string('catatan', 500)->nullable();
             // At most one open day per Lokasi: unique, NULL once closed.
-            $t->ulid('lokasi_buka')->nullable()->storedAs("CASE WHEN status = 'buka' THEN lokasi_id END")->unique();
+            // RTRIM: MariaDB 10.11 (production) refuses a stored CASE that returns a
+            // CHAR column as-is (error 1901, CHAR padding depends on sql_mode).
+            $t->ulid('lokasi_buka')->nullable()->storedAs("CASE WHEN status = 'buka' THEN RTRIM(lokasi_id) END")->unique();
             $tech($t);
             $t->unique(['lokasi_id', 'tanggal_bisnis']);
         });
