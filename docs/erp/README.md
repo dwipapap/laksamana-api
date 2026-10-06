@@ -60,7 +60,7 @@ Semua area di bawah sudah punya rancangan, migration, model, dan tes skema di `m
 | Master Barang, Persediaan | `pembelian-persediaan.md` | stock, hpp | service/endpoint v2 |
 | Hari Operasional | `hari-operasional.md` | finance, kompas, absensi, jadwal, stock | service buka/tutup; menunggu L8–L10 |
 | Akses di dalam Modul | `akses.md` | semua | middleware `halaman:`, seeder halaman, impor matriks lama |
-| Orang & Divisi | `orang-divisi.md` | account, hr, akademi, marketing, konten, bd, stock, dw, event | importer `erp-orang` + pencocok nama (asumsi L4, L5) |
+| Orang & Divisi | `orang-divisi.md` | account, hr, akademi, marketing, konten, bd, stock, dw, event | — (importer `erp-orang` selesai; asumsi L4, L5) |
 | Resep & HPP | `resep-hpp.md` | stock (hpp) | importer `erp-resep`, service Modal |
 | Kas | `kas.md` | finance, kompas | importer `erp-kas`, service saldo (asumsi L6, L7, M1) |
 | Penjualan Harian | `penjualan-harian.md` | kompas, finance | importer `erp-penjualan`, service tiga angka omset, impor ESB |

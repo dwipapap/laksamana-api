@@ -1,6 +1,6 @@
 # Area: Orang & Divisi (master)
 
-Status: **rancangan + migration** (`2026_10_07_090000_create_erp_orang_divisi_tables.php`). Importer belum ditulis, karena butuh dump lama untuk diuji (lihat "Belum dikerjakan").
+Status: **rancangan + migration + importer** (`2026_10_07_090000_create_erp_orang_divisi_tables.php`; `core:import erp-orang` setelah `core:import account`, `app/Erp/Master/Imports/OrangImporter.php`, tes `tests/Feature/Erp/OrangImportTest.php`).
 Dasar: jawaban owner Q1 dan Q2, asumsi L4 dan L5 ([`pertanyaan-owner.md`](pertanyaan-owner.md) bagian D), ADR-0007, audit [`../db/audit-core.md`](../db/audit-core.md) temuan 7 dan 8.
 
 Area ini dikerjakan sebelum area lain karena setiap dokumen merujuk orang: siapa yang mengajukan, menerima, dibayar, dinilai, atau menjadi PIC. Selama orang belum punya satu tempat, setiap area terpaksa menyimpan nama sebagai teks (`*_impor`).
@@ -212,9 +212,16 @@ Di setiap importer v2, kolom lama yang berisi nama orang (`pic`, `oleh`, `byName
 
 Kalau hasilnya nol atau lebih dari satu User, kolom FK dibiarkan kosong, nama lama disimpan di `*_impor`, dan kasusnya dicetak di akhir impor. Pola ini sama dengan importer Persediaan.
 
+## Hasil impor (salinan lokal produksi, 2026-10-06)
+
+- 52 Karyawan dari 53 baris HR: id HR = id Office untuk 51, sisanya lewat Talenta/nama; 1 tanpa User dilaporkan. 3 punya atasan (dari `bd.people.boss_id`), 3 punya divisi organisasi (HR hanya mengisi `div_id` untuk 3 orang).
+- 29 Pekerja Harian (31 baris divisi), 17 Talent, 63 Klien (semua PIC Marketing cocok lewat id Office), 38 KOL; 147 Pihak, 44 rekening.
+- Beda HR vs Roster dilaporkan (jabatan, tanggal bergabung); Roster tetap sumber.
+- Divisi: data BD memakai **Business Development** dan **Purchasing**, yang tidak ada di daftar L4; keduanya ditambahkan sebagai divisi kantor (`business_development`, `purchasing`). Daftar lengkap di `OrangImporter::DIVISI`.
+- Dijalankan dua kali tanpa perubahan (idempoten). Mengulang `core:import account` sesudahnya tidak menghapus divisi kantor.
+
 ## Belum dikerjakan
 
-1. **Importer `core:import erp-orang`.** Membaca `hr`, `dw`, `ems`, `marketing`, dan `konten` lama, mengisi nama + jenis divisi, dan membuat divisi kantor. Ditunda sampai ada mesin dengan dump lama (`tools/restore-dumps.sh`), karena hasilnya harus dibandingkan dengan data asli.
-2. **Pencocok nama → User bersama** (`app/Erp/Master/Imports`). Dipakai juga untuk mengisi ulang `*_impor` di Persediaan.
+1. ~~Importer `core:import erp-orang`~~ dan ~~pencocok nama → User bersama~~ (`PencocokUser`): selesai. Pencocok juga dipakai importer area lain; `*_impor` di Persediaan bisa diisi ulang dengannya.
 3. **`penempatan_peran` dan tabel Akses lain** ([`akses.md`](akses.md)), lalu peta peran lama per modul.
 4. **`CONTEXT.md`:** istilah Pihak, Karyawan, Klien, Talent, KOL ditambahkan bersama rancangan ini; arti Divisi diperluas.
