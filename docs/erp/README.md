@@ -12,6 +12,7 @@ Folder ini adalah titik kerja Tim B (platform & ERP). Keputusan dasarnya:
 | `pertanyaan-owner.md` | Pertanyaan bisnis yang menunggu jawaban owner, dan jawabannya |
 | `akses.md` | Akses di dalam Modul: Peran, Akses Halaman, Lingkup, Kewenangan (jawaban Q1) |
 | `hari-operasional.md` | Hari bisnis yang fleksibel lewat buka/tutup per Lokasi (jawaban Q6) |
+| `resep-hpp.md` | Resep, harga jual, Pengaturan HPP, Kontrol Bahan Baku; aturan hitung Modal dari layar HPP lama |
 | `<area>.md` | Rancangan satu area: kegiatan, istilah, ERD Mermaid, siklus dokumen, aturan, pemetaan dari tabel lama |
 
 Kontrak endpoint v2 ditulis di `docs/api/v2/<area>.md` **sebelum** dibangun, supaya Tim A tahu apa yang akan datang.
@@ -45,6 +46,7 @@ Contoh pola migration yang sudah benar: `menu`, `news`, `homepage` di `database/
 | Akses di dalam Modul | semua modul | usulan di `akses.md`, menunggu L3 |
 | Hari Operasional | finance, kompas, absensi, jadwal, stock | usulan di `hari-operasional.md`, menunggu L8–L10 |
 | **Pembelian & Persediaan** (pertama) | stock, bd, finance (kas kecil) | tabel master + dokumen stok + importer selesai (lihat bagian Status kerja); belum ada service/endpoint v2 |
+| Resep & HPP (`resep-hpp.md`) | stock (hpp) | ERD + tabel selesai; importer `erp-resep` dan service Modal belum (butuh dump) |
 | Penjualan (omset, booking + DP, paket event, tiket) | finance, reservasi, event, ticketing, marketing | belum mulai |
 | Kas (kas kecil, brankas, setoran, QRIS) | finance, kompas | belum mulai |
 | SDM (absensi → jadwal → upah harian → bonus) | absensi, jadwal, dw, hr, akademi | belum mulai |
@@ -58,6 +60,7 @@ Sudah di `main`:
 | Tabel master v2 (lokasi, satuan, pihak, vendor, barang + satuan/vendor/lokasi/harga) | migration `2026_10_05_090000`, `_100000`; model `app/Erp/Master/Models` |
 | Tabel dokumen stok + `hari_operasional` | migration `2026_10_05_110000`; model `app/Erp/Persediaan/Models` |
 | Importer dari Stock/HPP lama | `core:import erp-barang`, lalu `core:import erp-persediaan` (urutan wajib); kasus yang butuh keputusan orang dicetak di akhir |
+| Tabel Resep & HPP (`resep`, `resep_baris`, `resep_harga`, `pengaturan_hpp`, `kontrol_bahan` + baris), kolom baru `satuan.keluarga/faktor`, `barang.dipesan` | migration `2026_10_07_100000`; model `app/Erp/Resep/Models` |
 | Tes | `php artisan test tests/Feature/Erp` (24 tes; butuh dump lama yang sudah dipulihkan, lihat CLAUDE.md §0) |
 
 Belum dikerjakan, urutan yang disarankan:

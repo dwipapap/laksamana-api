@@ -176,6 +176,22 @@ _Avoid_: Belanja PO, Direct order
 A vendor’s bill; one Tagihan Vendor may cover several orders.
 _Avoid_: Invoice (for our own invoices), Nota
 
+**Resep**:
+How one base, menu or prasmanan dish is made: lines of Barang or other Resep with a quantity, cooking-step notes, and a yield. Food and drink Resep may share a name; a line finds its sub-Resep in its own kind first.
+_Avoid_: Recipe, BOM, Menu (for the recipe itself)
+
+**Modal**:
+What one yield of a Resep costs in Barang, computed from current purchase prices through every sub-Resep; a menu's Modal adds the Spare once. Never stored on the Resep; a report that needs it keeps a copy.
+_Avoid_: HPP (for one dish; HPP is the module), Cost, Biaya
+
+**Spare**:
+A percentage added once to a menu's Modal to cover shrinkage and uneven portions, set in Pengaturan HPP; never added to a base.
+_Avoid_: Buffer (old setting name), Margin
+
+**Kontrol Bahan Baku**:
+The monthly check of one Lokasi: per Barang, opening stock, purchases, closing count, and what Resep, spoil, team meals, RND and compliments should have used; the gap shows as a green, yellow or red light.
+_Avoid_: Stock control, COGS bulanan
+
 **Opname**:
 A physical count of the stock of one Lokasi, compared with what the system expects.
 _Avoid_: Stock take, SO (alone)
