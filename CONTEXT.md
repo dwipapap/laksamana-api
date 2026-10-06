@@ -107,8 +107,8 @@ A User's free-text job label (e.g. "Kitchen Bar", "Kasir Office", "Head Marketin
 _Avoid_: Team, Keterangan, Organization
 
 **Divisi**:
-One of the four shift units — bar, kitchen, floor, cashier — that shift crew work in. A User belongs to at most one: their Penempatan Divisi if set, otherwise the first Divisi their Tim names, unless the Tim marks them as office staff.
-_Avoid_: Department, Tim, Organization (the HR field is separate data)
+A unit of the organisation, one list for every Modul (owner, Q2). A **shift** Divisi (bar, kitchen, floor, cashier) is where shift crew work; Jadwal, Penempatan Divisi and Kepala Divisi only ever name these. A **kantor** Divisi (Finance, Event, Marketing & Digital, …) groups office staff for HR, Akademi and KPI. In Jadwal a User belongs to at most one shift Divisi: their Penempatan Divisi if set, otherwise the first Divisi their Tim names, unless the Tim marks them as office staff. Separately, their Karyawan record names the one Divisi they belong to in the organisation.
+_Avoid_: Department, Tim, Organization (the Roster field is separate free text)
 
 **Nonshift**:
 A User outside every Divisi: office staff (Tim says Office/Kantor) or anyone whose Tim names no Divisi.
@@ -126,12 +126,32 @@ _Avoid_: Head, Leader, Manager
 A User whose Tim marks them as a head (the word "Head"), which counts for leader bonuses; unrelated to Kepala Divisi.
 _Avoid_: Head, Kepala Divisi
 
+**Karyawan**:
+The HR record of a User: their organisational Divisi, their superior, contract and probation dates; one per User. Every Karyawan is a User; a Pekerja Harian, Talent or Klien never is.
+_Avoid_: Employee, Pegawai, Staf, Kru
+
+**Pihak**:
+A person or organisation outside the Users that the company deals with. What it is to us is a role it holds — vendor, Klien, Talent, KOL, Pekerja Harian — and one Pihak may hold several.
+_Avoid_: Party, Kontak, Partner, Customer
+
+**Klien**:
+A Pihak that books or buys events and packages through Marketing, followed up by a Marketing PIC.
+_Avoid_: Client, Customer, Tamu (a walk-in or reservation guest)
+
+**Talent**:
+A Pihak that performs at the venue (band, DJ, singer) and is paid per performance.
+_Avoid_: Artist, Performer, Pengisi acara
+
+**KOL**:
+A Pihak that promotes the venue on social media for Konten, paid per post or visit.
+_Avoid_: Influencer, Endorser
+
 **Buyer**:
 A member of the public who buys event tickets on the public ticket shop with an email and password. A Buyer is not a User: separate accounts (`tix_users`), their own sessions, no Akses, and never listed on the Roster.
 _Avoid_: Pembeli (in code), Customer account, User, Member
 
 **Pekerja Harian**:
-A daily worker hired per need; not a User, never logs in, identified by phone number, and may work in several Divisi.
+A daily worker hired per need; a Pihak, not a User, never logs in to the Office, identified by phone number, and may work in several Divisi.
 _Avoid_: DW (as a person), Kru, Freelancer, Part-timer
 
 ### Operations & stock
