@@ -146,22 +146,33 @@ _Avoid_: Artist, Performer, Pengisi acara
 A Pihak that promotes the venue on social media for Konten, paid per post or visit.
 _Avoid_: Influencer, Endorser
 
+**Shift**:
+A named block of working hours (Pagi, Malam, …) a crew member is scheduled into on a date; it belongs to the Hari Operasional it starts in, and may end after midnight.
+_Avoid_: Sesi, Hari Operasional, Jam kerja (alone)
+
+**Pengajuan Jadwal**:
+A crew member's request to change their schedule (off, leave, permission, swap), approved by their Kepala Divisi and then by HRD.
+_Avoid_: Request, Izin (it is one of the kinds)
+
+**Ketukan Absen**:
+One clock-in or clock-out of a User or a Pekerja Harian, keeping where it was, whose face it was and which shift applied at that moment; a doubtful one waits for a decision.
+_Avoid_: Punch (in Indonesian text), Absen (alone), Check-in (tickets)
+
+**Penugasan DW**:
+One Pekerja Harian booked for one shift, at the wage of that day; attendance (hadir, telat, alfa) is recorded on it and it is paid in a weekly transfer.
+_Avoid_: Ajuan (old name), Booking DW
 **Event**:
 A night or programme the venue runs, from Planning through approval to Upcoming and Event Done; only an Upcoming Event may sell tickets.
 _Avoid_: Acara (for the EMS record), Show, Proyek (BD's record)
-
 **Kelas Tiket**:
 A kind of ticket for one Event with its price, quota and sale window; a seated class is sold per seat or table.
 _Avoid_: Ticket type, Tier (a seat attribute)
-
 **Pesanan Tiket**:
 A Buyer's (or an on-site guest's) order of tickets for one Event; paid only when the payment gateway says so.
 _Avoid_: Order (alone), Booking, Transaksi
-
 **Tiket**:
 One issued ticket with its QR code, checked in at the gate; a check-in is undone by a correction, never deleted.
 _Avoid_: E-ticket (on screens it is fine), Voucher
-
 **Jadwal Talent**:
 One performance a Talent is booked for, at the fee agreed then; Talent are paid per month for the performances done.
 _Avoid_: Booking talent, Gig
