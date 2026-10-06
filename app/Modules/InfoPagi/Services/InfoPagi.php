@@ -53,7 +53,7 @@ class InfoPagi
     }
 
     /**
-     * @return array{date:string,source:string,event:array,marketing:array}
+     * @return array{date:string,source:string,event:array,marketing:array,errors:array}
      */
     public function briefing(string $date, string $source = 'default'): array
     {
@@ -61,11 +61,29 @@ class InfoPagi
             throw new InvalidArgumentException('date must be YYYY-MM-DD.');
         }
 
+        // Each section is isolated: one source failing must not drop the
+        // whole briefing, and the failure is reported (not a bare 500) so
+        // n8n/server logs stay diagnosable without cPanel access.
+        $errors = [];
+        try {
+            $event = $this->eventHari($date, $source);
+        } catch (\Throwable $e) {
+            $event = [];
+            $errors['event'] = $e->getMessage();
+        }
+        try {
+            $marketing = $this->marketingHari($date, $source);
+        } catch (\Throwable $e) {
+            $marketing = ['events' => [], 'vip' => []];
+            $errors['marketing'] = $e->getMessage();
+        }
+
         return [
             'date' => $date,
             'source' => $source,
-            'event' => $this->eventHari($date, $source),
-            'marketing' => $this->marketingHari($date, $source),
+            'event' => $event,
+            'marketing' => $marketing,
+            'errors' => $errors,
         ];
     }
 
