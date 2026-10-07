@@ -1,0 +1,161 @@
+{
+  "name": "Laksamana Info Pagi 07 WIB (automation)",
+  "nodes": [
+    {
+      "id": "b2222222-0000-4000-8000-000000000001",
+      "name": "Jadwal 07 WIB",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 7
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "b2222222-0000-4000-8000-000000000002",
+      "name": "Ambil Info Pagi",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://dev-api.laksamanamuda.id/api/v1/automation/info-pagi",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "tqHYmaR0TpKRnAnO",
+          "name": "Laksamana API automation"
+        }
+      }
+    },
+    {
+      "id": "b2222222-0000-4000-8000-000000000003",
+      "name": "Cek meta.errors",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items = $input.all();\nconst j = (items[0] && items[0].json) || {};\nconst meta = j.meta || {};\nconst errors = meta.errors || {};\nconst keys = Object.keys(errors);\nif (keys.length > 0) {\n  throw new Error('automation feed meta.errors: ' + JSON.stringify(errors));\n}\nreturn $input.all();"
+      }
+    },
+    {
+      "id": "b2222222-0000-4000-8000-000000000004",
+      "name": "Format Info Pagi",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst top = (items[0] && items[0].json) || {};\nconst data = top.data || (top.body && top.body.data) || {};\nconst meta = top.meta || (top.body && top.body.meta) || {};\n\nconst ev = Array.isArray(data.event) ? data.event : [];\nconst mk = (data.marketing && Array.isArray(data.marketing.events)) ? data.marketing.events : [];\nconst vip = (data.marketing && Array.isArray(data.marketing.vip)) ? data.marketing.vip : [];\n\n// Menggabungkan EVENT dan MARKETING jadi satu array\nconst combinedEvents = [...ev, ...mk];\n\nconst dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];\nconst months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];\n\nfunction rupiah(n) {\n  n = Number(n) || 0;\n  return 'Rp. ' + n.toLocaleString('id-ID');\n}\n\nfunction tglIndo(iso) {\n  const p = String(iso || '').split('-');\n  if (p.length !== 3 || !p[0]) return String(iso || '');\n  const dt = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));\n  if (isNaN(dt.getTime())) return String(iso || '');\n  return dayNames[dt.getDay()] + ', ' + Number(p[2]) + ' ' + months[Number(p[1]) - 1] + ' ' + p[0];\n}\n\nfunction jamMulai(s) {\n  s = String(s || '');\n  const m = s.match(/(\\d{2}):(\\d{2})/);\n  return m ? m[0] : (s || '-');\n}\n\nconst tgl = tglIndo(meta.date);\nconst total = combinedEvents.length + vip.length;\n\n// JIKA TIDAK ADA EVENT\nif (total === 0) {\n  const linesEmpty = [];\n  linesEmpty.push('Halo, Semangat Pagi Team! ☀️✨');\n  linesEmpty.push('📅 *' + tgl + '*');\n  linesEmpty.push('');\n  linesEmpty.push('☕ Hari ini jadwal kita *FREE EVENT* alias nihil agenda!');\n  linesEmpty.push('Yuk manfaatkan hari ini buat fokus pelayanan reguler, beberes area, atau sekadar nafas sejenak.');\n  linesEmpty.push('');\n  linesEmpty.push('Tetap semangat dan jaga kesehatan ya semuanya! 💪🔥');\n  return [{ json: { text: linesEmpty.join('\\n') } }];\n}\n\n// JIKA ADA EVENT\nconst lines = [];\nlines.push('Halo, Selamat Pagi Team! 🖐️✨');\nlines.push('Berikut rekap kegiatan & event untuk hari ini ya:');\nlines.push('');\nlines.push('📋 *INFO EVENT - ' + tgl + '*');\nlines.push('📊 Total: ' + combinedEvents.length + ' Event/Marketing | ' + vip.length + ' VIP');\nlines.push('----------------------------------');\n\nif (combinedEvents.length) {\n  lines.push('');\n  lines.push('🎉 *DAFTAR EVENT:*');\n  combinedEvents.forEach((r, i) => {\n    const nm = '*' + String(r.nama || '-').toUpperCase() + '*';\n    const jm = jamMulai(r.mulai || r.time || '--:--');\n    const vn = String(r.venue || '-');\n    const px = (r.pax !== undefined && r.pax !== null) ? r.pax + ' pax' : '';\n    const st = String(r.status || '');\n    const hari = (r.totalHari && r.totalHari > 1) ? ' (hari ' + r.hari + '/' + r.totalHari + ')' : '';\n    \n    let details = [nm];\n    if (jm !== '--:--' && jm !== '-') details.push('⏰ ' + jm);\n    if (vn !== '-') details.push('📍 ' + vn);\n    if (px) details.push('👥 ' + px);\n    if (st) details.push('📌 ' + st);\n    \n    lines.push((i + 1) + '. ' + details.join(' | ') + hari);\n  });\n}\n\nif (vip.length) {\n  lines.push('');\n  lines.push('⭐ *VIP:*');\n  vip.forEach((r, i) => {\n    const nm = '*' + String(r.nama || '-').toUpperCase() + '*';\n    const pt = String(r.perusahaan || '-');\n    const jm = String(r.jam || '-');\n    const px = (r.pax === undefined || r.pax === null) ? '-' : r.pax;\n    const mj = Array.isArray(r.meja) ? r.meja.join(', ') : String(r.meja || '-');\n    const nom = Number(r.nominal) || 0;\n    const dp = nom > 0 ? rupiah(nom) : '❌ Belum DP';\n    lines.push((i + 1) + '. ' + nm + ' | 🏢 ' + pt + ' | ⏰ ' + jm + ' | 👥 ' + px + ' pax | 🪑 Meja ' + mj + ' | 💳 ' + dp);\n  });\n}\n\nlines.push('');\nlines.push('----------------------------------');\nlines.push('Tetap kompak, berikan pelayanan terbaik, dan semangat bertugas hari ini team! 💪🔥');\n\nreturn [{ json: { text: lines.join('\\n') } }];"
+      }
+    },
+    {
+      "id": "b2222222-0000-4000-8000-000000000005",
+      "name": "Kirim ke Group Koordinasi",
+      "disabled": false,
+      "type": "@aldinokemal2104/n8n-nodes-gowa.gowa",
+      "typeVersion": 1,
+      "position": [
+        800,
+        0
+      ],
+      "parameters": {
+        "phoneNumber": "<WA_GROUP_ID>",
+        "message": "={{ $json.text }}"
+      },
+      "credentials": {
+        "goWhatsappApi": {
+          "id": "WOZtOdlfk2g4zpL2",
+          "name": "GOWA account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Jadwal 07 WIB": {
+      "main": [
+        [
+          {
+            "node": "Ambil Info Pagi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ambil Info Pagi": {
+      "main": [
+        [
+          {
+            "node": "Cek meta.errors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cek meta.errors": {
+      "main": [
+        [
+          {
+            "node": "Format Info Pagi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Info Pagi": {
+      "main": [
+        [
+          {
+            "node": "Kirim ke Group Koordinasi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "timezone": "Asia/Jakarta",
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "active": false,
+  "pinData": {}
+}

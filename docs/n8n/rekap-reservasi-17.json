@@ -1,0 +1,168 @@
+{
+  "name": "Laksamana Rekap Reservasi 17 WIB (automation)",
+  "nodes": [
+    {
+      "id": "a1111111-0000-4000-8000-000000000001",
+      "name": "Jadwal 17 WIB",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "a1111111-0000-4000-8000-000000000002",
+      "name": "Ambil Rekap H+0",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "position": [
+        224,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://dev-api.laksamanamuda.id/api/v1/automation/reservasi-harian?days=0",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "tqHYmaR0TpKRnAnO",
+          "name": "Laksamana API automation"
+        }
+      }
+    },
+    {
+      "id": "a1111111-0000-4000-8000-000000000003",
+      "name": "Cek meta.errors",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items = $input.all();\nconst j = (items[0] && items[0].json) || {};\nconst meta = j.meta || {};\nconst errors = meta.errors || {};\nconst keys = Object.keys(errors);\nif (keys.length > 0) {\n  throw new Error('automation feed meta.errors: ' + JSON.stringify(errors));\n}\nreturn $input.all();"
+      }
+    },
+    {
+      "id": "a1111111-0000-4000-8000-000000000004",
+      "name": "Format Pesan Rekap",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const items = $input.all();\nconst j = (items[0] && items[0].json) || {};\nlet day = null;\nif (Array.isArray(j.data) && j.data.length) {\n  const first = j.data[0];\n  if (first && Array.isArray(first.rows)) {\n    day = first;\n  } else if (first && typeof first === 'object' && typeof first.name === 'string') {\n    day = { date: (j.meta && j.meta.date) || '', rows: j.data, total: (j.meta && j.meta.total) || null };\n  }\n} else if (Array.isArray(j.rows)) {\n  day = j;\n}\nconst rows = (day && Array.isArray(day.rows)) ? day.rows : [];\nconst aktif = rows.filter((r) => r && r.status !== 'Cancelled');\nconst t = (day && day.total) || {};\nconst dayNames = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];\nconst months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];\nfunction rupiah(n) {\n  n = Number(n) || 0;\n  return 'Rp. ' + n.toLocaleString('id-ID');\n}\nfunction tglPendek(iso) {\n  const p = String(iso || '').split('-');\n  if (p.length !== 3 || !p[0]) return String(iso || '');\n  const dt = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));\n  if (isNaN(dt.getTime())) return String(iso || '');\n  return dayNames[dt.getDay()] + ', ' + Number(p[2]) + ' ' + months[Number(p[1]) - 1] + ' ' + p[0];\n}\nfunction jmlMeja(r) {\n  const s = (r.tables !== undefined && r.tables !== null) ? r.tables : r.table;\n  return String(s === undefined || s === null ? '' : s).split(',').map((x) => x.trim()).filter((x) => x !== '').length;\n}\nconst totalPax = (t.pax !== undefined && t.pax !== null) ? t.pax : aktif.reduce((a, r) => a + (Number(r.pax) || 0), 0);\nconst totalRes = (t.reservasi !== undefined && t.reservasi !== null) ? t.reservasi : aktif.length;\nconst totalMeja = aktif.reduce((a, r) => a + jmlMeja(r), 0);\nconst lines = [];\nlines.push('Halo, Selamat Sore Team! Bagaimana kabarnya hari ini?');\nlines.push('Berikut Informasi Reservasi pada hari ini ya :');\nlines.push('');\nlines.push('KOORDINASI KEDATANGAN');\nlines.push('Laksamana Muda | ' + tglPendek(day && day.date));\nlines.push('Total: ' + totalPax + ' pax | ' + totalRes + ' reservasi | ' + totalMeja + ' meja');\nlines.push('-----------------');\nif (!aktif.length) {\n  lines.push('Belum ada reservasi.');\n} else {\n  aktif.forEach((r, i) => {\n    const nama = String(r.name || '-').toUpperCase();\n    const jam = String(r.time || '--:--').slice(0, 5);\n    const meja = String((r.tables !== undefined && r.tables !== null) ? r.tables : (r.table || '-')).trim() || '-';\n    const pax = (r.pax === undefined || r.pax === null) ? '-' : r.pax;\n    const dp = Number(r.dpAmount) || 0;\n    const dpTxt = dp > 0 ? rupiah(dp) : 'Belum DP';\n    lines.push((i + 1) + '. ' + nama + ' | ' + jam + ' | ' + meja + ' | ' + pax + ' | ' + dpTxt);\n  });\n}\nreturn [{ json: { text: lines.join('\\n') } }];"
+      }
+    },
+    {
+      "id": "a1111111-0000-4000-8000-000000000005",
+      "name": "Kirim ke Group Koordinasi",
+      "disabled": false,
+      "type": "@aldinokemal2104/n8n-nodes-gowa.gowa",
+      "typeVersion": 1,
+      "position": [
+        800,
+        0
+      ],
+      "parameters": {
+        "deviceIdOverride": "",
+        "message": "={{ $json.text }}",
+        "operation": "sendText",
+        "phoneNumber": "<WA_GROUP_ID>",
+        "resource": "send"
+      },
+      "credentials": {
+        "goWhatsappApi": {
+          "id": "WOZtOdlfk2g4zpL2",
+          "name": "GOWA account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Jadwal 17 WIB": {
+      "main": [
+        [
+          {
+            "node": "Ambil Rekap H+0",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ambil Rekap H+0": {
+      "main": [
+        [
+          {
+            "node": "Cek meta.errors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cek meta.errors": {
+      "main": [
+        [
+          {
+            "node": "Format Pesan Rekap",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Pesan Rekap": {
+      "main": [
+        [
+          {
+            "node": "Kirim ke Group Koordinasi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "timezone": "Asia/Jakarta",
+    "executionOrder": "v1",
+    "availableInMCP": true
+  },
+  "active": false,
+  "pinData": {}
+}
