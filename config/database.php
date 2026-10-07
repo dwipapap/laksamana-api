@@ -169,6 +169,20 @@ return [
             // 'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false'),
         ],
 
+        // Automation feeds (#234): one SELECT-only connection shared by every
+        // n8n feed. Empty AUTOMATION_DB_HOST = not pinned, and ReadDb::for()
+        // falls back to the normal module connection (local & tests). The
+        // per-module database name is swapped in by
+        // App\Modules\Automation\Support\ReadDb, so only credentials live here.
+        'automation_ro' => $laksamanaMysql([
+            'host' => env('AUTOMATION_DB_HOST', ''),
+            'port' => env('AUTOMATION_DB_PORT', '3306'),
+            'database' => '',
+            'username' => env('AUTOMATION_DB_USERNAME', ''),
+            'password' => env('AUTOMATION_DB_PASSWORD', ''),
+            'strict' => null,
+        ]),
+
     ],
 
     /*

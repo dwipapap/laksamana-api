@@ -1,6 +1,7 @@
 <?php
 
 use App\Auth\Middleware\RequireModule;
+use App\Modules\Automation\Http\Middleware\RequireAutomationToken;
 use App\Support\Api\ApiResponse;
 use App\Support\Legacy\LegacyCors;
 use App\Support\Maintenance\RejectModuleWrites;
@@ -24,6 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'module' => RequireModule::class,
             'maintenance' => RejectModuleWrites::class,
+            'automation.token' => RequireAutomationToken::class,
         ]);
         // Old `<modul>-api-mysql/api.php` URLs: open CORS, no session, no CSRF.
         $middleware->group('legacy', [

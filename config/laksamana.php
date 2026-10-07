@@ -59,6 +59,12 @@ $modules = [
     'infopagi' => ['env' => 'INFOPAGI', 'database' => 'lakk5493_db_ems', 'connection' => 'core'],
     'reservasi' => ['env' => 'RESERVASI', 'database' => 'lakk5493_db_reservasi', 'legacy' => 'reservasi-api-mysql', 'data_dir' => '/home/lakk5493/reservasi-db', 'server_sql_mode' => true],
     'stock' => ['env' => 'STOCK',     'database' => 'lakk5493_db_stock',     'legacy' => 'stock-api-mysql',     'data_dir' => '/home/lakk5493/data-latih', 'server_sql_mode' => true],
+    // automation owns no database: the read-only n8n feeds (#234) read
+    // reservasi, event and marketing through the single `automation_ro`
+    // connection (config/database.php) or the module connections locally.
+    // Registered so the maintenance middleware resolves; it is not a Modul
+    // anyone is granted — the token ability `automation:read` is the gate.
+    'automation' => ['env' => 'AUTOMATION', 'database' => 'lakk5493_db_reservasi', 'connection' => 'core'],
 ];
 
 // Legacy routes dispatch by action, not HTTP method. During an offline cutover
