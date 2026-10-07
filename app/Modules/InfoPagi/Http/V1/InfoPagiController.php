@@ -42,7 +42,13 @@ class InfoPagiController
             return ApiResponse::ok([
                 'event' => $out['event'],
                 'marketing' => $out['marketing'],
-            ], ['date' => $out['date'], 'source' => $out['source']]);
+            ], [
+                'date' => $out['date'],
+                'source' => $out['source'],
+                // One section failing must stay visible to the n8n caller
+                // instead of looking like an empty briefing (#234).
+                'errors' => (object) $out['errors'],
+            ]);
         } catch (InvalidArgumentException $e) {
             return ApiResponse::error('invalid_request', $e->getMessage(), 422);
         }

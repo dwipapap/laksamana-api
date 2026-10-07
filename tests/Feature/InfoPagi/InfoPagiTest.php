@@ -1,5 +1,6 @@
 <?php
 
+use App\Modules\InfoPagi\Services\InfoPagi;
 use App\Support\Modules;
 
 require_once __DIR__.'/../Event/helpers.php';
@@ -66,4 +67,38 @@ it('info pagi: source=prod refuses when not pinned', function () {
 it('info pagi: rejects an invalid date', function () {
     $token = loginAs(officeUser('u-andry'));
     $this->withToken($token)->getJson('/api/v1/info/pagi?date=2031-8-1')->assertStatus(422);
+});
+
+it('info pagi: always sends meta.errors as an object', function () {
+    infoPagiSeedEvent('ip-ev-err1', 'Acara Sehat', '2031-08-02 09:00:00');
+
+    $token = loginAs(officeUser('u-andry'));
+    $res = $this->withToken($token)->getJson('/api/v1/info/pagi?date=2031-08-02')->assertOk();
+
+    $body = json_decode($res->getContent());
+    expect($body->meta->errors)->toBeObject()
+        ->and((array) $body->meta->errors)->toBe([]);
+});
+
+it('info pagi: keeps a failed section in meta.errors instead of dropping it', function () {
+    // The controller must not swallow the `errors` the service isolated per
+    // section; n8n uses them to tell "no events" from "section failed".
+    app()->instance(InfoPagi::class, new class extends InfoPagi
+    {
+        public function briefing(string $date, string $source = 'default'): array
+        {
+            return [
+                'date' => $date,
+                'source' => $source,
+                'event' => [],
+                'marketing' => ['events' => [], 'vip' => []],
+                'errors' => ['event' => 'gagal baca event'],
+            ];
+        }
+    });
+
+    $token = loginAs(officeUser('u-andry'));
+    $res = $this->withToken($token)->getJson('/api/v1/info/pagi?date=2031-08-01')->assertOk();
+
+    expect($res->json('meta.errors'))->toBe(['event' => 'gagal baca event']);
 });
