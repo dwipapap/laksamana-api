@@ -87,6 +87,16 @@ it('versions settings documents by content hash', function () {
         ->assertOk()->assertJsonPath('data.a', 1);
 });
 
+it('reads and writes the kalkHistori document (Menu Kalkulator history)', function () {
+    $token = loginAs(officeUser('u-aurel'));
+    $doc = $this->withToken($token)->getJson('/api/v1/marketing/documents/kalkHistori')->assertOk();
+    $this->withToken($token)->withHeader('If-Match', '"'.$doc->json('meta.version').'"')
+        ->putJson('/api/v1/marketing/documents/kalkHistori', [['id' => 'kh_uji', 'nama' => 'Acara Uji', 'pax' => 100]])
+        ->assertOk()->assertJsonPath('data.0.nama', 'Acara Uji');
+    $this->withToken($token)->getJson('/api/v1/marketing/documents/kalkHistori')->assertOk()
+        ->assertJsonPath('data.0.id', 'kh_uji');
+});
+
 it('serves read models for other apps', function () {
     $token = loginAs(officeUser('u-aurel'));
     $this->withToken($token)->getJson('/api/v1/marketing/events-on/2026-09-20')->assertOk()->assertJsonStructure(['data' => ['events', 'vip']]);
