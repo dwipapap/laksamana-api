@@ -3,6 +3,7 @@
 namespace App\Modules\Dw\Http\V1;
 
 use App\Auth\OfficeAccess;
+use App\Modules\Dw\Services\DwGuests;
 use App\Modules\Dw\Services\DwService;
 use App\Support\Api\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -20,8 +21,9 @@ use RuntimeException;
  * (Konfirmasi Kehadiran), payment ticks (Pembayaran), settings (Pengaturan)
  * and the admin wipe. Rekap Pegawai and the money math are computed
  * client-side from these same reads (the module stores no tariffs in PHP);
- * Kalender Tamu reads the marketing/event/reservasi modules, not this one;
- * Hak Akses reads hr/akses from settings plus the account roster.
+ * Kalender Tamu reads `GET /guests` (daily pax per source, served in-process
+ * from the marketing/event/reservasi modules so a `dw` holder needs none of
+ * them); Hak Akses reads hr/akses from settings plus the account roster.
  *
  * Rule violations surface as 403 `forbidden` with the legacy message; an
  * overlap that the legacy API answers with {saved:false} is a 409 `overlap`
@@ -32,6 +34,7 @@ class DwController
 {
     public function __construct(
         private readonly DwService $dw,
+        private readonly DwGuests $guests,
         private readonly OfficeAccess $access,
     ) {}
 
@@ -83,6 +86,14 @@ class DwController
         $d = $r->validate(['from' => ['required', 'date_format:Y-m-d'], 'to' => ['required', 'date_format:Y-m-d']]);
 
         return $this->run(fn () => $this->dw->scheduleRange($d['from'], $d['to']));
+    }
+
+    /** Daily guest pax per source in a range (Kalender Tamu): {rows[{tgl, sumber, pax}], dari, sampai}. */
+    public function guests(Request $r): JsonResponse
+    {
+        $d = $r->validate(['from' => ['required', 'date_format:Y-m-d'], 'to' => ['required', 'date_format:Y-m-d']]);
+
+        return $this->run(fn () => $this->guests->range($d['from'], $d['to']));
     }
 
     // ------------------------------------------------------------ workers

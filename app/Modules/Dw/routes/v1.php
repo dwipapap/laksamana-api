@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Route;
 Route::middleware(['auth:sanctum', 'module:dw'])->prefix('dw')->group(function () {
     Route::get('overview', [C::class, 'overview']);
     Route::get('schedule', [C::class, 'schedule']);
+    Route::get('guests', [C::class, 'guests']);
     Route::get('workers', [C::class, 'workers']);
     Route::post('workers', [C::class, 'createWorker']);
     Route::get('workers/{id}', [C::class, 'worker']);

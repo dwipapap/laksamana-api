@@ -19,7 +19,7 @@ This is the contract for **laksamana-office-vue**, the old laksamana-office if i
 |---|---|
 | Dashboard | `GET /overview` (one-call bootstrap: setting, talent pool, assignments, requests, `peran`) |
 | Konfirmasi Kehadiran | `GET /assignments?status=DISETUJUI&from&to`, `POST /assignments/{id}/attendance`, `POST /assignments/{id}/replace` |
-| Kalender Tamu | No DW endpoint: pax comes from the marketing/event/reservasi modules; DW context (quotas, approved shifts) from `GET /overview` + `GET /schedule` |
+| Kalender Tamu | `GET /guests?from&to` (daily pax per source) + `GET /overview` + `GET /schedule` (DW context: quotas, approved shifts) |
 | Kalender DW | `GET /overview` (month range) or `GET /schedule?from&to` (approved shifts only) |
 | Permintaan DW | `/requests` (create for the caller's division, history, cancel) |
 | Antrean Pengajuan | `/requests` (decide, assign), `/assignments` (create, decide, bulk, delete) |
@@ -35,6 +35,7 @@ This is the contract for **laksamana-office-vue**, the old laksamana-office if i
 |---|---|---|
 | GET | `/overview?from=&to=` | Setting, talent pool, assignments (in range **or** still `MENUNGGU`), requests (same rule) and `peran{hrd,head,lihat,admin,nama,divisi}`. Past `MENUNGGU` rows are swept to `KEDALUWARSA` on read, like the old backend. Phone and payment fields are included only for HRD/heads. |
 | GET | `/schedule?from=&to=` | Approved shifts in range: `{rows[{id,dwId,nama,divisi,posisi,tgl,m,s,hadir}], dari, sampai}`. Deleted workers draw as `(DW dihapus)`. |
+| GET | `/guests?from=&to=` | Daily guest pax per source (Kalender Tamu): `{rows[{tgl, sumber, pax}], dari, sampai}`, ordered by day then source, only days with pax > 0. `sumber` is `marketing` (events + Reservasi VIP, both owned by the marketing module), `event` or `reservasi`. Rules, exactly as `muatTamu()` in `deploy/dw/index.html` (twin of `satukan()` in `deploy/radar/index.html`): Marketing events count only when `deal`/`confirmed`/`event done`; VIP counts its upper bound (`paxMax`, falling back to `paxMin`) and never when cancelled (`batalAt`); Event dates are shifted from UTC to WIB before taking the day and count only when `upcoming`/`today`/`finished`; Reservasi counts its local date as-is, never when cancelled (`cancel`, keeping `batal` for old rows), no-shows as 0 pax. Read in-process from the three source modules, so a `dw` holder needs none of them. |
 
 ## Workers (talent pool)
 
