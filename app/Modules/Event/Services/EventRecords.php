@@ -372,13 +372,49 @@ class EventRecords
         return $out;
     }
 
+    /** One check-in row by its id, or null. Cancellation rows resolve through this too. */
+    public function findCheckin(string $id): ?array
+    {
+        $row = $this->db()->selectOne('SELECT data FROM `'.EventSchema::table('checkins').'` WHERE `'.EventSchema::idCol().'` = ?', [$id]);
+        if (! $row) {
+            return null;
+        }
+        $d = json_decode((string) $row->data, true);
+
+        return is_array($d) ? $d : null;
+    }
+
     /**
      * Record one check-in. `staff` is the acting user's name (never the body);
      * `checked_in_at` defaults to now. An existing id is never overwritten.
+     *
+     * A cancellation is a correction ROW, not a delete (#185, owner decision
+     * 2026-09-29): the body carries `batalDari` (the id of the check-in being
+     * cancelled) instead of a fresh attendance. `ticket_id` may be omitted and
+     * is then taken from the cancelled row; when sent it must match that row.
+     * The cancelled rows stay in place, so no new table or column is needed.
      */
     public function addCheckin(array $data, string $staff): array
     {
         return $this->write(function () use ($data, $staff) {
+            $cancel = $data['batalDari'] ?? null;
+            if (is_string($cancel) && $cancel !== '') {
+                $ref = $this->findCheckin($cancel);
+                if (! $ref) {
+                    throw new EventConflict('cancel_missing');
+                }
+                if (! empty($ref['batalDari'])) {
+                    throw new EventConflict('cancel_invalid', 'A cancellation cannot be cancelled.');
+                }
+                $refTicket = RowSync::strRaw($ref['ticket_id'] ?? null) ?? '';
+                $tid = RowSync::strRaw($data['ticket_id'] ?? null);
+                if ($tid === null || $tid === '') {
+                    $data['ticket_id'] = $refTicket;
+                } elseif ($refTicket !== '' && $tid !== $refTicket) {
+                    throw new EventConflict('cancel_invalid', 'ticket_id does not match the cancelled check-in.');
+                }
+                $data['batalDari'] = $cancel;
+            }
             $id = trim(RowSync::strRaw($data['id'] ?? '') ?? '');
             $data['id'] = $id !== '' ? $id : self::newId();
             $data['staff'] = $staff;

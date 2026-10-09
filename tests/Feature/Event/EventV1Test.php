@@ -127,6 +127,46 @@ it('records append-only check-ins with the acting user as staff', function () {
     $this->withToken($token)->deleteJson('/api/v1/event/checkins/ci_v1')->assertNotFound(); // no delete route
 });
 
+it('cancels a check-in with an append-only correction row', function () {
+    $token = loginAs(officeUser('u-andry'));
+    $name = officeUser('u-andry')['name'];
+
+    $this->withToken($token)->postJson('/api/v1/event/checkins', ['id' => 'ci_batal_1', 'ticket_id' => 'tk_batal'])
+        ->assertCreated();
+
+    // unknown row -> 404; a non-id batalDari -> 422
+    $this->withToken($token)->postJson('/api/v1/event/checkins', ['batalDari' => 'ci_tidak_ada'])
+        ->assertStatus(404)->assertJsonPath('error.code', 'not_found');
+    $this->withToken($token)->postJson('/api/v1/event/checkins', ['batalDari' => ''])
+        ->assertStatus(422)->assertJsonPath('error.code', 'validation_failed');
+    // a ticket_id that does not match the cancelled row -> 422
+    $this->withToken($token)->postJson('/api/v1/event/checkins', ['batalDari' => 'ci_batal_1', 'ticket_id' => 'tk_lain'])
+        ->assertStatus(422)->assertJsonPath('error.code', 'validation_failed');
+
+    // cancel without ticket_id: taken from the cancelled row, staff is the acting user
+    $c = $this->withToken($token)->postJson('/api/v1/event/checkins', ['id' => 'ci_batal_2', 'batalDari' => 'ci_batal_1'])
+        ->assertCreated();
+    expect($c->json('data.batalDari'))->toBe('ci_batal_1')
+        ->and($c->json('data.ticket_id'))->toBe('tk_batal')
+        ->and($c->json('data.staff'))->toBe($name);
+
+    // a cancellation cannot itself be cancelled
+    $this->withToken($token)->postJson('/api/v1/event/checkins', ['batalDari' => 'ci_batal_2'])
+        ->assertStatus(422)->assertJsonPath('error.code', 'validation_failed');
+
+    // trail intact: both rows listed, newest first
+    $list = $this->withToken($token)->getJson('/api/v1/event/checkins?ticket_id=tk_batal')->assertOk();
+    expect($list->json('meta.total'))->toBe(2)
+        ->and($list->json('data.0.id'))->toBe('ci_batal_2')
+        ->and($list->json('data.0.batalDari'))->toBe('ci_batal_1')
+        ->and($list->json('data.1.id'))->toBe('ci_batal_1')
+        ->and(array_key_exists('batalDari', $list->json('data.1')))->toBeFalse();
+
+    // documented presence rule: the latest row is a cancellation, so the ticket counts as not checked in
+    $rows = $list->json('data');
+    expect(! empty($rows[0]['batalDari']))->toBeTrue();
+});
+
 it('reads and writes the settings documents with a content version', function () {
     $token = loginAs(officeUser('u-andry'));
     $s = $this->withToken($token)->getJson('/api/v1/event/settings')->assertOk();
