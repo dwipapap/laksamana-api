@@ -48,6 +48,16 @@ class StockController
         return $row ? self::withVersion($row['record'], $row['version']) : self::notFound();
     }
 
+    /**
+     * One vendor by name for the wide vendor gate (BD, Brankas): the same
+     * record as catalogShow. A separate method only because literal routes
+     * pass URI params before defaults, while catalogShow takes ($kind, $nama).
+     */
+    public function vendorShow(string $nama): JsonResponse
+    {
+        return $this->catalogShow('vendors', $nama);
+    }
+
     public function catalogStore(Request $r, string $kind): JsonResponse
     {
         if (($b = self::body($r)) === null) {

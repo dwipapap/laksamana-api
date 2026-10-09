@@ -1,5 +1,7 @@
 <?php
 
+use App\Auth\AccountRepository;
+use App\Auth\OfficeAccess;
 use App\Modules\Stock\Services\StockSupport;
 use App\Support\Modules;
 
@@ -7,6 +9,32 @@ use App\Support\Modules;
  * u-andry: ordering + purchasing. u-adit: ordering (not purchasing).
  * u-jb: purchasing + hpp. u-aldialfayat: no stock module.
  */
+
+/** A throwaway active user holding exactly the given modules. */
+function svUser(string $id, array $modules): array
+{
+    $repo = app(AccountRepository::class);
+    $repo->insertUser(['id' => $id, 'name' => 'Uji '.$id, 'pin' => '4817', 'active' => 1, 'keterangan' => '']);
+    foreach ($modules as $m) {
+        $repo->upsertGrant($id, $m, true, 'test');
+    }
+    app(OfficeAccess::class)->forgetUser($id);
+
+    return officeUser($id);
+}
+
+/**
+ * Token for a user, dropping the guard's cached user: tests below switch
+ * identity inside one test, and the guard would otherwise keep answering as
+ * whoever made the previous request.
+ */
+function svToken(array $u): string
+{
+    $token = loginAs($u);
+    app('auth')->forgetGuards();
+
+    return $token;
+}
 
 it('requires login and one of the stock modules', function () {
     $this->getJson('/api/v1/stock/products')->assertStatus(401);
@@ -27,6 +55,26 @@ it('keeps the vendor database to Purchasing', function () {
     $this->withToken(loginAs(officeUser('u-adit')))->postJson('/api/v1/stock/vendors', ['nama' => 'V1 Vendor'])
         ->assertStatus(403);
 });
+
+it('lets bd and brankas read vendors, nothing else', function (string $module) {
+    $token = svToken(svUser("u-sv-$module", [$module]));
+    $list = $this->withToken($token)->getJson('/api/v1/stock/vendors')->assertOk();
+    expect($list->json('data'))->not->toBeEmpty();
+    $nama = $list->json('data.0.nama');
+
+    // The same record a stock holder sees — one shape, no narrow list.
+    $mine = $this->withToken($token)->getJson('/api/v1/stock/vendors/'.rawurlencode($nama))->assertOk()
+        ->assertJsonPath('data.nama', $nama);
+    $stock = $this->withToken(svToken(officeUser('u-adit')))->getJson('/api/v1/stock/vendors/'.rawurlencode($nama))->assertOk();
+    expect($mine->json('data'))->toBe($stock->json('data'));
+
+    // Nothing else opens: products, orders and vendor writes stay gated.
+    // (Forget the guard first: the request above cached the stock holder.)
+    app('auth')->forgetGuards();
+    $this->withToken($token)->getJson('/api/v1/stock/products')->assertStatus(403)->assertJsonPath('error.code', 'module_not_granted');
+    $this->withToken($token)->getJson('/api/v1/stock/orders')->assertStatus(403)->assertJsonPath('error.code', 'module_not_granted');
+    $this->withToken($token)->postJson('/api/v1/stock/vendors', ['nama' => 'V1 Vendor '.$module])->assertStatus(403);
+})->with(['bd', 'brankas']);
 
 it('creates, patches (preserve-if-null), renames and deletes a product with versions', function () {
     $token = loginAs(officeUser('u-jb'));

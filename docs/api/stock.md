@@ -4,7 +4,7 @@ This is the contract for **laksamana-office-vue**, the old laksamana-office if i
 
 - **Base URL:** `/api/v1/stock`
 - **Auth:** `Authorization: Bearer <token>` from `POST /api/v1/auth/login {login, pin}`.
-- **Modul:** one Backend serves several Panels. Reads need any of `ordering`, `purchasing`, `hpp`, `usage` (the Usage Panel records need `usage`). Writes follow who does them in the old Panels (tables below).
+- **Modul:** one Backend serves several Panels. Reads need any of `ordering`, `purchasing`, `hpp`, `usage` (the Usage Panel records need `usage`). Writes follow who does them in the old Panels (tables below). Exception: the vendor GETs also admit `bd` and `brankas` (Products & vendors table).
 - **Envelope:** success `{data, meta?}`, failure `{error: {code, message, details?}}`.
 - **Fields:** records are the app's own objects (`utama`, `cadangan`, `satuan`, `tglDatang`, `kedatangan`, …), the same shape the old endpoints return, plus `nama` on products and vendors (the key of the legacy maps). Bodies are read raw: an empty string stays `""`.
 - **Versions:** the stock tables have no version column, so every record's `version` is a hash of what is stored (any write through v1 or the old endpoints changes it). Send it as `If-Match` (or `?version=`); stale ⇒ `409 version_conflict` with `details.current`.
@@ -48,6 +48,7 @@ This is the contract for **laksamana-office-vue**, the old laksamana-office if i
 |---|---|---|---|
 | GET | `/products`, `/vendors` | any | All, sorted by name. `meta.versions` = `{nama: version}`. Every optional field is normalised (products: `cadangan`, `satuan`, `kategori`, `area` (list), `aktif` (default true), `satuanDasar`, `isi`, `sumber`, `packIsi`, `packSatuan`, `diOutlet`; vendors: `whatsapp`, `perluJadwalJemput`, `tutupHari` (0 Sunday … 6 Saturday), `penerima`, `bank`, `norek`). |
 | GET | `/products/{nama}`, `/vendors/{nama}` | any | One record + version. |
+| GET | `/vendors`, `/vendors/{nama}` | any, plus `bd`, `brankas` | The SAME vendor records through wider-gated literal routes (BD's PO Vendor column, Brankas' payee name + account number — as against the ungated legacy `vendors.php`). Nothing else opens: products and every other stock read stay stock-only, all vendor writes stay `purchasing`. |
 | POST | `/products` | purchasing, hpp | Body = the record with `nama`. `201`, `meta.report` may carry `hppBaru: true` (a zero-priced HPP ingredient was created). `409 already_exists` when the name is taken (case-insensitive). |
 | PATCH | `/products/{nama}` | purchasing, hpp | Only the fields sent change (the legacy preserve-if-null rule). `nama` different from the URL **renames**; the rename follows into HPP & Resep (`meta.report.hpp` = `{bahan, resep, pakai, lewat}`). `409 already_exists` when the new name is taken. Version required. |
 | DELETE | `/products/{nama}` | purchasing, hpp | Version required. |
