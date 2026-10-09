@@ -153,3 +153,47 @@ it('uploads a file and streams it back', function () {
 it('rejects an invalid events-on date', function () {
     $this->withToken(loginAs(officeUser('u-andry')))->getJson('/api/v1/event/events-on/2031-7-1')->assertStatus(422);
 });
+
+it('filters tickets by event_id through their order', function () {
+    $token = loginAs(officeUser('u-andry'));
+    $uniq = substr(bin2hex(random_bytes(4)), 0, 8);
+    $e1 = $this->withToken($token)->postJson('/api/v1/event/events', [
+        'title' => 'Filter A '.$uniq, 'status' => 'Upcoming', 'start_datetime' => '2031-08-01T12:00:00.000Z',
+    ])->assertCreated()->json('data.id');
+    $e2 = $this->withToken($token)->postJson('/api/v1/event/events', [
+        'title' => 'Filter B '.$uniq, 'status' => 'Upcoming', 'start_datetime' => '2031-08-02T12:00:00.000Z',
+    ])->assertCreated()->json('data.id');
+
+    $o1 = $this->withToken($token)->postJson('/api/v1/event/orders', [
+        'event_id' => $e1, 'buyer_name' => 'Buyer A', 'payment_status' => 'Paid',
+    ])->assertCreated()->json('data.id');
+    $o2 = $this->withToken($token)->postJson('/api/v1/event/orders', [
+        'event_id' => $e2, 'buyer_name' => 'Buyer B', 'payment_status' => 'Paid',
+    ])->assertCreated()->json('data.id');
+
+    $t1 = $this->withToken($token)->postJson('/api/v1/event/tickets', [
+        'order_item_id' => $o1, 'qr_token' => 'QR'.$uniq.'a1', 'status' => 'Valid',
+    ])->assertCreated()->json('data.id');
+    $t2 = $this->withToken($token)->postJson('/api/v1/event/tickets', [
+        'order_item_id' => $o2, 'qr_token' => 'QR'.$uniq.'b1', 'status' => 'Valid',
+    ])->assertCreated()->json('data.id');
+    // A ticket carrying its own event_id is matched directly, even without an order.
+    $t3 = $this->withToken($token)->postJson('/api/v1/event/tickets', [
+        'event_id' => $e1, 'qr_token' => 'QR'.$uniq.'a2', 'status' => 'Valid',
+    ])->assertCreated()->json('data.id');
+    // A ticket whose order does not exist is kept unfiltered but never matches.
+    $tOrphan = $this->withToken($token)->postJson('/api/v1/event/tickets', [
+        'order_item_id' => 'order_missing_'.$uniq, 'qr_token' => 'QR'.$uniq.'x1', 'status' => 'Valid',
+    ])->assertCreated()->json('data.id');
+
+    $ids = fn ($res) => collect($res->json('data'))->pluck('id')->all();
+    $filtered = $this->withToken($token)->getJson('/api/v1/event/tickets?event_id='.$e1)->assertOk();
+    expect($ids($filtered))->toContain($t1, $t3)->not->toContain($t2, $tOrphan);
+
+    $other = $this->withToken($token)->getJson('/api/v1/event/tickets?event_id='.$e2)->assertOk();
+    expect($ids($other))->toContain($t2)->not->toContain($t1, $t3, $tOrphan);
+
+    // Without the filter every ticket is still returned.
+    $all = $this->withToken($token)->getJson('/api/v1/event/tickets')->assertOk();
+    expect($ids($all))->toContain($t1, $t2, $t3, $tOrphan);
+});

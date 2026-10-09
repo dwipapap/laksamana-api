@@ -60,6 +60,8 @@ Resources: `talents`, `events`, `schedules`, `recurring-rules`, `talent-payments
 - `from` / `to` (`YYYY-MM-DD`, inclusive) on the collection's date: `schedules` and `calendar-extra` by `date`, `events` by the WIB date of `start_datetime`, `recurring-rules` by `valid_from`
 - `updatedSince` (ms): records whose version is newer
 
+`tickets` carry no `event_id` column (legacy stores only `order_item_id`, `ticket_class_id`, …). `GET /tickets?event_id=` is still supported: a ticket matches when its own `event_id` (when present) equals the filter, otherwise when its order (`order_item_id`/`order_id` → `orders.event_id`) does. A ticket without a matching order is excluded.
+
 The indexed columns are derived from the record exactly as legacy does: `start_datetime`/`end_datetime`/`checked_in_at` are stored in **WIB** (the record keeps the app's ISO/UTC value), `date` feeds the `tanggal` column, `start_time`/`end_time` keep their first 8 characters, numbers are `intval`, flags are `0/1`.
 
 **`tickets.qr_token` is unique.** A create or update that reuses another ticket's token is refused with `409 duplicate` (the legacy `saveAll` would silently overwrite the other ticket instead, see #100).
