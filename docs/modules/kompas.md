@@ -78,7 +78,7 @@ Response envelope is `{ok,data}`, except that `getAll` adds a top-level `ts`.
 
 ### BRI matching
 
-- **`briList`** (`dari`, `sampai`): open. Returns `{baris[], total, maks:2000, abai[]}`.
+- **`briList`** (`dari`, `sampai`): open. Returns `{baris[], total, maks:2000, abai[], dipakai[]}`. `dipakai[]` is every dpId held by any live row in any month (ids only; cancelled rows hold nothing; no `cara` filter).
 - **`briUnggah`**:
   - Upserts rows keyed by the server-generated `sidik` = `tgl|jam|nominal|#k` (`#k` is the occurrence index).
   - On duplicate it updates ONLY `ket`, `settle`, `booking`; it never touches the match columns.

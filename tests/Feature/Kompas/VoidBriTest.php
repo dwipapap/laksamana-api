@@ -89,3 +89,40 @@ it('v1: a manual BRI fund is recorded as the session user and listed', function 
     $row = collect($list->json('data.baris'))->firstWhere('ket', 'Sewa videotron');
     expect($row['cara'])->toBe('bukan')->and($row['sumber'])->toBe('manual')->and($row['oleh'])->toBe(officeUser('u-novi')['name']);
 });
+
+it('v1 + legacy briList returns dipakai[]: dpIds held by any live row, whatever month (#233)', function () {
+    $sesi = legacySesi(officeUser('u-novi'));
+    vbPost(['action' => 'briUnggah', 'sesi' => $sesi, 'data' => ['baris' => [
+        ['tgl' => '2026-08-15', 'jam' => '10:00', 'nominal' => 100007, 'ket' => 'uji-dp-a'],
+        ['tgl' => '2026-09-05', 'jam' => '10:01', 'nominal' => 200007, 'ket' => 'uji-dp-b'],
+        ['tgl' => '2026-09-06', 'jam' => '10:02', 'nominal' => 300007, 'ket' => 'uji-dp-c'],
+        ['tgl' => '2026-09-07', 'jam' => '10:03', 'nominal' => 400007, 'ket' => 'uji-dp-d'],
+        ['tgl' => '2026-09-08', 'jam' => '10:04', 'nominal' => 500007, 'ket' => 'uji-dp-e1'],
+        ['tgl' => '2026-09-09', 'jam' => '10:05', 'nominal' => 600007, 'ket' => 'uji-dp-e2'],
+    ]]])->assertOk()->assertJsonPath('data.n', 6);
+
+    $t = KompasState::t('bri_mutasi');
+    $db = Modules::db('kompas');
+    $tandai = fn (string $ket, string $dp, string $cara, int $batal = 0) =>
+        $db->update("UPDATE `$t` SET `dp_id`=?, `cara`=?, `batal_at`=? WHERE `ket`=?", [$dp, $cara, $batal, $ket]);
+    expect($tandai('uji-dp-a', 'DP-A', 'cocok'))->toBe(1); // matched in another month: still held
+    expect($tandai('uji-dp-b', 'DP-B', 'bukan'))->toBe(1); // a dpId with cara != cocok: still held
+    expect($tandai('uji-dp-c', 'DP-C', 'cocok', 1758000000000))->toBe(1); // cancelled: holds nothing
+    // uji-dp-d keeps dp_id '': a plain row holds nothing
+    expect($tandai('uji-dp-e1', 'DP-E', 'cocok'))->toBe(1); // the same dpId on two rows: listed once
+    expect($tandai('uji-dp-e2', 'DP-E', 'cocok'))->toBe(1);
+
+    $want = ['DP-A', 'DP-B', 'DP-E'];
+
+    $token = loginAs(officeUser('u-novi'));
+    app('auth')->forgetGuards();
+    $v1 = $this->withToken($token)->getJson('/api/v1/kompas/bri?from=2026-09-01&to=2026-09-30')
+        ->assertOk()->assertJsonPath('data.total', 5)->json('data.dipakai');
+    sort($v1);
+    expect($v1)->toBe($want);
+
+    $legacy = vbPost(['action' => 'briList', 'dari' => '2026-09-01', 'sampai' => '2026-09-30'])
+        ->assertOk()->json('data.dipakai');
+    sort($legacy);
+    expect($legacy)->toBe($want);
+});
