@@ -5,6 +5,7 @@ namespace App\Modules\Reservasi\Http\V1;
 use App\Auth\OfficeAccess;
 use App\Modules\Reservasi\Services\DanaMasukGate;
 use App\Modules\Reservasi\Services\HapusReservasiGate;
+use App\Modules\Reservasi\Services\ReservasiBrowse;
 use App\Modules\Reservasi\Services\ReservasiConflict;
 use App\Modules\Reservasi\Services\ReservasiGuests;
 use App\Modules\Reservasi\Services\ReservasiRecords;
@@ -12,6 +13,7 @@ use App\Modules\Reservasi\Services\ReservasiState;
 use App\Support\Api\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use RuntimeException;
 
 /**
@@ -26,15 +28,67 @@ class ReservasiController
         private readonly ReservasiState $state,
         private readonly ReservasiRecords $records,
         private readonly ReservasiGuests $guests,
+        private readonly ReservasiBrowse $browse,
         private readonly OfficeAccess $access,
     ) {}
 
+    /**
+     * Reservations in range, in `created_at` order. `q` (name/phone/table)
+     * and `status` (normalised; Cancelled rows drop out unless asked for)
+     * narrow it; `page`/`perPage` cut it in Recap display order (date+time,
+     * stable) with `meta.total` counting every match. Without the new params
+     * the answer is exactly what it always was: every row.
+     */
     public function index(Request $r): JsonResponse
     {
-        $f = $r->validate(['from' => ['nullable', 'date_format:Y-m-d'], 'to' => ['nullable', 'date_format:Y-m-d']]);
-        $rows = $this->records->list($f['from'] ?? null, $f['to'] ?? null);
+        $f = $r->validate([
+            'from' => ['nullable', 'date_format:Y-m-d'], 'to' => ['nullable', 'date_format:Y-m-d'],
+            'page' => ['nullable', 'integer', 'min:1'], 'perPage' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'q' => ['nullable', 'string', 'max:200'], 'status' => ['nullable', 'string', 'max:32'],
+        ]);
+        if (($f['page'] ?? null) === null && ($f['perPage'] ?? null) === null
+            && ($f['q'] ?? null) === null && ($f['status'] ?? null) === null) {
+            $rows = $this->records->list($f['from'] ?? null, $f['to'] ?? null);
 
-        return ApiResponse::ok($rows, ['total' => count($rows), 'ver' => $this->state->ver()]);
+            return ApiResponse::ok($rows, ['total' => count($rows), 'ver' => $this->state->ver()]);
+        }
+        $found = $this->browse->filterReservations($f['from'] ?? null, $f['to'] ?? null, $f['q'] ?? null, $f['status'] ?? null);
+        $meta = ['total' => $found['total'], 'ver' => $this->state->ver()];
+        if (($f['status'] ?? null) !== null) {
+            $meta['batal'] = $found['batal'];
+        }
+        if (($f['page'] ?? null) !== null || ($f['perPage'] ?? null) !== null) {
+            $cut = $this->browse->page($this->browse->sortDisplay($found['rows']), $f['page'] ?? null, $f['perPage'] ?? null);
+            $meta['total'] = $cut['total'];
+            $meta['page'] = $cut['page'];
+            $meta['perPage'] = $cut['perPage'];
+
+            return ApiResponse::ok($cut['rows'], $meta);
+        }
+
+        return ApiResponse::ok($found['rows'], $meta);
+    }
+
+    /**
+     * The Recap CSV (exportCSV()): same columns in the same order, BOM'd for
+     * Excel. Same filters as the list; paging is ignored — the export always
+     * covers every matching row, in display order. READ-ONLY.
+     */
+    public function export(Request $r): Response
+    {
+        $f = $r->validate([
+            'from' => ['nullable', 'date_format:Y-m-d'], 'to' => ['nullable', 'date_format:Y-m-d'],
+            'q' => ['nullable', 'string', 'max:200'], 'status' => ['nullable', 'string', 'max:32'],
+        ]);
+        $found = $this->browse->filterReservations($f['from'] ?? null, $f['to'] ?? null, $f['q'] ?? null, $f['status'] ?? null);
+        $csv = $this->browse->exportCsv(
+            $this->browse->sortDisplay($found['rows']),
+            $this->browse->tableFloors($this->records->master()['value'] ?? []));
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="reservasi_laksamana_'.ReservasiBrowse::today().'.csv"',
+        ]);
     }
 
     public function show(string $id): JsonResponse
@@ -186,9 +240,34 @@ class ReservasiController
         return $this->write(fn () => $this->records->deleteItem($section, $id, $v));
     }
 
-    public function audit(): JsonResponse
+    /**
+     * The newest 500 audit entries, newest first. `q` narrows them the way
+     * the Audit Log search box does (user, role, action, detail);
+     * `page`/`perPage` cut them with `meta.total` counting every match.
+     * Without the new params the answer is exactly what it always was.
+     * Audit has no status dimension: auditCocok() searches text only.
+     */
+    public function audit(Request $r): JsonResponse
     {
-        return ApiResponse::ok($this->state->readAudit());
+        $f = $r->validate([
+            'page' => ['nullable', 'integer', 'min:1'], 'perPage' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'q' => ['nullable', 'string', 'max:200'],
+        ]);
+        if (($f['page'] ?? null) === null && ($f['perPage'] ?? null) === null && ($f['q'] ?? null) === null) {
+            return ApiResponse::ok($this->state->readAudit());
+        }
+        $list = $this->browse->filterAudit($f['q'] ?? null);
+        $meta = ['total' => count($list)];
+        if (($f['page'] ?? null) !== null || ($f['perPage'] ?? null) !== null) {
+            $cut = $this->browse->page($list, $f['page'] ?? null, $f['perPage'] ?? null);
+            $meta['total'] = $cut['total'];
+            $meta['page'] = $cut['page'];
+            $meta['perPage'] = $cut['perPage'];
+
+            return ApiResponse::ok($cut['rows'], $meta);
+        }
+
+        return ApiResponse::ok($list, $meta);
     }
 
     /**
