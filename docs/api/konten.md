@@ -18,7 +18,7 @@ The Panel's menus (`NAV`/`VIEW_META` in `deploy/konten/index.html`):
 | Dashboard | `GET /state`, or `GET /content`, `GET /ads`; aggregation happens client-side, as in the old app. |
 | Content Planning, Pipeline, Calendar | `/content` (status flow Idea→Posted; `deadline`, `publishDate`, `platform`, `pillar`, `campaign`, `brand`, `pic`) |
 | Shooting Schedule | `/shootings` |
-| Design Queue, Editing Queue | `/content` (production state lives inside the content row) plus Marketing's design queue (see `docs/api/marketing.md`); brand & crew options are mirrored to Marketing via `PUT /api/v1/marketing/design-options` (the old app posts `designReqOpsi` on boot) |
+| Design Queue, Editing Queue | `/content` (production state lives inside the content row) plus Marketing's design queue (`GET /api/v1/marketing/design-queue`, `GET /api/v1/marketing/design-requests/{id}`, `PUT /api/v1/marketing/design-requests/{id}/progress` — open to `konten|marketing`, see `docs/api/marketing.md`); brand & crew options are mirrored to Marketing via `PUT /api/v1/marketing/design-options` (the old app posts `designReqOpsi` on boot) |
 | Asset Management | `/assets`, plus `/files` for uploads |
 | Approval, Publishing Tracker | `/content` (approvals, publish records and checklists live inside the content row) |
 | Input Performa, Performa Konten, Performa Desain | `/content` + `PUT /content/{id}/performance` (figures live in `content.data.perf` per platform) |
@@ -63,6 +63,16 @@ Content performance data lives in `content.data.perf`, keyed per platform.
 | Method | Path | Notes |
 |---|---|---|
 | PUT | `/content/{id}/performance` | Body `{platform, metrics?}`. Merges the figures into `perf[platform]` and stamps `{at, by}`. Send `"metrics": null` to remove that platform's entry (the old Input Performa screen deletes `perf[platform]` once every box of that platform is emptied); other platforms are kept. Returns the content row + version. |
+
+## Design options (for Marketing's Request Design form)
+
+Marketing's Request Design form reads Konten's brands and active crew straight from
+the old konten `getAll`. This narrow read replaces that door (G-16): no other Konten
+state is handed over. **Open to `konten|marketing`.**
+
+| Method | Path | Returns |
+|---|---|---|
+| GET | `/design-options` | `{brands:[{id,name}], pics:[{id,name,roles}]}` — active crew only, production roles (designer, video editor, photographer, content director, content planner) first, then by name, like the legacy picker. |
 
 ## Documents (settings)
 

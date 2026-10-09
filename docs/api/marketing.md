@@ -17,7 +17,7 @@ This is the contract for **laksamana-office-vue**, the old laksamana-office if i
 | Database Client (CRM) | `/clients`, `/followups` |
 | Sales Pipeline & Event, Event Brief & Quotation, Task Divisi, Invoice & Payment | `/events`. Brief, quotation (`detail`), tasks and `payments[]` live **inside the event record**. |
 | Reservasi VIP | `/vip` |
-| Request Design & Video | `/design-requests` (Marketing's side), plus `GET /design-queue`, `PUT /design-requests/{id}/progress`, `PUT /design-options` (Konten's side) |
+| Request Design & Video | `/design-requests` (Marketing's side: create/update/delete stay `module:marketing`), plus `GET /design-queue`, `GET /design-requests/{id}`, `PUT /design-requests/{id}/progress`, `PUT /design-options` (Konten's production side, open to `marketing|konten` — see below) |
 | Template Task | `/task-templates`, `/task-categories`, `/categories` |
 | Approval Flow | `/approvals` |
 | Timeline & Audit Log | `GET /activities`, `POST /activities` |
@@ -67,7 +67,21 @@ Documents: `settings`, `baseline`, `rolePerms`, `roleNav`, `menuDb`, `katalog`, 
 | GET | `/state` | The full state in one call (same as the old `getAll`). `meta.version` = `_versi`. |
 | GET | `/events-on/{YYYY-MM-DD}` | Deal/Event Done events that day (multi-day events included, with `hari`/`totalHari`), plus Assisted VIP rows, plus `settings{serviceCharge, pb1}`. |
 | GET | `/dp?from=&to=` | Event payments and VIP DP proofs, **filtered by event date**, plus `vipTerkunci` and the `luar` (outside-range) summary. **Open to `marketing`, `reservasi`, `cashier` and `finance`** (G-15): it feeds the DP Event tab of the Dana Masuk page. It returns payments only — no CRM, pipeline or invoice — which is why it may be wider than the rest of this contract. |
+
+## Design queue (shared with Konten)
+
+Konten's production crew reads and finishes Marketing's design requests: the old
+Konten page called the legacy `designReqs`/`designReq`/`designReqSet`/`designReqOpsi`
+actions, which had no module gate. These four routes are **open to `marketing|konten`**
+(G-16). Creating, replacing or deleting design requests stays `module:marketing`
+(the generic `/{resource}` routes).
+
+| Method | Path | Returns |
+|---|---|---|
 | GET | `/design-queue?active=1` | Design requests without reference images, including progress. |
+| GET | `/design-requests/{id}` | One request INCLUDING reference images, plus `status`/`picDone`. 404 when unknown. |
+| PUT | `/design-requests/{id}/progress` | Body `{status: done\|todo, picNama?}`. Marks one request done / reopened; touches only the progress blob. |
+| PUT | `/design-options` | Konten mirrors its brand/crew/platform lists here (`{brands, pics, platforms}`). An empty push is ignored, never wipes the stored list. |
 
 ## Files
 

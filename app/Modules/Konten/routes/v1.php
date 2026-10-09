@@ -3,6 +3,13 @@
 use App\Modules\Konten\Http\V1\KontenController as C;
 use Illuminate\Support\Facades\Route;
 
+// Design options for Marketing's Request Design form (G-16): brands and active
+// crew only, none of the other Konten state. The legacy form read these straight
+// from konten getAll; this narrow read opens to both modules.
+Route::middleware(['auth:sanctum', 'module:konten|marketing'])->prefix('konten')->group(function () {
+    Route::get('design-options', [C::class, 'designOptions']);
+});
+
 Route::middleware(['auth:sanctum', 'module:konten'])->prefix('konten')->group(function () {
     // bootstrap + diagnostics
     Route::get('state', [C::class, 'state']);
