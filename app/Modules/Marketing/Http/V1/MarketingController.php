@@ -106,6 +106,21 @@ class MarketingController
         return ApiResponse::ok($this->queries->designRequests($r->boolean('active')));
     }
 
+    /** One design request INCLUDING reference images (Konten's production queue side). */
+    public function designRequest(string $id): JsonResponse
+    {
+        try {
+            $out = $this->queries->designRequest($id);
+        } catch (RuntimeException $e) {
+            return ApiResponse::error('invalid_request', $e->getMessage(), 422);
+        }
+        if ($out['req'] === null) {
+            return ApiResponse::error('not_found', 'Record not found.', 404);
+        }
+
+        return ApiResponse::ok($out);
+    }
+
     public function designProgress(Request $r, string $id): JsonResponse
     {
         $d = $r->validate(['status' => ['required', 'in:done,todo'], 'picNama' => ['nullable', 'string', 'max:120']]);

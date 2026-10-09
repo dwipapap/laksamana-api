@@ -11,13 +11,22 @@ Route::middleware(['auth:sanctum', 'module:marketing|reservasi|cashier|finance']
     Route::get('dp', [C::class, 'dp']);
 });
 
+// Design queue (G-16): Konten's production crew reads and finishes Marketing's
+// design requests. The old Konten page called the legacy designReqs/designReq/
+// designReqSet/designReqOpsi actions, which had no module gate; these four
+// routes open to both modules. Creating, replacing or deleting design requests
+// stays marketing-only (the generic /{resource} routes below).
+Route::middleware(['auth:sanctum', 'module:marketing|konten'])->prefix('marketing')->group(function () {
+    Route::get('design-queue', [C::class, 'designQueue']);
+    Route::get('design-requests/{id}', [C::class, 'designRequest']);
+    Route::put('design-requests/{id}/progress', [C::class, 'designProgress']);
+    Route::put('design-options', [C::class, 'designOptions']);
+});
+
 Route::middleware(['auth:sanctum', 'module:marketing'])->prefix('marketing')->group(function () {
     // bootstrap + read models
     Route::get('state', [C::class, 'state']);
     Route::get('events-on/{date}', [C::class, 'eventsOn'])->where('date', '\d{4}-\d{2}-\d{2}');
-    Route::get('design-queue', [C::class, 'designQueue']);
-    Route::put('design-requests/{id}/progress', [C::class, 'designProgress']);
-    Route::put('design-options', [C::class, 'designOptions']);
 
     // timeline
     Route::get('activities', [C::class, 'activities']);

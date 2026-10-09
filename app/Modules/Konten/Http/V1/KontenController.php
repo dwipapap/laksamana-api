@@ -98,6 +98,12 @@ class KontenController
         return $this->safe(fn () => $this->queries->stats());
     }
 
+    /** Narrow brand & crew picker for Marketing's Request Design form (open to both modules). */
+    public function designOptions(): JsonResponse
+    {
+        return ApiResponse::ok($this->queries->designOptions());
+    }
+
     // ─────────────────────────── generic records ──
 
     public function index(Request $r, string $resource): JsonResponse
