@@ -81,10 +81,13 @@ One document per event (rundown, budget, sponsors, …), the app's `eventDetails
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/checkins` | Newest first, at most 2000 (`?limit=` lowers it). Filter `?ticket_id=`. `meta.total`. |
+| GET | `/checkins` | Newest first, at most 2000 (`?limit=` lowers it). Filter `?ticket_id=`. `meta.total`. Cancellation rows are listed like any other row: the trail stays intact. |
 | POST | `/checkins` | Body `{ticket_id, gate?, result?, id?, checked_in_at?}`. `ticket_id` is required. `staff` is **the acting user's name** (the body cannot set it). `checked_in_at` defaults to now (ISO UTC). `201`. An existing id is never overwritten: `409 already_exists`. |
+| POST | `/checkins` (cancel) | Body `{batalDari: <id>, ticket_id?, id?, checked_in_at?}`. Appends a **cancellation row** that corrects the named check-in; nothing is deleted (owner decision 2026-09-29 — the old "Batalkan" deleted the row, v1 keeps it). `ticket_id` may be omitted (taken from the cancelled row); when sent it must match that row. `404 not_found` when the named check-in does not exist, `422` when it is itself a cancellation or the ticket does not match. `201`. |
 
 There is no update or delete: attendance is never rewritten, as in legacy.
+
+**Presence rule** (clients apply it to `GET /checkins` and the `checkins` list in `/state`): group the rows by `ticket_id`; the newest row wins (`checked_in_at`, then `id`). The ticket counts as checked in only when that row has **no** `batalDari` — a ticket whose latest row is a cancellation counts as not checked in, even though the cancelled rows are still listed. (The ticket's own `status` is a separate record: set it back to `Valid` with `PATCH /tickets/{id}` when the app needs the old "kembali berlaku" behaviour.)
 
 ## Settings
 
@@ -117,9 +120,9 @@ There is **no orphan cleanup**, on purpose: a KTP scan that is still referenced 
 |---|---|---|
 | 401 | `unauthenticated` | No or bad token |
 | 403 | `module_not_granted` | No `event` module |
-| 404 | `not_found` | Unknown id / key |
+| 404 | `not_found` | Unknown id / key, or a `batalDari` that names no check-in |
 | 409 | `already_exists` | Create with a taken id (record or check-in) |
 | 409 | `duplicate` | A reused ticket `qr_token` |
 | 409 | `version_conflict` | Stale version; `details.current` is the live record / value |
-| 422 | `validation_failed` / `invalid_file` | Bad body, bad date, bad file |
+| 422 | `validation_failed` / `invalid_file` | Bad body, bad date, bad file, a `batalDari` that is not a check-in id, cancelling a cancellation, or a `ticket_id` that does not match the cancelled check-in |
 | 428 | `version_required` | Update/delete (or replacing an existing detail) without a version |

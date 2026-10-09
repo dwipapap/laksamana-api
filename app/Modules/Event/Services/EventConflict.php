@@ -7,7 +7,9 @@ use RuntimeException;
 /**
  * 'exists' (create with a taken id), 'stale' (version mismatch; $current holds
  * the live record), 'version_required' (writing over an existing row without
- * a version) or 'duplicate' (a UNIQUE column such as tickets.qr_token).
+ * a version), 'duplicate' (a UNIQUE column such as tickets.qr_token),
+ * 'cancel_missing' (batalDari names no check-in) or 'cancel_invalid' (cancelling
+ * a cancellation, or a ticket_id that does not match; $current holds the reason).
  */
 class EventConflict extends RuntimeException
 {

@@ -207,7 +207,14 @@ class EventController
         if ($body === null) {
             return self::badBody();
         }
-        if (! isset($body['ticket_id']) || ! is_string($body['ticket_id']) || $body['ticket_id'] === '') {
+        // A cancellation names the row it corrects; its ticket_id may be
+        // omitted (taken from that row). Anything else needs its own ticket.
+        $cancel = $body['batalDari'] ?? null;
+        $isCancel = is_string($cancel) && $cancel !== '';
+        if (array_key_exists('batalDari', $body) && ! $isCancel) {
+            return ApiResponse::error('validation_failed', 'batalDari must be the id of the check-in to cancel.', 422);
+        }
+        if (! $isCancel && (! isset($body['ticket_id']) || ! is_string($body['ticket_id']) || $body['ticket_id'] === '')) {
             return ApiResponse::error('validation_failed', 'ticket_id is required.', 422);
         }
         try {
@@ -321,6 +328,9 @@ class EventController
             'exists' => ApiResponse::error('already_exists', 'A record with this id already exists.', 409),
             'duplicate' => ApiResponse::error('duplicate', 'A unique field (e.g. the ticket QR token) is already used by another record.', 409),
             'version_required' => self::versionRequired(),
+            'cancel_missing' => ApiResponse::error('not_found', 'The check-in to cancel was not found.', 404),
+            'cancel_invalid' => ApiResponse::error('validation_failed',
+                is_string($e->current) && $e->current !== '' ? $e->current : 'This check-in cannot be cancelled.', 422),
             default => ApiResponse::error('version_conflict', 'The record was changed elsewhere. Reload it and apply your change again.', 409,
                 ['current' => $e->current]),
         };
