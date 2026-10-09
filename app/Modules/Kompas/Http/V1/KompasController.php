@@ -75,7 +75,15 @@ class KompasController
     /** Body {hari: {date: {setor?, mdr?, aktual?, mdrManual?, esb?}}, setoran?: {tambah?: [...], hapus?: [id]}}. */
     public function putRekap(Request $r): JsonResponse
     {
-        return $this->narrow($r, fn ($data, $base) => $this->kompas->saveRekap($data, $base));
+        return $this->narrow($r, function ($data, $base) {
+            // v1 treats a missing `hari` as "touch no days"; legacy simpanRekap
+            // must keep requiring it, so default here instead of the service.
+            if (! array_key_exists('hari', $data)) {
+                $data['hari'] = [];
+            }
+
+            return $this->kompas->saveRekap($data, $base);
+        });
     }
 
     private function narrow(Request $r, \Closure $write): JsonResponse

@@ -82,6 +82,27 @@ it('v1: a narrow target write records the session user and returns the new versi
     $this->withToken($token)->putJson('/api/v1/kompas/rekap?version=1', ['hari' => []])->assertStatus(409);
 });
 
+it('v1: rekap without hari leaves stored day marks untouched', function () {
+    $token = loginAs(officeUser('u-novi'));
+    // Seed one day mark so we can prove a hari-less write does not clear it.
+    $this->withToken($token)->putJson('/api/v1/kompas/rekap', ['hari' => ['2026-09-11' => ['setor' => true]]])
+        ->assertOk()->assertJsonPath('data.saved', true);
+    $before = kpBlob()['reports']['2026-09-11'] ?? null;
+    expect($before)->not->toBeNull();
+
+    // A deposit-only write (no `hari` key) must succeed and keep the old day data.
+    $res = $this->withToken($token)->putJson('/api/v1/kompas/rekap', ['setoran' => ['hapus' => []]])
+        ->assertOk()->assertJsonPath('data.saved', true);
+    expect($res->json('data.hari'))->toBe(0)
+        ->and(kpBlob()['reports']['2026-09-11'])->toBe($before);
+});
+
+it('legacy simpanRekap still requires hari', function () {
+    kpPost(['action' => 'simpanRekap', 'data' => ['setoran' => ['hapus' => []]]])
+        ->assertOk()->assertJsonPath('ok', false)
+        ->assertJsonPath('error', 'Payload kosong/invalid: tidak ada daftar hari');
+});
+
 it('v1: omset-pic and performa follow the module gates', function () {
     $token = loginAs(officeUser('u-aurel'));
     $this->withToken($token)->getJson('/api/v1/kompas/omset-pic?from=2026-08-01&to=2026-09-30')->assertOk()->assertJsonStructure(['data' => ['pic', 'total', 'hariAda']]);
