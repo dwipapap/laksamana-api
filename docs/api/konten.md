@@ -62,7 +62,7 @@ Content performance data lives in `content.data.perf`, keyed per platform.
 
 | Method | Path | Notes |
 |---|---|---|
-| PUT | `/content/{id}/performance` | Body `{platform, metrics?}`. Merges the figures into `perf[platform]` and stamps `{at, by}`. Send `"metrics": null` to remove that platform's entry (the old Input Performa screen deletes `perf[platform]` once every box of that platform is emptied); other platforms are kept. Returns the content row + version. |
+| PUT | `/content/{id}/performance` | Body `{platform, metrics?}`. Merges the figures into `perf[platform]` and stamps `{at, by}`. Send `"metrics": null` to remove that platform's entry (the old Input Performa screen deletes `perf[platform]` once every box of that platform is emptied); other platforms are kept. Returns the content row + version. An empty `perf` is always `{}` (object), never `[]`, on every read — v1 and legacy `getAll` (#261): the old Office keeps `c.perf` as-is when truthy and an array silently drops named keys on save. The old konten-mysql `getAll` returned `[]` here; this is a deliberate difference. |
 
 ## Design options (for Marketing's Request Design form)
 

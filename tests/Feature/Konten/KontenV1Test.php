@@ -134,6 +134,26 @@ it('removes one platform entry when metrics is null and keeps the others', funct
         ->assertOk()->assertJsonPath('meta.version', $v);
 });
 
+it('keeps an emptied perf a JSON object on every read, v1 and legacy (#261)', function () {
+    $token = loginAs(officeUser('u-andry'));
+    $id = $this->withToken($token)->postJson('/api/v1/konten/content',
+        ['title' => 'Konten Perf Objek', 'platform' => 'IG', 'status' => 'Posted'])->assertCreated()->json('data.id');
+    $this->withToken($token)->putJson('/api/v1/konten/content/'.$id.'/performance',
+        ['platform' => 'IG', 'metrics' => ['reach' => 1000]])->assertOk();
+
+    // assertJson* cannot tell {} from [] (both decode to an empty array): read the raw body.
+    $put = $this->withToken($token)->putJson('/api/v1/konten/content/'.$id.'/performance',
+        ['platform' => 'IG', 'metrics' => null])->assertOk();
+    expect(json_decode($put->getContent())->data->perf)->toBeInstanceOf(stdClass::class);
+
+    $show = $this->withToken($token)->getJson('/api/v1/konten/content/'.$id)->assertOk();
+    expect(json_decode($show->getContent())->data->perf)->toBeInstanceOf(stdClass::class);
+
+    $all = json_decode($this->get('/konten-api-mysql/api.php?action=getAll')->assertOk()->getContent());
+    $row = collect($all->data->content)->first(fn ($c) => ($c->id ?? null) === $id);
+    expect($row)->not->toBeNull()->and($row->perf)->toBeInstanceOf(stdClass::class);
+});
+
 it('serves the bootstrap state and diagnostics', function () {
     $token = loginAs(officeUser('u-andry'));
     $this->withToken($token)->getJson('/api/v1/konten/state')->assertOk()

@@ -52,7 +52,7 @@ class KontenState
             foreach ($db->select("SELECT data FROM `{$c['table']}` ORDER BY $order") as $row) {
                 $r = json_decode((string) $row->data, true);
                 if (is_array($r)) {
-                    $rows[] = $r;
+                    $rows[] = KontenRecords::perfObjek($r);
                 }
             }
             $out[$name] = $rows;
