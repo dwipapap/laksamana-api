@@ -4,6 +4,7 @@ namespace App\Modules\Reservasi\Http\V1;
 
 use App\Auth\OfficeAccess;
 use App\Modules\Reservasi\Services\DanaMasukGate;
+use App\Modules\Reservasi\Services\HapusReservasiGate;
 use App\Modules\Reservasi\Services\ReservasiConflict;
 use App\Modules\Reservasi\Services\ReservasiRecords;
 use App\Modules\Reservasi\Services\ReservasiState;
@@ -90,6 +91,9 @@ class ReservasiController
 
     public function destroy(Request $r, string $id): JsonResponse
     {
+        if (! $this->mayDelete($r)) {
+            return ApiResponse::error('forbidden', 'Deleting a reservation needs the Hapus Reservasi permission (master.perms.inputDelete).', 403);
+        }
         if (($v = self::version($r)) === null) {
             return self::versionRequired();
         }
@@ -253,6 +257,15 @@ class ReservasiController
      * True when the caller came in through the Dana Masuk door only: it holds
      * cashier/finance but neither reservasi nor service_excellent (G-14).
      */
+    /** Module admins of reservasi count as `admin`, as the old SSO did (deploy/reservasi:3683). */
+    private function mayDelete(Request $r): bool
+    {
+        $id = (string) $r->user()->getKey();
+        $role = $this->access->isModuleAdmin($id, 'reservasi') ? 'admin' : $this->state->role($id);
+
+        return HapusReservasiGate::allowed($role, ($this->state->readMaster() ?? [])['perms'] ?? null);
+    }
+
     private function danaMasukOnly(Request $r): bool
     {
         $id = (string) $r->user()->getKey();

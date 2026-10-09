@@ -6,7 +6,8 @@ use Illuminate\Support\Facades\Route;
 
 // Reservasi and Service Excellent are two Panels of the same Backend and the same
 // master blob, so either Modul opens this contract; page-level Akses Halaman stays
-// in master (perms / sePerms), exactly as the old client-side matrix did.
+// in master (perms / sePerms), exactly as the old client-side matrix did —
+// except DELETE reservations/{id}, which the API checks (HapusReservasiGate, #241).
 Route::middleware(['auth:sanctum', 'module:reservasi|service_excellent'])->prefix('reservasi')->group(function () {
     Route::post('reservations', [C::class, 'store']);
     Route::put('reservations/{id}', [C::class, 'update']);

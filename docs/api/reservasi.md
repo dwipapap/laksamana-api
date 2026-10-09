@@ -123,7 +123,7 @@ Photos never stay inline. A `data:` URI in a photo field is written to `<RESERVA
 | POST | `/reservations` | Body = the reservation; `id` optional, `_audit` optional. `updatedAt` is stamped and kept increasing; `createdAt` defaults to the server clock. `201`, or `409 already_exists` |
 | PUT | `/reservations/{id}` | Replace (`createdAt` kept) |
 | PATCH | `/reservations/{id}` | Shallow merge of the top-level fields |
-| DELETE | `/reservations/{id}` | Also removes that reservation's photo files |
+| DELETE | `/reservations/{id}` | Also removes that reservation's photo files. **Gated (#241):** only a module admin of `reservasi` (counts as `admin`) or a role whose `master.perms.inputDelete` is 2 (default: manager, admin; viewer never) — the old `CAN.deleteReservation`. Otherwise **403 `forbidden`**, checked before the version |
 | GET / PUT | `/master` | Whole master blob. PUT body `{value: {...}}` with `If-Match` = its version |
 | GET / PUT | `/master/{section}` | One independently versioned section |
 | PUT / DELETE | `/master/{section}/{id}` | One `reviews`, `feedbacks` or `waitlist` item |
@@ -136,7 +136,7 @@ Photos never stay inline. A `data:` URI in a photo field is written to `<RESERVA
 | Status | code |
 |---|---|
 | 401 | `unauthenticated` |
-| 403 | `module_not_granted` |
+| 403 | `module_not_granted`; `forbidden` (Dana Masuk door field outside DP, or DELETE without `inputDelete`) |
 | 404 | `not_found` (unknown reservation, item, or an item section outside the three above) |
 | 409 | `already_exists`, `version_conflict` (`details.current`) |
 | 422 | `validation_failed`, `invalid_request` |

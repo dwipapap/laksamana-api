@@ -65,7 +65,12 @@ it('v1: create, patch with the row version, delete; each bumps _ver', function (
     $this->withToken($token)->patchJson("/api/v1/reservasi/reservations/$id?version=1", ['pax' => 5])->assertStatus(409);
     $v2 = $this->withToken($token)->patchJson("/api/v1/reservasi/reservations/$id?version=$v", ['pax' => 5])
         ->assertOk()->assertJsonPath('data.pax', 5)->assertJsonPath('data.name', 'Tamu API')->json('meta.version');
-    $this->withToken($token)->deleteJson("/api/v1/reservasi/reservations/$id?version=$v2")->assertOk()->assertJsonPath('data.deleted', true);
+    // u-andry is a viewer in master.users: the old Office never gave it Hapus (#241).
+    $this->withToken($token)->deleteJson("/api/v1/reservasi/reservations/$id?version=$v2")->assertStatus(403);
+    expect(rsVer())->toBe($ver + 2);
+    $adm = loginAs(officeUser('u-admin'));
+    app('auth')->forgetGuards();
+    $this->withToken($adm)->deleteJson("/api/v1/reservasi/reservations/$id?version=$v2")->assertOk()->assertJsonPath('data.deleted', true);
     expect(rsVer())->toBe($ver + 3)->and(is_file(storage_path("framework/testing/reservasi-db/files/r_{$id}_dp.txt")))->toBeFalse();
 });
 
