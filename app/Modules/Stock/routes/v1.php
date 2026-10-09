@@ -17,8 +17,9 @@ $kind = 'products|vendors';
 // literal routes come first so the generic {kind} group below (stock-only)
 // never answers them with 403. Vendor GETs only: products, orders and every
 // other stock read keep the stock-only gate, and all vendor writes stay
-// purchasing-only.
-Route::middleware(['auth:sanctum', 'module:ordering|purchasing|hpp|usage|bd|brankas'])->prefix('stock')->group(function () {
+// purchasing-only. Finance joins them (#260): Kas Kecil's Planning
+// Pembayaran shows the same payee details (deploy/finance/kas:7065-7073).
+Route::middleware(['auth:sanctum', 'module:ordering|purchasing|hpp|usage|bd|brankas|finance'])->prefix('stock')->group(function () {
     Route::get('vendors', [C::class, 'catalogIndex'])->defaults('kind', 'vendors');
     Route::get('vendors/{nama}', [C::class, 'vendorShow'])->where('nama', '.+');
 });
