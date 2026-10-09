@@ -30,15 +30,18 @@ function dmUser(string $id, array $modules): array
 }
 
 /**
- * Token for a user, dropping the guard's cached user first: this file switches
+ * Token for a user, dropping the guard's cached user: this file switches
  * identity inside one test, and the guard would otherwise keep answering as
  * whoever made the previous request.
  */
 function dmToken(array $u): string
 {
+    // After the login, not before: the login request itself carries the previous
+    // test()->withToken() header, so the guard caches that user again.
+    $token = loginAs($u);
     app('auth')->forgetGuards();
 
-    return loginAs($u);
+    return $token;
 }
 
 /** A fresh reservation made by a reservasi holder; returns [id, version]. */
