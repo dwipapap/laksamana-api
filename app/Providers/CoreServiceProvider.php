@@ -24,8 +24,16 @@ use App\Core\Imports\MarketingImporter;
 use App\Core\Imports\ReservasiImporter;
 use App\Core\Imports\StockImporter;
 use App\Core\Imports\TicketingImporter;
+use App\Erp\Kas\Imports\KasImporter;
 use App\Erp\Master\Imports\BarangImporter;
+use App\Erp\Master\Imports\OrangImporter;
+use App\Erp\Penjualan\Imports\PenjualanImporter;
 use App\Erp\Persediaan\Imports\PersediaanImporter;
+use App\Erp\Proyek\Imports\KerjaTimImporter;
+use App\Erp\Proyek\Imports\PoProyekImporter;
+use App\Erp\Resep\Imports\ResepImporter;
+use App\Erp\Tamu\Imports\EventImporter as ErpEventImporter;
+use App\Erp\Tamu\Imports\ReservasiImporter as ErpReservasiImporter;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
 
@@ -59,6 +67,22 @@ final class CoreServiceProvider extends ServiceProvider
             $app->make(TicketingImporter::class),
             $app->make(BarangImporter::class),
             $app->make(PersediaanImporter::class),
+            // ERP people and Divisi: after `account` (Users, shift Divisi)
+            $app->make(OrangImporter::class),
+            // ERP recipes: after erp-barang
+            $app->make(ResepImporter::class),
+            // ERP cash: after account (names) and erp-orang
+            $app->make(KasImporter::class),
+            // ERP daily sales: after erp-kas; again after erp-acara/-reservasi/-event to link sources
+            $app->make(PenjualanImporter::class),
+            // ERP BD projects and PO: after erp-orang and erp-barang
+            $app->make(PoProyekImporter::class),
+            // ERP team tools, shared log and notifications: after erp-po-proyek
+            $app->make(KerjaTimImporter::class),
+            // ERP reservations: after erp-kas (metode_bayar)
+            $app->make(ErpReservasiImporter::class),
+            // ERP events, tickets, talent schedules and pay: after erp-orang
+            $app->make(ErpEventImporter::class),
         ));
     }
 

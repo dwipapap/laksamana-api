@@ -1,6 +1,6 @@
 # Area: Kas
 
-Status: **rancangan + migration** (`2026_10_07_110000_create_erp_kas_tables.php`). Importer belum ditulis, karena butuh dump lama untuk diuji.
+Status: **rancangan + migration + importer** (`2026_10_07_110000`; `core:import erp-kas` setelah `account` dan `erp-orang`, `app/Erp/Kas/Imports/KasImporter.php`, tes `KasImportTest`). Service saldo belum.
 Dasar: ADR-0007, ADR-0008 (tanpa buku besar; uang di sini uang operasional), asumsi L6 dan L7 ([`pertanyaan-owner.md`](pertanyaan-owner.md) bagian D). Area ini juga menyelesaikan `rencana_bayar` / `tagihan_vendor` yang ditunda dari [`pembelian-persediaan.md`](pembelian-persediaan.md).
 
 ## Sumber di sistem lama (diperiksa 2026-10-06)
@@ -192,7 +192,7 @@ Tidak ada. Seluruh blob `bk_state` menjadi tabel.
 | wadah `bri`/`mandiri`/`bca`/`uob`/`cash` | `dompet` (`bank`/`tunai`), Lokasi Outlet | `kode` sama dengan kunci lama |
 | `kk_pos` | `dompet` (`kas_kecil`), `kode` = `kk_<id>`, `legacy_id` = id | |
 | `bk_state.setting.awal` | `dompet.saldo_awal` | tanggal awal = transaksi tertua dompet itu |
-| `bk_state.setting` peta metode | `metode_bayar.dompet_id` | kunci `RK_GRUP` (cash, qr_order, edc_bri, qris_bri, …) menjadi `kode` |
+| `bk_state.setting` peta metode | `metode_bayar.dompet_id` | `kode` = kunci metode **Report Daily** (`PAYS`: cash, qris_esb, edc_bri, transfer_uob, compliment, voucher, error_*, …), karena Report Daily mencatat per metode itu; dompet dari peta lama, atau bawaan `MAP_BAWAAN` (QR Order, ojol, transfer → UOB). Compliment, voucher, error, member deposit tidak masuk dompet mana pun |
 | `kk_kategori` + `BAYAR_KAT` | `kategori_kas` | nama sama digabung tanpa membedakan huruf besar-kecil |
 | `kk_trx` | `kas_kecil` | `input` → `sudah_dibukukan`, `bon` → `ada_bon`, `dibuat_oleh` → User lewat pencocok nama (`orang-divisi.md`) |
 | `kk_trx_pos` | `arus_kas` (`sebab = kas_kecil`) | debet → masuk, kredit → keluar; baris yang berisi keduanya menjadi dua baris |
@@ -202,8 +202,14 @@ Tidak ada. Seluruh blob `bk_state` menjadi tabel.
 | `investor.returns[]` | `pengembalian_modal` + `arus_kas` | tanpa `dari` → `dompet_id` kosong, tanpa arus kas, dilaporkan (aturan 7) |
 | `kompas.rekap_setoran` | `setoran` + `setoran_hari` + 2 `arus_kas` | `tujuan` → dompet bank lewat nama bank, sisanya `tujuan_impor` (aturan lama `bankDariTujuan`) |
 
+## Hasil impor (salinan lokal produksi, 2026-10-06)
+
+Data kas di produksi masih kecil: Kas Kecil 3 pos, 12 kategori, 3 transaksi; Brankas 0 Planning Pembayaran, 2 mutasi wallet, 1 investor dengan 9 pengembalian modal; Kompas 9 setoran (63 hari dicakup). Saldo awal dan peta metode di pengaturan Brankas kosong, jadi dipakai bawaan layar lama.
+
+Semua total cocok dengan data lama sampai rupiah: Kas Kecil debet/kredit, setoran (keluar cash = masuk bank = jumlah per hari), pengembalian modal, mutasi wallet. Tidak ada kasus yang perlu diputuskan. Idempoten.
+
 ## Belum dikerjakan
 
-1. Importer `core:import erp-kas` (setelah `erp-barang`). Butuh dump `finance` dan `kompas`.
+1. ~~Importer `core:import erp-kas`~~: selesai.
 2. Service saldo dan penulisan `arus_kas`, dengan tes yang membandingkan saldo per dompet dengan layar Brankas lama.
 3. Area Penjualan harian: Laporan Harian, omset per metode bayar (`arus_kas.sebab = omset`), piutang bon tamu, dan pengecekan sisa cash untuk setoran.

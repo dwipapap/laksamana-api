@@ -17,6 +17,7 @@ final class OmsetPorsi extends CoreRecord
     {
         return parent::casts() + [
             'open_bill' => 'boolean',
+            'libur' => 'boolean',
         ];
     }
 }

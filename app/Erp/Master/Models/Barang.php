@@ -22,6 +22,7 @@ final class Barang extends CoreRecord
     {
         return parent::casts() + [
             'aktif' => 'boolean',
+            'dipesan' => 'boolean',
         ];
     }
 

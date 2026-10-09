@@ -1,6 +1,6 @@
 # Area: Kerja Tim, Log Aktivitas, Notifikasi
 
-Status: **rancangan + migration** (`2026_10_07_220000_create_erp_kerja_tim_tables.php`), di atas area [Proyek & PO Proyek](po-proyek.md) (`proyek`). Importer belum ditulis, karena butuh dump lama untuk diuji.
+Status: **rancangan + migration + importer** (`2026_10_07_220000`; `core:import erp-kerja-tim` setelah `erp-po-proyek`, `app/Erp/Proyek/Imports/KerjaTimImporter.php`, tes `BdImportTest`).
 
 Dua hal yang dipakai banyak Modul tetapi belum punya tempat:
 
@@ -102,7 +102,14 @@ Dijaga database (diuji di `tests/Feature/Erp/KerjaTimSchemaTest.php`):
 | `marketing.activities`, `konten.logs`, `akademi.activity`, `reservasi.audit`, `hr.audit`, `stock.activity_log` | `log_aktivitas` | Modul dari asal tabel; `refType`/`refId` → `objek_jenis`/`objek_kunci` |
 | `marketing.notifs`, `konten.notifs` | `notifikasi` | penerima lewat pencocok nama |
 
+## Hasil impor (salinan lokal produksi, 2026-10-06)
+
+- 205 tugas BD (220 PIC). Rutinitas, permintaan koordinasi, dan agenda kosong di produksi.
+- Semua 4.296 log dari Marketing, Konten, Akademi, Reservasi, HR, dan Stock masuk ke `log_aktivitas`; 4.037 pelakunya cocok ke User, sisanya nama lama di `user_impor`. Idempoten.
+- **Notifikasi tidak ada yang diimpor**: 16 notifikasi Marketing tidak menyimpan penerima, dan 172 notifikasi Konten adalah pengumuman ke semua kru (`for_user = all`). Tabel `notifikasi` per penerima; memecah pengumuman per orang berarti mengarang status "sudah dibaca". Keduanya dilaporkan.
+- Dilaporkan: 7 tugas dengan divisi "Project" (tidak ada di daftar L4).
+
 ## Belum dikerjakan
 
-1. Importer `core:import erp-kerja-tim` dan impor log/notifikasi per Modul saat Modul itu pindah.
+1. ~~Importer `core:import erp-kerja-tim`~~: selesai (log semua Modul ikut).
 2. Menulis log dari service v2 (satu helper, bukan per Modul).

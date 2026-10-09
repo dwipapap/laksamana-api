@@ -1,6 +1,6 @@
 # Area: Tamu — Event & Tiket
 
-Status: **rancangan + migration** (`2026_10_07_160000_create_erp_event_tiket_tables.php`), di atas area [Orang & Divisi](orang-divisi.md) (peran Pihak `talent`). Importer belum ditulis, karena butuh dump lama untuk diuji.
+Status: **rancangan + migration + importer** (`2026_10_07_160000`, `2026_10_08_120000`; `core:import erp-event` setelah `erp-orang`, `app/Erp/Tamu/Imports/EventImporter.php`, tes `EventImportTest`).
 
 ## Sumber di sistem lama (diperiksa 2026-10-06)
 
@@ -153,8 +153,17 @@ Harga tiket disalin ke `pesanan_tiket_baris`; tarif talent disalin ke `jadwal_ta
 | `talents` | `pihak` + `talent` | area Orang & Divisi |
 | `schedules`, `recurring_rules`, `talent_payments` | `jadwal_talent`, `aturan_jadwal_talent`, `pembayaran_talent` | `days_of_week` → bitmask; `transfer_proof` → berkas |
 
+## Hasil impor (salinan lokal produksi, 2026-10-06)
+
+- 26 event, 5 ide, 8 kelas tiket, 670 kursi, 27 pesanan (total 4.404.058), 44 baris pesanan, 2 Buyer, 122 jadwal talent (107.600.000), 3 pembayaran talent (10.000.000), 5 baris anggaran event. Semua total sama dengan data lama. Idempoten.
+- **Tiket**: rujukan `order_item_id` lama tidak cocok dengan item pesanan mana pun (item tidak punya id). Tiket ditautkan lewat kursi yang sama di item pesanan: 4 dari 11 tertaut, 7 dilaporkan.
+- **Kursi**: label kursi berulang dalam satu event (169 kasus), jadi kode memakai id lama dan labelnya disimpan di `tata_letak.label`.
+- **Anggaran event** berisi uang, jadi menjadi tabel `event_anggaran` (migration `2026_10_08_120000`), bukan JSON. Status pembayaran talent ditambah `rejected` (data lama: Rejected).
+- Dilaporkan: 9 pesanan lunas tanpa waktu bayar (diambil dari waktu cek pembayaran terakhir), 2 refund yang pesanannya tidak ada di data lama.
+- Venue "Laksamana Muda …" menjadi Lokasi Outlet; venue lain (mis. El Oasis Padel) disimpan di `venue_impor`.
+
 ## Belum dikerjakan
 
-1. Importer `core:import erp-event` (setelah `erp-orang`). Butuh dump `ems` dan berkas poster/bukti.
+1. ~~Importer `core:import erp-event`~~: selesai. Berkas poster/bukti belum dipindah.
 2. Uang tiket ke `arus_kas` (Xendit → dompet) dan pembayaran talent dari dompet: setelah area Kas di-merge.
 3. Kalender tambahan (`calendar_extra`).

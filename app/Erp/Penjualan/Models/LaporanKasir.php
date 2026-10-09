@@ -18,6 +18,7 @@ final class LaporanKasir extends CoreRecord
         return parent::casts() + [
             'tanggal_bisnis' => 'immutable_date',
             'jejak' => 'array',
+            'dikirim_at' => 'immutable_datetime',
         ];
     }
 }

@@ -1,6 +1,6 @@
 # Area: Resep & HPP
 
-Status: **rancangan + migration** (`2026_10_07_100000_create_erp_resep_hpp_tables.php`). Importer belum ditulis, karena butuh dump lama untuk diuji.
+Status: **rancangan + migration + importer** (`2026_10_07_100000`, `2026_10_08_090000`; `core:import erp-resep` setelah `erp-barang`, `app/Erp/Resep/Imports/ResepImporter.php`, tes `ResepImportTest`). Service Modal belum.
 Dasar: ADR-0007, ADR-0008 (HPP dan resep milik Laksamana, bukan ESB), Q3 (satu katalog Barang), area [`pembelian-persediaan.md`](pembelian-persediaan.md) (Barang, Satuan, `barang_harga`).
 
 ## Sumber di sistem lama (diperiksa 2026-10-06)
@@ -129,7 +129,7 @@ erDiagram
 Dijaga database (diuji di `tests/Feature/Erp/ResepHppSchemaTest.php`):
 
 - `resep.jenis IN ('food','drink')`, `kategori IN ('base','menu','prasmanan')`, `yield_qty > 0` (lama: yield nol dijatuhkan ke 1 karena pembagian nol menjalar ke semua menu), `modal_manual >= 0`.
-- `(jenis, nama)` unik: rujukan lama dicari per jenis, jadi nama ganda dalam satu jenis sudah ambigu di sistem lama.
+- `(jenis, kategori, nama)` unik. Rancangan awal `(jenis, nama)` ternyata terlalu ketat: data produksi memakai satu nama untuk menu dan versi prasmanannya, dan untuk base dan menu di atasnya (migration `2026_10_08_090000`).
 - `kode_pos` unik bila diisi. `barang_id` unik: satu Barang dihasilkan paling banyak satu resep.
 - Baris resep: paling banyak satu dari `barang_id` / `sub_resep_id`. Baris tanpa keduanya adalah catatan: wajib `catatan`, tanpa qty. Baris bahan wajib `qty_input > 0` dan `satuan_input_id`.
 - `(resep_id, urutan)` unik. Baris ikut terhapus bersama resepnya (`CASCADE`); Barang dan sub-resep yang dirujuk tidak bisa dihapus (`RESTRICT`).
@@ -173,9 +173,18 @@ Tidak ada. Blob `bahan` lama menjadi `resep_baris`; `hpp_setting` menjadi kolom.
 | `hpp_setting` | satu baris `pengaturan_hpp` (berlaku dari `2000-01-01`) | bawaan lama bila kosong: 0,33 / 0,33 / 0,05 / 3 / 8 |
 | `hpp_bulan` + `hpp_pakai` | `kontrol_bahan` (Lokasi = Outlet) + `kontrol_bahan_baris` | `bulan` `2026-08` → `2026-08-01`; bahan lewat nama seperti `erp-persediaan` |
 
+## Hasil impor (salinan lokal produksi, 2026-10-06)
+
+- 456 resep (56 prasmanan), semua 2.382 baris bahan: 1.867 ke Barang, 415 ke sub-resep, 100 baris catatan. 315 resep berharga jual. Idempoten.
+- Dilaporkan: 50 modal manual berpecahan dibulatkan; 178 baris yang satuannya tidak bisa dikonversi (sama dengan tanda ⚠ "campur" di layar lama; `qty_dasar` kosong); 17 bahan tidak dikenal dan 10 qty nol (disimpan sebagai baris catatan bertanda, modal lama juga tidak menghitungnya).
+- Nama resep ganda dalam satu jenis ternyata sah (menu dan versi prasmanannya, base dan menu di atasnya), jadi kunci unik menjadi `(jenis, kategori, nama)`.
+- Sub-resep dicari: base sejenis dulu, lalu sejenis, lalu jenis lain, **tidak pernah resep itu sendiri** (layar lama bisa memilih dirinya sendiri dan menghitung modal 0 karena "siklus").
+- `hpp_pakai`/`hpp_bulan`/`hpp_setting` kosong di produksi: Kontrol Bahan Baku tidak berisi; pengaturan HPP diisi bawaan lama (0,33 / 0,33 / 0,05 / 3 / 8).
+- `barang.dipesan` diisi `erp-barang` dari `hpp_bahan.di_purchasing`; satuan keluarga (Gram/Gr/Kg/Ml/L/…) diberi faktor oleh `erp-resep`.
+
 ## Belum dikerjakan
 
-1. Importer `core:import erp-resep` (setelah `erp-barang`). Butuh dump lama.
+1. ~~Importer `core:import erp-resep`~~: selesai.
 2. Service modal (aturan hitung 1–7) dan tesnya dengan resep nyata: modal v2 harus sama dengan angka layar lama untuk setiap resep.
 3. Isi `satuan.keluarga`/`faktor` untuk satuan yang sudah ada (Gram, Kg, Ml, L, …) lewat importer `erp-barang`.
 4. Kalkulator HPP Marketing (`kalkHistori`, issue #184) adalah dokumen area Penjualan; ia akan menyalin modal dari sini.

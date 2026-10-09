@@ -1,6 +1,6 @@
 # Area: Proyek & PO Proyek (BD)
 
-Status: **rancangan + migration** (`2026_10_07_140000_create_erp_po_proyek_tables.php`). Importer belum ditulis, karena butuh dump lama untuk diuji.
+Status: **rancangan + migration + importer** (`2026_10_07_140000`; `core:import erp-po-proyek` setelah `erp-orang` dan `erp-barang`, `app/Erp/Proyek/Imports/PoProyekImporter.php` + `BdPeople`, tes `BdImportTest`).
 Dasar: Q4 (Pesanan Bahan dan PO Proyek tetap dua alur), L5 (satu daftar vendor, asumsi), P5 (persetujuan belum ada di Pesanan Bahan; **di BD sudah ada**, lihat di bawah), ADR-0007.
 
 ## Sumber di sistem lama (diperiksa 2026-10-06)
@@ -130,8 +130,14 @@ PO menyimpan nominal pengajuan dan realisasinya sendiri, jadi tidak ada nilai ya
 | `purchase_orders` | `po_proyek` | `item` → `nama_barang` (+ `barang_id` bila nama sama dengan Barang); `vendor` → Pihak lewat nama, sisanya `vendor_impor`; `Approved` → `disetujui`; `realisasi` `''` → `NULL`; `proses`/`prosesAt`/`prosesBy` → `diproses_*`; `byName` → pengaju; PO dari Marketing → `sumber = marketing` |
 | `payment` | — | dihapus tim (alur 6) |
 
+## Hasil impor (salinan lokal produksi, 2026-10-06)
+
+- 36 proyek (49 PIC), 12 PR (36 penyetuju, semua tertaut ke User), 104 PO. Total pengajuan 142.068.508 dan realisasi 87.446.000 sama dengan data lama. Idempoten.
+- Semua PIC, penyetuju, dan pengaju BD dirujuk lewat `bd.people.id` → `officeUserId` (`BdPeople`).
+- Dilaporkan: 1 divisi tidak dikenal (divisi "Project" milik BD, tidak ada di daftar L4).
+
 ## Belum dikerjakan
 
-1. Importer `core:import erp-po-proyek`. Butuh dump `bd`.
+1. ~~Importer `core:import erp-po-proyek`~~: selesai.
 2. Tautan realisasi ke Kas Kecil (`arus_kas`/`kas_kecil` dari `kas.md`): kolom `kas_kecil_id` di `po_proyek` ditambahkan setelah area Kas di-merge.
 3. Tugas, rutinitas, permintaan koordinasi, agenda: area Modul pendukung.
