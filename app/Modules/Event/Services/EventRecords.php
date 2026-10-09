@@ -78,11 +78,20 @@ class EventRecords
      * Filters: any indexed column by name (event_id, talent_id, status, …, exact),
      * `from`/`to` (YYYY-MM-DD) on the collection's date column, `updatedSince` (ms).
      *
+     * Tickets carry no event_id column (legacy stores only order_item_id,
+     * ticket_class_id, …), so `?event_id=` on tickets is resolved through the
+     * order: a ticket matches when its own `event_id` (when present) equals the
+     * filter, otherwise when its order (order_item_id/order_id → orders.event_id)
+     * does. A ticket without a matching order is excluded.
+     *
      * @return list<array{record:array, version:int}>
      */
     public function list(string $resource, array $f): array
     {
         $def = self::def($resource);
+        $ticketEvent = $resource === 'tickets'
+            && isset($f['event_id']) && is_string($f['event_id']) && $f['event_id'] !== ''
+            ? $f['event_id'] : null;
         $where = [];
         $args = [];
         foreach (array_keys($def['cols']) as $col) {
@@ -117,6 +126,30 @@ class EventRecords
             if (is_array($d)) {
                 $out[] = ['record' => $d, 'version' => (int) $row->updated_at];
             }
+        }
+
+        if ($ticketEvent !== null) {
+            $orderDef = self::def('orders');
+            $orderIds = [];
+            foreach ($this->db()->select(
+                "SELECT `{$orderDef['id']}` AS id FROM `{$orderDef['table']}` WHERE event_id = ?",
+                [$ticketEvent]
+            ) as $r) {
+                $orderIds[(string) $r->id] = true;
+            }
+            $out = array_values(array_filter($out, function ($x) use ($ticketEvent, $orderIds) {
+                $rec = $x['record'];
+                if (isset($rec['event_id']) && (string) $rec['event_id'] === $ticketEvent) {
+                    return true;
+                }
+                foreach (['order_item_id', 'order_id'] as $k) {
+                    if (isset($rec[$k]) && $rec[$k] !== '' && isset($orderIds[(string) $rec[$k]])) {
+                        return true;
+                    }
+                }
+
+                return false;
+            }));
         }
 
         return $out;
