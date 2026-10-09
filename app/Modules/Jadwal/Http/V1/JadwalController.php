@@ -3,6 +3,7 @@
 namespace App\Modules\Jadwal\Http\V1;
 
 use App\Auth\OfficeAccess;
+use App\Modules\Dw\Services\DwService;
 use App\Modules\Jadwal\Services\HeadDirectory;
 use App\Modules\Jadwal\Services\JadwalService;
 use App\Support\Api\ApiResponse;
@@ -21,6 +22,7 @@ class JadwalController
         private readonly JadwalService $jadwal,
         private readonly OfficeAccess $access,
         private readonly HeadDirectory $heads,
+        private readonly DwService $dw,
     ) {}
 
     /** whoami-shaped identity for the service rules. */
@@ -74,6 +76,19 @@ class JadwalController
         $d = $r->validate(['user' => ['nullable', 'string'], 'from' => ['required', 'date_format:Y-m-d'], 'to' => ['required', 'date_format:Y-m-d']]);
 
         return $this->run(fn () => $this->jadwal->shiftRange((string) ($d['user'] ?? ''), $d['from'], $d['to']));
+    }
+
+    /**
+     * Approved DW shifts in a range for the "DAILY WORKER" block: the same
+     * DwService::scheduleRange read as GET /dw/schedule serves, without the
+     * phone numbers (legacy jadwalDW deliberately omits them). Read-only, so
+     * a jadwal holder without the dw module can still draw the block.
+     */
+    public function dwSchedule(Request $r): JsonResponse
+    {
+        $d = $r->validate(['from' => ['required', 'date_format:Y-m-d'], 'to' => ['required', 'date_format:Y-m-d']]);
+
+        return $this->run(fn () => $this->dw->scheduleRange($d['from'], $d['to']));
     }
 
     public function requests(Request $r): JsonResponse
