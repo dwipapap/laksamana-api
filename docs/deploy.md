@@ -91,6 +91,16 @@ If the run summary says **composer.lock changed**, run in cPanel Terminal for th
 
 **Rollback:** run the workflow on the previous good commit (Run workflow → "Use workflow from" a branch or tag at that commit). Nothing in the database changes on deploy, so code rollback is enough.
 
+## Deploying over SSH (fallback)
+
+When Rumahweb's firewall keeps dropping the GitHub runners (Troubleshooting below: FTP and even HTTPS time out), the owner deploys from their own machine over SSH (cPanel SSH Access, port 2223, an `~/.ssh/config` alias `laksamana-cpanel`):
+
+```bash
+tools/deploy-ssh.sh production            # or: dev; optional ref (default origin/main); -y skips the prompt
+```
+
+It does what the workflow does: uploads the commit without `tests/`, `tools/`, `docs/`, never touches `.env`, `vendor/`, logs or cPanel's ini files, removes files the commit deleted since the deployed one, runs Composer only when `composer.lock` changed, writes `build.txt` last and verifies `/up` + `build.txt`. It never runs `migrate`; new core migrations are listed for a deliberate apply (next section).
+
 ## New core migrations
 
 Every Modul stays on legacy in production (ADR-0005), so core rarely changes. When a migration must reach a server: run `tools/core-schema.sh` on the new commit, compare with the tables already there, and apply only the new `CREATE TABLE` statements plus the new `migrations` rows in phpMyAdmin.
