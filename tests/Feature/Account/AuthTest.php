@@ -35,6 +35,12 @@ it('requires a token for /me', function () {
     $this->getJson('/api/v1/me')->assertStatus(401)->assertJsonPath('error.code', 'unauthenticated');
 });
 
+it('returns a JSON 401 for /me without a token and without an Accept header', function () {
+    // No `Accept: application/json`: must still be the v1 envelope, never a
+    // 500 `Route [login] not defined` redirect.
+    $this->get('/api/v1/me')->assertStatus(401)->assertJsonPath('error.code', 'unauthenticated');
+});
+
 it('cuts off a token as soon as the account is deactivated', function () {
     $u = anyActiveUser();
     $token = loginAs($u);
