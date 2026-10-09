@@ -83,7 +83,7 @@ Indexed columns are extracted exactly as legacy does. Missing values become `''`
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/audit` | Newest first |
+| GET | `/audit` | Newest first. `?limit=N` (a positive integer) returns the newest N rows with `meta.total` = the full count; without it every row is returned, as before. The old app trimmed to 800 rows client-side; clients that want that bound pass `?limit=800`. |
 | POST | `/audit` | `{action, detail?}`. `id`, `at`, `userId` and `userName` are set by the server from the session. `201`. Needs no version and does not bump the rev (legacy audit is append-only as well). |
 
 ## Attendance storage
