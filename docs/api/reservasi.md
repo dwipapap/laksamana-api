@@ -92,6 +92,15 @@ After a successful create/update/delete the server appends one row, in the same 
 
 `POST /audit {action, detail?, res?}` records an action that belongs to no reservation row (settings, roles, review targets). `action` is required; `res` is optional. It also advances the global `_ver`.
 
+## Guest summary
+
+`GET /guests/summary` returns the Loyal / blacklist / autofill profile computed over the WHOLE history, in the legacy `ringkasTamu` shape (`?action=ringkasTamu&sebelum=` in the old backend). The windowed client cannot compute it from its window rows, so it merges this summary with them exactly like the old screen did (`profilGabung`).
+
+- Query: `before=YYYY-MM-DD` (optional; only reservations dated before it count — the twin of legacy `sebelum`), `phone=` (optional; narrows the map to that one number, normalised the legacy way).
+- Without `before` every dated row counts; undated rows never do. `data.sebelum` echoes the bound (or `null`).
+- `data.tamu` maps each normalised phone to `[n, datang, noshow, member, memberNo, vip, kunjunganTerakhir, jumlahPax, namaPertama, namaTerakhir]`. Keys carry the legacy `k` prefix (`k628…`); an empty map is `{}`. `meta.ver` is the global version.
+- Statuses are normalised before counting (`Checked-in`/`Completed` → `Datang`, `Booking` → `Confirmed`), exactly as legacy.
+
 ## Photos and files
 
 Photos never stay inline. A `data:` URI in a photo field is written to `<RESERVASI_DATA_DIR>/files/<key>.txt` and replaced with `@f:<key>`.
@@ -129,6 +138,7 @@ Photos never stay inline. A `data:` URI in a photo field is written to `<RESERVA
 | PUT / DELETE | `/master/{section}/{id}` | One `reviews`, `feedbacks` or `waitlist` item |
 | GET | `/audit` | The newest 500 audit entries |
 | POST | `/audit` | Append one action that belongs to no reservation row |
+| GET | `/guests/summary?before&phone` | Whole-history guest summary in the legacy `ringkasTamu` shape |
 | GET / PUT | `/files/{key}` | `{key, data}` / body `{data}`; empty `data` deletes the file |
 
 ## Errors

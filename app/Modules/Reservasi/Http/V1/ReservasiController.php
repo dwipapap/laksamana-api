@@ -6,6 +6,7 @@ use App\Auth\OfficeAccess;
 use App\Modules\Reservasi\Services\DanaMasukGate;
 use App\Modules\Reservasi\Services\HapusReservasiGate;
 use App\Modules\Reservasi\Services\ReservasiConflict;
+use App\Modules\Reservasi\Services\ReservasiGuests;
 use App\Modules\Reservasi\Services\ReservasiRecords;
 use App\Modules\Reservasi\Services\ReservasiState;
 use App\Support\Api\ApiResponse;
@@ -24,6 +25,7 @@ class ReservasiController
     public function __construct(
         private readonly ReservasiState $state,
         private readonly ReservasiRecords $records,
+        private readonly ReservasiGuests $guests,
         private readonly OfficeAccess $access,
     ) {}
 
@@ -187,6 +189,28 @@ class ReservasiController
     public function audit(): JsonResponse
     {
         return ApiResponse::ok($this->state->readAudit());
+    }
+
+    /**
+     * Guest summary over the whole history (G-07): the legacy `ringkasTamu`
+     * shape ({sebelum, tamu}) inside the v1 envelope, so the windowed Vue
+     * client can merge it with its own rows exactly like the old screen did
+     * (profilGabung). `before` bounds the history (twin of legacy `sebelum`);
+     * without it every dated row counts. `phone` narrows the map to that one
+     * number (normalised the legacy way); an unparseable phone matches nothing.
+     */
+    public function guestSummary(Request $r): JsonResponse
+    {
+        $f = $r->validate([
+            'before' => ['nullable', 'date_format:Y-m-d'],
+            'phone' => ['nullable', 'string', 'max:64'],
+        ]);
+        $out = $this->guests->summary($f['before'] ?? null, $f['phone'] ?? null);
+
+        return ApiResponse::ok(
+            ['sebelum' => $out['sebelum'], 'tamu' => (object) $out['tamu']],
+            ['ver' => $this->state->ver()]
+        );
     }
 
     /** An action that belongs to no reservation row (settings, roles, targets, …). */
