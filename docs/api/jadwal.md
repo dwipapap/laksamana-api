@@ -53,6 +53,6 @@ Cell fields are the legacy `jadwal_sel` columns, abbreviated as in the old app:
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/settings` | `data` = the setting blob (`shifts`, `heads{div:[uid]}`, `divOverride`, `jabatan`, `shiftKru`, `template`). Empty maps are `{}`. |
+| GET | `/settings` | `data` = the setting blob (`shifts`, `heads{div:[uid]}`, `divOverride`, `jabatan`, `shiftKru`, `template`, `manajemen`, `maksBeruntun`, `jedaMin`). Empty maps are `{}`; `maksBeruntun`/`jedaMin` are present only when set. |
 | PUT | `/settings` | Admin Modul only. Body = the whole setting object. |
 | GET | `/heads` | `data` = `{uid: [div]}` (same as the legacy `headIds`). |
