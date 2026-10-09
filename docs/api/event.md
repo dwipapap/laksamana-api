@@ -29,7 +29,7 @@ The Panel's menu (`TITLES` in `deploy/event/index.html`):
 | Ticketing | `/ticket-classes`, `/seats`, `/orders`, `/tickets`, `/refunds`, `settings/layoutTemplates` (seat-map templates) |
 | Check-In (Hari H) | `/ticket-classes?event_id=` → `/tickets?ticket_class_id=`, `/seats?event_id=` (live seat map), `GET/POST /checkins` |
 | Event Idea Bank | `/ideas` |
-| Performa Omset & Bonus | served by the marketing module (`performaDivisi`), not here |
+| Performa Omset & Bonus | served by the kompas module (`GET /api/v1/kompas/performa/event`), not here |
 | Hak Akses | client-side; the Panel's display role is `settings/role` |
 | Finance > Omset > Breakdown Sumber (another module) | `GET /events-on/{date}` |
 
