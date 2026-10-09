@@ -859,7 +859,7 @@ class VoidBri
         ], $this->db()->select('SELECT * FROM `'.self::t('bri_dp_abai').'`'.$where, $args));
     }
 
-    /** bri_list — oldest first, at most BRI_MAX (`total` counted before the limit), with the ignored DPs. */
+    /** bri_list — oldest first, at most BRI_MAX (`total` counted before the limit), with the ignored DPs and the dpIds held by any live row. */
     public function briList(mixed $dari, mixed $sampai): array
     {
         [$where, $args] = self::range($dari, $sampai);
@@ -876,6 +876,15 @@ class VoidBri
             'batalAlasan' => (string) $r->batal_alasan,
         ], $this->db()->select('SELECT * FROM `'.self::t('bri_mutasi').'`'.$where.' ORDER BY `tgl` ASC, `jam` ASC, `dibuat` ASC LIMIT '.self::BRI_MAX, $args));
 
-        return ['baris' => $baris, 'total' => $total, 'maks' => self::BRI_MAX, 'abai' => $this->ignoredList($dari, $sampai)];
+        /* dpIds held by ANY live row, whatever month (legacy bri_list): the
+           "unrecorded reservation DPs" worklist must not offer a DP again in
+           a month where its row is not listed. Ids only — the screen just
+           needs "held or not". Cancelled rows hold nothing. No `cara`
+           filter: a row with a dpId holds it even when its decision is not
+           `cocok`. */
+        $dipakai = array_map(fn ($r) => (string) $r->dp_id,
+            $this->db()->select('SELECT DISTINCT `dp_id` FROM `'.self::t('bri_mutasi').'` WHERE `dp_id`<>? AND `batal_at`=?', ['', 0]));
+
+        return ['baris' => $baris, 'total' => $total, 'maks' => self::BRI_MAX, 'abai' => $this->ignoredList($dari, $sampai), 'dipakai' => $dipakai];
     }
 }

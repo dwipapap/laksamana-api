@@ -95,7 +95,7 @@ These are accountability records: **nothing is deleted**. A wrong entry is cance
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/bri?from&to` | `{baris[], total, maks: 2000, abai[]}`, oldest first, together with the DPs marked invalid |
+| GET | `/bri?from&to` | `{baris[], total, maks: 2000, abai[], dipakai[]}`, oldest first, together with the DPs marked invalid. `dipakai[]` is every dpId held by any live row in **any month** (ids only; cancelled rows hold nothing; no `cara` filter), so a DP recorded in another month is not offered again as unrecorded |
 | POST | `/bri/upload` | `{baris: [{tgl, jam, nominal, ket?, settle?, booking?}]}`, at most 3000 rows, in one transaction. The server builds the key `sidik = tgl\|jam\|nominal\|#k`, where `k` numbers identical transfers so they all survive. A re-upload updates only `ket`, `settle` and `booking`, **never the match**. Rows missing from the file are kept. Rows without a date or nominal are skipped and counted (`lewat`). → `{n, baru, lama, lewat}` |
 | POST | `/bri` | A manual incoming fund that is not a reservation DP: `{tgl, jam?, nominal, ket}`, `ket` required. It is stored with `cara = bukan` and `sumber = manual`. `201` |
 | POST | `/bri/match` | `{id, cara: cocok\|bukan\|lepas, resId, dpId, resNama?, resTgl?, catatan?}` or `{items: [...]}`. `cocok` needs `resId` and `dpId`, and **one DP can be held by only one live row**. `bukan` needs `catatan`. `lepas` clears the decision. A bulk call is **not** one transaction: each row stands alone and failures come back in `gagal[{id, sebab}]`. The response is `422` only when every row failed. No version is needed: the one-DP rule is enforced by the server. |
