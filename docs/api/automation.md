@@ -1,7 +1,8 @@
 # Automation API v1 — read-only n8n feeds
 
 `/api/v1/automation/*` are the **machine feeds** the scheduled n8n workflows read
-("Laksamana Rekap Reservasi 17 WIB", "Laksamana Info Pagi 07 WIB"). They are
+("Laksamana Rekap Reservasi 17 WIB", "Laksamana Info Pagi 07 WIB") and the
+guest chatbot ("event apa minggu ini?", "siapa DJ hari ini?"). They are
 read-only by construction (every statement is a `SELECT`), carry **no phone
 numbers and no photo blobs**, and never write. n8n only formats the message;
 multi-day logic, DP-vs-`dps[]`, cancellation and VIP rules stay on the server.
@@ -166,6 +167,88 @@ When `api.laksamanamuda.id` goes live, point n8n at it and **empty**
   (`tanggal` … `data.tanggalSelesai`, multi-day aware via `hari`/`totalHari`).
 - `marketing.vip` are Assisted, not-cancelled VIP rows of the day.
 
+### `GET /api/v1/automation/event-publik`
+
+Public events in a date range — **event DB only**. The marketing database
+(corporate/private bookings such as Devani) is never read here, so guests only
+hear about venue-run events.
+
+| query | | |
+|---|---|---|
+| `from` | optional, `YYYY-MM-DD` | range start (default: today, Asia/Jakarta) |
+| `to` | optional, `YYYY-MM-DD` | range end, on or after `from`, at most 31 days wide (default: today + 6). Inverted or too-wide ranges → **422** |
+
+```json
+{
+  "data": {
+    "from": "2031-09-01",
+    "to": "2031-09-07",
+    "events": [
+      {
+        "id": "ev-1",
+        "nama": "DJ Night",
+        "kategori": "Paid",
+        "status": "Upcoming",
+        "venue": "Hall A",
+        "mulai": "2031-09-05 20:00",
+        "selesai": "2031-09-05 23:00",
+        "deskripsi": "Seru",
+        "bertiket": true
+      }
+    ]
+  },
+  "meta": {
+    "feed": "event-publik",
+    "date": "2031-09-01",
+    "generatedAt": "2026-10-07T07:00:00+07:00",
+    "errors": {}
+  }
+}
+```
+
+- `events` excludes `Planning` / `Draft` / `Cancelled` (same rule as `info-pagi`).
+- `meta.date` is the range start; the range end lives in `data.to`.
+- No phone numbers, no fees, no photo blobs.
+
+### `GET /api/v1/automation/talent-hari-ini`
+
+Confirmed talent appearances (DJ/Band) of one day — **event DB only**
+(`schedules` joined to `talents` + `events`).
+
+| query | | |
+|---|---|---|
+| `date` | optional, `YYYY-MM-DD` | default: today, Asia/Jakarta |
+
+```json
+{
+  "data": {
+    "date": "2031-09-05",
+    "rows": [
+      {
+        "talent": "DJ Raka",
+        "kategori": "DJ",
+        "event": "DJ Night",
+        "venue": "Hall A",
+        "tanggal": "2031-09-05",
+        "jam": "20:00 - 22:00",
+        "tipe": "Live",
+        "mulaiEvent": "2031-09-05 20:00"
+      }
+    ]
+  },
+  "meta": {
+    "feed": "talent-hari-ini",
+    "date": "2031-09-05",
+    "generatedAt": "2026-10-07T07:00:00+07:00",
+    "errors": {}
+  }
+}
+```
+
+- Only `schedules.status = "Confirmed"` rows are returned.
+- `talent`/`event` fall back to the stored id when the joined row is gone.
+- No phone numbers, no fees, no photo blobs.
+
 ## `meta.errors` — degenerate answers stay 200
 
 A failed section is **not** a 500. The feed answers 200 with the section empty
@@ -195,6 +278,8 @@ lists them here:
 ```sql
 GRANT SELECT ON lakk5493_db_reservasi.reservations TO 'recap_ro'@'%';
 GRANT SELECT ON lakk5493_db_ems.events               TO 'recap_ro'@'%';
+GRANT SELECT ON lakk5493_db_ems.talents              TO 'recap_ro'@'%';
+GRANT SELECT ON lakk5493_db_ems.schedules            TO 'recap_ro'@'%';
 GRANT SELECT ON lakk5493_db_marketing.events         TO 'recap_ro'@'%';
 GRANT SELECT ON lakk5493_db_marketing.settings       TO 'recap_ro'@'%';
 ```

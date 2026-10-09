@@ -15,4 +15,6 @@ use Illuminate\Support\Facades\Route;
 Route::middleware(['auth:sanctum', 'automation.token', 'throttle:30,1'])->prefix('automation')->group(function () {
     Route::get('reservasi-harian', [FeedController::class, 'reservasiHarian']);
     Route::get('info-pagi', [FeedController::class, 'infoPagi']);
+    Route::get('event-publik', [FeedController::class, 'eventPublik']);
+    Route::get('talent-hari-ini', [FeedController::class, 'talentHariIni']);
 });
