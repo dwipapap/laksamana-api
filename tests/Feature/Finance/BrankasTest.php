@@ -68,6 +68,8 @@ it('adds, edits and deletes a vault record with the blob version, as the session
 it('lets finance users replace the Kas Kecil payment plan without touching the vault', function () {
     $token = loginAs(officeUser('u-novi'));
     $plan = $this->withToken($token)->getJson('/api/v1/finance/petty-cash/payment-plan')->assertOk();
+    // The payment plan GET returns `data` as a plain list of rows, never {bayar: [...]}.
+    expect($plan->json('data'))->toBeArray()->and(array_is_list($plan->json('data')))->toBeTrue();
     $mutasi = bkState()['mutasi'];
     $this->withToken($token)->putJson('/api/v1/finance/petty-cash/payment-plan?version='.$plan->json('meta.version'), ['bayar' => [['id' => 'p1', 'status' => 'plan']]])
         ->assertOk()->assertJsonPath('data.0.id', 'p1');
