@@ -92,7 +92,7 @@ After a successful create/update/delete the server appends one row, in the same 
 
 `POST /audit {action, detail?, res?}` records an action that belongs to no reservation row (settings, roles, review targets). `action` is required; `res` is optional. It also advances the global `_ver`.
 
-## Guest summary
+<## Guest summary
 
 `GET /guests/summary` returns the Loyal / blacklist / autofill profile computed over the WHOLE history, in the legacy `ringkasTamu` shape (`?action=ringkasTamu&sebelum=` in the old backend). The windowed client cannot compute it from its window rows, so it merges this summary with them exactly like the old screen did (`profilGabung`).
 
@@ -100,6 +100,14 @@ After a successful create/update/delete the server appends one row, in the same 
 - Without `before` every dated row counts; undated rows never do. `data.sebelum` echoes the bound (or `null`).
 - `data.tamu` maps each normalised phone to `[n, datang, noshow, member, memberNo, vip, kunjunganTerakhir, jumlahPax, namaPertama, namaTerakhir]`. Keys carry the legacy `k` prefix (`k628…`); an empty map is `{}`. `meta.ver` is the global version.
 - Statuses are normalised before counting (`Checked-in`/`Completed` → `Datang`, `Booking` → `Confirmed`), exactly as legacy.
+
+## Paging, filters and export
+
+The old screens page these tables from the server (`halRecap`/`halDana`/`halAudit`, "Muat berjendela") because the whole list is megabytes; the filter rules are twins of the client (`applyFilter`+`recapList`, `auditCocok`).
+
+- `GET /reservations`: `q` matches name, phone or table number (case-insensitive); `status` compares the normalised status (`Checked-in`/`Completed` → `Datang`, `Booking` → `Confirmed`) and, when it is anything but `Cancelled`, hides Cancelled rows while counting them as `meta.batal` (the Recap screen's hidden-cancelled count for that filter set; the key only appears with `status`). Without a `status` every row stays, exactly like the unfiltered answer always did. `page` (from 1) + `perPage` (1–100, default 10) cut the matches in Recap display order (date+time, stable); `meta.total` counts every match. A page past the end is clamped to the last page. **Without `page`/`perPage`/`q`/`status` the answer is exactly what it always was**: every row in `created_at` order.
+- `GET /audit`: `q` searches user, role, action and detail (the guest name lives in Detail, so a cancelled or deleted reservation is still found). `page`/`perPage` cut it the same way with `meta.total`. Audit has no status dimension. Without the new params the answer is unchanged (newest 500, no `meta`).
+- `GET /reservations/export`: the same filter as the list as `text/csv` (`reservasi_laksamana_<today>.csv`, BOM'd for Excel). Columns in the Recap order: Nama, No HP (digits only), Tanggal, Jam, Pax, Pax Aktual, Meja, Lantai, Status, DP, Nominal DP, Metode DP, Rekening DP, Sumber, PIC, Member (Ya/Tidak), No Member, Catatan, Diinput Oleh. Paging is ignored — the export always covers every matching row, in display order. Lantai comes from the custom `layouts` templates in master; tables known only to the browser's built-in templates export an empty Lantai. Read-only.
 
 ## Photos and files
 
@@ -127,7 +135,8 @@ Photos never stay inline. A `data:` URI in a photo field is written to `<RESERVA
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/reservations?from&to` | Reservations whose date is in range (either bound optional), in `created_at` order. `meta.total`, `meta.ver` |
+| GET | `/reservations?from&to&page&perPage&q&status` | Reservations whose date is in range (either bound optional), in `created_at` order. `q` (name/phone/table), `status` and `page`/`perPage` narrow and cut it — see *Paging, filters and export*. `meta.total`, `meta.ver` |
+| GET | `/reservations/export?from&to&q&status` | The same filter as the list as CSV (the Recap columns); paging ignored, every match exported |
 | GET | `/reservations/{id}` | One reservation + `meta.version` / `ETag` |
 | POST | `/reservations` | Body = the reservation; `id` optional, `_audit` optional. `updatedAt` is stamped and kept increasing; `createdAt` defaults to the server clock. `201`, or `409 already_exists` |
 | PUT | `/reservations/{id}` | Replace (`createdAt` kept) |
@@ -136,7 +145,7 @@ Photos never stay inline. A `data:` URI in a photo field is written to `<RESERVA
 | GET / PUT | `/master` | Whole master blob. PUT body `{value: {...}}` with `If-Match` = its version |
 | GET / PUT | `/master/{section}` | One independently versioned section |
 | PUT / DELETE | `/master/{section}/{id}` | One `reviews`, `feedbacks` or `waitlist` item |
-| GET | `/audit` | The newest 500 audit entries |
+| GET | `/audit?page&perPage&q` | The newest 500 audit entries (`q` narrows, `page`/`perPage` cuts, `meta.total` counts) |
 | POST | `/audit` | Append one action that belongs to no reservation row |
 | GET | `/guests/summary?before&phone` | Whole-history guest summary in the legacy `ringkasTamu` shape |
 | GET / PUT | `/files/{key}` | `{key, data}` / body `{data}`; empty `data` deletes the file |

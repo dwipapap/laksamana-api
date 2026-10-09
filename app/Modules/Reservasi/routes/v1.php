@@ -32,6 +32,7 @@ Route::middleware(['auth:sanctum', 'module:reservasi|service_excellent|cashier|f
     Route::get('recap', [Recap::class, 'show']);
     Route::get('guests/summary', [C::class, 'guestSummary']);
     Route::get('reservations', [C::class, 'index']);
+    Route::get('reservations/export', [C::class, 'export']);
     Route::get('reservations/{id}', [C::class, 'show']);
     Route::patch('reservations/{id}', [C::class, 'patch']);
     Route::get('master/{section}', [C::class, 'section']);
