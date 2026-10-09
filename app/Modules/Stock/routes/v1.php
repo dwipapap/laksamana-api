@@ -11,6 +11,18 @@ use Illuminate\Support\Facades\Route;
 $any = 'module:ordering|purchasing|hpp|usage';
 $kind = 'products|vendors';
 
+// G-02 (#178): BD (the Vendor column on purchase orders) and Brankas (payee
+// name + account number) read the vendor master without holding a stock
+// module — as they already do against the ungated legacy vendors.php. These
+// literal routes come first so the generic {kind} group below (stock-only)
+// never answers them with 403. Vendor GETs only: products, orders and every
+// other stock read keep the stock-only gate, and all vendor writes stay
+// purchasing-only.
+Route::middleware(['auth:sanctum', 'module:ordering|purchasing|hpp|usage|bd|brankas'])->prefix('stock')->group(function () {
+    Route::get('vendors', [C::class, 'catalogIndex'])->defaults('kind', 'vendors');
+    Route::get('vendors/{nama}', [C::class, 'vendorShow'])->where('nama', '.+');
+});
+
 Route::middleware(['auth:sanctum', $any])->prefix('stock')->group(function () use ($kind) {
     Route::get('{kind}', [C::class, 'catalogIndex'])->where('kind', $kind);
     Route::get('{kind}/{nama}', [C::class, 'catalogShow'])->where(['kind' => $kind, 'nama' => '.+']);
