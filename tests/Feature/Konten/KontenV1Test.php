@@ -111,6 +111,29 @@ it('merges per-platform performance into the content row', function () {
         ->assertStatus(422);
 });
 
+it('removes one platform entry when metrics is null and keeps the others', function () {
+    $token = loginAs(officeUser('u-andry'));
+    $id = $this->withToken($token)->postJson('/api/v1/konten/content',
+        ['title' => 'Konten Hapus Perf', 'platform' => 'IG', 'status' => 'Posted'])->assertCreated()->json('data.id');
+
+    $this->withToken($token)->putJson('/api/v1/konten/content/'.$id.'/performance',
+        ['platform' => 'IG', 'metrics' => ['reach' => 1000]])->assertOk();
+    $this->withToken($token)->putJson('/api/v1/konten/content/'.$id.'/performance',
+        ['platform' => 'TT', 'metrics' => ['reach' => 200]])->assertOk();
+
+    $res = $this->withToken($token)->putJson('/api/v1/konten/content/'.$id.'/performance',
+        ['platform' => 'IG', 'metrics' => null])
+        ->assertOk();
+    expect($res->json('data.perf'))->not->toHaveKey('IG')
+        ->and($res->json('data.perf.TT.reach'))->toBe(200);
+
+    // Deleting a platform that is not there changes nothing.
+    $v = $res->json('meta.version');
+    $this->withToken($token)->putJson('/api/v1/konten/content/'.$id.'/performance',
+        ['platform' => 'IG', 'metrics' => null])
+        ->assertOk()->assertJsonPath('meta.version', $v);
+});
+
 it('serves the bootstrap state and diagnostics', function () {
     $token = loginAs(officeUser('u-andry'));
     $this->withToken($token)->getJson('/api/v1/konten/state')->assertOk()

@@ -62,7 +62,7 @@ Content performance data lives in `content.data.perf`, keyed per platform.
 
 | Method | Path | Notes |
 |---|---|---|
-| PUT | `/content/{id}/performance` | Body `{platform, metrics?}`. Merges the figures into `perf[platform]` and stamps `{at, by}`. Returns the content row + version. |
+| PUT | `/content/{id}/performance` | Body `{platform, metrics?}`. Merges the figures into `perf[platform]` and stamps `{at, by}`. Send `"metrics": null` to remove that platform's entry (the old Input Performa screen deletes `perf[platform]` once every box of that platform is emptied); other platforms are kept. Returns the content row + version. |
 
 ## Documents (settings)
 
