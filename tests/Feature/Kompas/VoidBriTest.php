@@ -103,8 +103,7 @@ it('v1 + legacy briList returns dipakai[]: dpIds held by any live row, whatever 
 
     $t = KompasState::t('bri_mutasi');
     $db = Modules::db('kompas');
-    $tandai = fn (string $ket, string $dp, string $cara, int $batal = 0) =>
-        $db->update("UPDATE `$t` SET `dp_id`=?, `cara`=?, `batal_at`=? WHERE `ket`=?", [$dp, $cara, $batal, $ket]);
+    $tandai = fn (string $ket, string $dp, string $cara, int $batal = 0) => $db->update("UPDATE `$t` SET `dp_id`=?, `cara`=?, `batal_at`=? WHERE `ket`=?", [$dp, $cara, $batal, $ket]);
     expect($tandai('uji-dp-a', 'DP-A', 'cocok'))->toBe(1); // matched in another month: still held
     expect($tandai('uji-dp-b', 'DP-B', 'bukan'))->toBe(1); // a dpId with cara != cocok: still held
     expect($tandai('uji-dp-c', 'DP-C', 'cocok', 1758000000000))->toBe(1); // cancelled: holds nothing
