@@ -204,9 +204,16 @@ class HrController
 
     // ─────────────────────────── audit ──
 
-    public function audit(): JsonResponse
+    /** Newest first. `?limit=N` returns the newest N with `meta.total`; without it, all rows. */
+    public function audit(Request $r): JsonResponse
     {
-        return ApiResponse::ok($this->state->read()['audit']);
+        $all = $this->state->read()['audit'];
+        $q = $r->query('limit');
+        if (! is_string($q) || ! ctype_digit($q) || (int) $q < 1) {
+            return ApiResponse::ok($all);
+        }
+
+        return ApiResponse::ok(array_slice($all, 0, (int) $q), ['total' => count($all)]);
     }
 
     /** Append one entry; the actor is the session user. Append-only: no version needed. */

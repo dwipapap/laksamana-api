@@ -68,6 +68,27 @@ it('appends audit entries as the session user', function () {
         ->assertCreated()->assertJsonPath('data.userName', officeUser('u-andry')['name'])->assertJsonPath('data.action', 'EXPORT');
 });
 
+it('pages the audit read with an optional limit', function () {
+    $token = loginAs(officeUser('u-rizkiarfan'));
+    foreach (['A1', 'A2', 'A3'] as $a) {
+        $this->withToken($token)->postJson('/api/v1/hr/audit', ['action' => $a])->assertCreated();
+    }
+
+    $all = $this->withToken($token)->getJson('/api/v1/hr/audit')->assertOk()->json('data');
+    expect(count($all))->toBeGreaterThanOrEqual(3);
+
+    // newest N with the full count in meta; the slice matches the head of the unbounded read
+    $page = $this->withToken($token)->getJson('/api/v1/hr/audit?limit=2')->assertOk();
+    expect($page->json('data'))->toBe(array_slice($all, 0, 2))
+        ->and($page->json('meta.total'))->toBe(count($all));
+
+    // a limit above the count returns everything; an invalid one behaves like no limit
+    $this->withToken($token)->getJson('/api/v1/hr/audit?limit=999999')->assertOk()
+        ->assertJsonPath('meta.total', count($all))->assertJsonCount(count($all), 'data');
+    $this->withToken($token)->getJson('/api/v1/hr/audit?limit=nope')->assertOk()
+        ->assertJsonCount(count($all), 'data');
+});
+
 it('keeps the manageOps pages (Kru, Kalender HR, Pengaturan, Audit Log) to the hr module admin', function () {
     $token = loginAs(officeUser('u-andry'));
     $rev = hrDocRev();
