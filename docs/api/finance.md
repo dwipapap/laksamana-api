@@ -99,8 +99,20 @@ Kas Kecil's **payment plan** lives in the same blob (`bayar`), and the Kas Kecil
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/v1/finance/petty-cash/payment-plan` | The `bayar` list + the blob version |
-| PUT | `/api/v1/finance/petty-cash/payment-plan` | `{bayar: [...]}` replaces only the plan (legacy `bayarSave`); the rest of the vault is untouched |
+| GET | `/api/v1/finance/petty-cash/payment-plan` | `data` is the **plain array** of plan rows (not `{bayar: [...]}`), + the blob version in `meta.version` |
+| PUT | `/api/v1/finance/petty-cash/payment-plan` | Body `{bayar: [...]}` **replaces the whole list** (legacy `bayarSave`); the rest of the vault is untouched. Sending one row leaves one row. |
+
+GET returns the list directly:
+
+```json
+{ "data": [{ "id": "b1", "status": "plan" }], "meta": { "version": 1728288000000 } }
+```
+
+PUT sends the complete new list (version required):
+
+```json
+{ "bayar": [{ "id": "b1", "status": "plan" }] }
+```
 
 Other modules (kompas' investor page) read the vault in-process through `AppModulesinanceservicesbrankas::read()`.
 
