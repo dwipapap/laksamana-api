@@ -33,6 +33,7 @@ Cell fields are the legacy `jadwal_sel` columns, abbreviated as in the old app:
 | Method | Path | Returns |
 |---|---|---|
 | GET | `/shifts?user=&from=&to=` | `{dari, sampai, rows: [{u,d,t,m,s,libur}]}`. Blank times are filled from the shift defaults in settings. `user` empty = all crew. |
+| GET | `/dw-schedule?from=&to=` | Approved DW shifts in range for the "DAILY WORKER" block: the same `DwService::scheduleRange` read as `GET /dw/schedule` (`{rows: [{id,dwId,nama,divisi,posisi,tgl,m,s,hadir}], dari, sampai}`), read-only and without phone numbers — legacy `jadwalDW` deliberately omits them, so a jadwal holder without the `dw` module can still draw the block. |
 
 ## Requests (izin / time-off)
 
