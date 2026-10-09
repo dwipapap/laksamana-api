@@ -115,7 +115,7 @@ class KontenRecords
         foreach ($this->db()->select($sql, $args) as $row) {
             $d = json_decode((string) $row->data, true);
             if (is_array($d)) {
-                $out[] = $d;
+                $out[] = self::perfObjek($d);
             }
         }
 
@@ -145,7 +145,24 @@ class KontenRecords
         $row = $this->db()->selectOne("SELECT data FROM `{$r['def']['table']}` WHERE `$idCol` = ?", [$id]);
         $d = $row ? json_decode((string) $row->data, true) : null;
 
-        return is_array($d) ? $d : null;
+        return is_array($d) ? self::perfObjek($d) : null;
+    }
+
+    /**
+     * #261: an empty `perf` must leave as a JSON object, never `[]`. PHP decodes
+     * `{}` to an empty array and json_encode writes it back as `[]`. The old Office
+     * does `c.perf=c.perf||{}` (an array is truthy, so it stays an array) and then
+     * `c.perf[p]=…`; JSON.stringify drops named keys on an array, so the next
+     * figures typed there vanished on save. The old konten-mysql getAll had the
+     * same decode, so the legacy read deliberately differs here (`{}` not `[]`).
+     */
+    public static function perfObjek(array $row): array
+    {
+        if (array_key_exists('perf', $row) && $row['perf'] === []) {
+            $row['perf'] = new \stdClass;
+        }
+
+        return $row;
     }
 
     public static function versionOf(array $row): int
@@ -251,7 +268,7 @@ class KontenRecords
                     return ['row' => $cur, 'unchanged' => true];
                 }
                 unset($perf[$platform]);
-                $cur['perf'] = $perf;
+                $cur['perf'] = $perf === [] ? new \stdClass : $perf;
                 unset($cur['baseUpdatedAt']);
                 $cur['updatedAt'] = max(self::nowMs(), self::versionOf($cur) + 1);
                 $this->writeRow($r['def'], $cur);
