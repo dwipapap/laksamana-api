@@ -56,7 +56,7 @@ it('keeps the vendor database to Purchasing', function () {
         ->assertStatus(403);
 });
 
-it('lets bd and brankas read vendors, nothing else', function (string $module) {
+it('lets bd, brankas and finance read vendors, nothing else', function (string $module) {
     $token = svToken(svUser("u-sv-$module", [$module]));
     $list = $this->withToken($token)->getJson('/api/v1/stock/vendors')->assertOk();
     expect($list->json('data'))->not->toBeEmpty();
@@ -74,7 +74,7 @@ it('lets bd and brankas read vendors, nothing else', function (string $module) {
     $this->withToken($token)->getJson('/api/v1/stock/products')->assertStatus(403)->assertJsonPath('error.code', 'module_not_granted');
     $this->withToken($token)->getJson('/api/v1/stock/orders')->assertStatus(403)->assertJsonPath('error.code', 'module_not_granted');
     $this->withToken($token)->postJson('/api/v1/stock/vendors', ['nama' => 'V1 Vendor '.$module])->assertStatus(403);
-})->with(['bd', 'brankas']);
+})->with(['bd', 'brankas', 'finance']);
 
 it('creates, patches (preserve-if-null), renames and deletes a product with versions', function () {
     $token = loginAs(officeUser('u-jb'));
