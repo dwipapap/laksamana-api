@@ -196,12 +196,13 @@ class KontenController
 
     // ─────────────────────────── performance (content.data.perf) ──
 
-    /** Merge one platform's figures into a content row: {platform, metrics}. */
+    /** Merge one platform's figures into a content row: {platform, metrics}. A null metrics removes that platform's entry. */
     public function performance(Request $r, string $id): JsonResponse
     {
         $d = $r->validate(['platform' => ['required', 'string', 'max:32'], 'metrics' => ['nullable', 'array']]);
         try {
-            $res = $this->records->setPerformance($id, $d['platform'], $d['metrics'] ?? [], $this->actor($r));
+            $metrics = array_key_exists('metrics', $d) ? $d['metrics'] : [];
+            $res = $this->records->setPerformance($id, $d['platform'], $metrics, $this->actor($r));
 
             return self::withVersion($res['row']);
         } catch (RecordConflict $e) {

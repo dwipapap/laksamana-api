@@ -228,9 +228,12 @@ class KontenRecords
 
     /**
      * Merge one platform's performance figures into a content row
-     * (content.data.perf per platform). Returns the stored row.
+     * (content.data.perf per platform), or remove that platform's entry
+     * when $metrics is null (the old Input Performa screen deletes
+     * perf[platform] once every box of that platform is emptied).
+     * Other platforms are kept. Returns the stored row.
      */
-    public function setPerformance(string $id, string $platform, array $metrics, string $by): array
+    public function setPerformance(string $id, string $platform, ?array $metrics, string $by): array
     {
         return NamedLock::run('konten', 'konten_save', function () use ($id, $platform, $metrics, $by) {
             $r = self::resource('content');
@@ -243,6 +246,19 @@ class KontenRecords
                 throw new RuntimeException('platform kosong');
             }
             $perf = isset($cur['perf']) && is_array($cur['perf']) ? $cur['perf'] : [];
+            if ($metrics === null) {
+                if (! array_key_exists($platform, $perf)) {
+                    return ['row' => $cur, 'unchanged' => true];
+                }
+                unset($perf[$platform]);
+                $cur['perf'] = $perf;
+                unset($cur['baseUpdatedAt']);
+                $cur['updatedAt'] = max(self::nowMs(), self::versionOf($cur) + 1);
+                $this->writeRow($r['def'], $cur);
+                $this->log($r, $id, $cur, 'diubah', $by.' (performa '.$platform.' dihapus)');
+
+                return ['row' => $this->find('content', $id)];
+            }
             $perf[$platform] = array_merge($metrics, ['at' => self::nowMs(), 'by' => $by]);
             $cur['perf'] = $perf;
             unset($cur['baseUpdatedAt']);
