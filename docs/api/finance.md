@@ -22,7 +22,7 @@ Some finance pages only **display data owned by other modules**: kompas' sales r
 | Input Transaksi (`kk_input`) | `POST /petty-cash/transactions`, `PUT /petty-cash/transactions/{id}` |
 | Buku Kas (`kk_buku`) | `GET /petty-cash/transactions?from&to`, `PATCH …/{id}` (Input/Bon ticks), `DELETE …/{id}` |
 | Pos & Kategori (`kk_pos`) | `/petty-cash/sources`, `/petty-cash/categories` |
-| Planning Pembayaran (`bayar`) | `GET/PUT /petty-cash/payment-plan`; the wallet balances come from `GET /vault` (module brankas) or are derived client-side |
+| Planning Pembayaran (`bayar`) | `GET/PUT /petty-cash/payment-plan`; the vault-side wallet balances come from `GET /petty-cash/wallet-balances` (kompas sales are added client-side from kompas state, as in the old page) |
 | Invoice & Kwitansi (`invoice`) | `/invoices` (queue, decisions), `/invoices/settings`, `/invoices/signatories` |
 | Akses Halaman (`akses`) | `GET /petty-cash/access`, `PUT /petty-cash/access/matrix`, `PUT /petty-cash/access/roles/{userId}` |
 | Rekap Penjualan (`rekap`), Bulanan (`bulanan`), Analytics (`analytics`), Void Bill (`voidb`), Kasir (`kasir`), BRI (`bri`) | kompas' sales recap (kompas contract, #28) |
@@ -63,6 +63,7 @@ The vendor list both Panels show comes from stock (`stock-api-mysql/vendors.php`
 | PATCH | `/sources/{id}`, `/categories/{id}` | Any of `{nama, urut, aktif}`. Needs a version. |
 | DELETE | `/sources/{id}`, `/categories/{id}` | Refused with `422` once the item is used by a transaction: deactivate it instead (`aktif: false`). |
 | GET | `/access` | `{matrix: {role: {page: 0\|1\|2}}, roles: {"#<userId>": role}}`. `meta.version` (matrix), `meta.roleVersions` |
+| GET | `/wallet-balances` | Vault-side saldo per wallet (`wallets: [{wallet, nama, saldo}]`, `total`, stored group→wallet `peta`) + the blob version. No mutasi, piutang or investor lists. Kompas sales are added client-side from kompas state (module `finance` already reads it). |
 | PUT | `/access/matrix` | **Module admin only.** `{matrix}` is the COMPLETE set of differences from the frontend's default matrix, replaced as a whole. `tingkat` is clamped to 0–2. |
 | PUT | `/access/roles/{userId}` | **Module admin only.** `{role}`; `""`/`null` returns the person to the default role (the row is deleted). The version of a person without a role is the hash of `null`. |
 
@@ -101,6 +102,7 @@ Kas Kecil's **payment plan** lives in the same blob (`bayar`), and the Kas Kecil
 |---|---|---|
 | GET | `/api/v1/finance/petty-cash/payment-plan` | `data` is the **plain array** of plan rows (not `{bayar: [...]}`), + the blob version in `meta.version` |
 | PUT | `/api/v1/finance/petty-cash/payment-plan` | Body `{bayar: [...]}` **replaces the whole list** (legacy `bayarSave`); the rest of the vault is untouched. Sending one row leaves one row. |
+| GET | `/api/v1/finance/petty-cash/wallet-balances` | Vault-side saldo per wallet for Payment Planning (`wallets: [{wallet, nama, saldo}]`, `total`, stored group→wallet `peta`) + the blob version. Computed by `Brankas::walletBalances()` — the same service and blob read as `GET /vault`, so the two can never disagree on the vault half. No mutasi, piutang or investor lists. |
 
 GET returns the list directly:
 

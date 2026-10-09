@@ -28,10 +28,13 @@ Route::middleware(['auth:sanctum', 'module:finance'])->prefix('finance/petty-cas
     });
 });
 
-// Kas Kecil's payment plan lives in the vault blob (`bayar`), written narrowly (legacy bayarSave)
+// Kas Kecil's payment plan lives in the vault blob (`bayar`), written narrowly (legacy bayarSave).
+// Its wallet balances are served narrowly too: vault-side saldo per wallet for
+// `finance` holders who lack `brankas` (the full blob stays behind /vault).
 Route::middleware(['auth:sanctum', 'module:finance'])->prefix('finance/petty-cash')->group(function () {
     Route::get('payment-plan', [V::class, 'paymentPlan']);
     Route::put('payment-plan', [V::class, 'putPaymentPlan']);
+    Route::get('wallet-balances', [V::class, 'walletBalances']);
 });
 
 // Panel Brankas: gated by its own Modul

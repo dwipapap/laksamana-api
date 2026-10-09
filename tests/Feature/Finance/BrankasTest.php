@@ -2,6 +2,9 @@
 
 require_once __DIR__.'/helpers.php';
 
+use App\Auth\AccountRepository;
+use App\Auth\OfficeAccess;
+use App\Modules\Finance\Services\Brankas;
 use App\Support\Modules;
 use Illuminate\Testing\TestResponse;
 
@@ -15,6 +18,32 @@ function bkPost(string $action, array $body): TestResponse
 function bkState(): array
 {
     return json_decode(Modules::db('finance')->selectOne(finSql('SELECT data FROM bk_state WHERE id=1'))->data, true);
+}
+
+/** A throwaway active user holding exactly the given modules. */
+function wbUser(string $id, array $modules): array
+{
+    $repo = app(AccountRepository::class);
+    $repo->insertUser(['id' => $id, 'name' => 'Uji '.$id, 'pin' => '4817', 'active' => 1, 'keterangan' => '']);
+    foreach ($modules as $m) {
+        $repo->upsertGrant($id, $m, true, 'test');
+    }
+    app(OfficeAccess::class)->forgetUser($id);
+
+    return officeUser($id);
+}
+
+/**
+ * Token for a user, dropping the guard's cached user: this file switches
+ * identity inside one test, and the guard would otherwise keep answering as
+ * whoever made the previous request.
+ */
+function wbToken(array $u): string
+{
+    $token = loginAs($u);
+    app('auth')->forgetGuards();
+
+    return $token;
 }
 
 it('brankasSave keeps only the known keys and bayarSave replaces only bayar', function () {
@@ -74,4 +103,47 @@ it('lets finance users replace the Kas Kecil payment plan without touching the v
     $this->withToken($token)->putJson('/api/v1/finance/petty-cash/payment-plan?version='.$plan->json('meta.version'), ['bayar' => [['id' => 'p1', 'status' => 'plan']]])
         ->assertOk()->assertJsonPath('data.0.id', 'p1');
     expect(bkState()['mutasi'])->toBe($mutasi);
+});
+
+it('serves vault-side wallet balances to finance holders without the vault lists', function () {
+    app(Brankas::class)->save([
+        'rekening' => [],
+        'piutang' => [['id' => 'p1', 'nominal' => 999999]],
+        'bayar' => [
+            ['id' => 'b1', 'status' => 'paid', 'dari' => 'bri', 'amount' => 100000],
+            ['id' => 'b2', 'status' => 'scheduled', 'dari' => 'bri', 'amount' => 50000],
+            ['id' => 'b3', 'status' => 'paid', 'dari' => 'dompet-lain', 'amount' => 70000],
+        ],
+        'investor' => [
+            ['id' => 'i1', 'returns' => [['dari' => 'mandiri', 'amount' => 20000]], 'tambahan' => [['ke' => 'bca', 'amount' => 300000]]],
+        ],
+        'mutasi' => [
+            ['id' => 'm1', 'jenis' => 'pindah', 'dari' => 'bri', 'ke' => 'cash', 'nominal' => 50000],
+            ['id' => 'm2', 'jenis' => 'masuk', 'ke' => 'uob', 'nominal' => 15000],
+            ['id' => 'm3', 'jenis' => 'keluar', 'dari' => 'cash', 'nominal' => 5000],
+        ],
+        'setting' => ['awal' => ['bri' => 1000000, 'cash' => 200000], 'peta' => ['qr_order' => 'bri']],
+    ], 'CFO');
+
+    $token = wbToken(wbUser('u-wb-fin', ['finance']));
+    $res = $this->withToken($token)->getJson('/api/v1/finance/petty-cash/wallet-balances')->assertOk();
+
+    // The endpoint never recomputes: it answers what the shared vault service says.
+    expect($res->json('data'))->toBe(app(Brankas::class)->walletBalances())
+        ->and($res->json('data.wallets'))->toBe([
+            ['wallet' => 'bri', 'nama' => 'BRI', 'saldo' => 850000],
+            ['wallet' => 'mandiri', 'nama' => 'Mandiri', 'saldo' => -20000],
+            ['wallet' => 'bca', 'nama' => 'BCA', 'saldo' => 300000],
+            ['wallet' => 'uob', 'nama' => 'UOB', 'saldo' => 15000],
+            ['wallet' => 'cash', 'nama' => 'Cash / Brankas Fisik', 'saldo' => 245000],
+        ])
+        ->and($res->json('data.total'))->toBe(1390000)
+        ->and($res->json('data.peta'))->toBe(['qr_order' => 'bri'])
+        ->and($res->json('meta.version'))->toBe(app(Brankas::class)->read()['updated_at']);
+    // Balances only: none of the vault lists leak through.
+    expect(array_keys($res->json('data')))->toBe(['wallets', 'total', 'peta']);
+
+    // A holder of neither module is refused.
+    $this->withToken(wbToken(wbUser('u-wb-none', ['marketing'])))->getJson('/api/v1/finance/petty-cash/wallet-balances')
+        ->assertStatus(403)->assertJsonPath('error.code', 'module_not_granted');
 });

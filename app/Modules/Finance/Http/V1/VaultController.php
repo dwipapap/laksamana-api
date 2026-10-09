@@ -161,6 +161,21 @@ class VaultController
         }, fn ($d) => $d['bayar']);
     }
 
+    /**
+     * Vault-side wallet balances for Kas Kecil's Payment Planning (module
+     * `finance`): per-wallet saldo only — no mutasi, piutang or investor
+     * lists. Same service and same blob read as GET /finance/vault (which
+     * stays gated by `brankas`); kompas sales are added client-side from
+     * kompas state, as the old Kas page adds its own recap to the vault
+     * numbers (see docs/api/finance.md).
+     */
+    public function walletBalances(): JsonResponse
+    {
+        $b = $this->brankas->read();
+
+        return ApiResponse::ok($this->brankas->walletBalances($b['data']), ['version' => $b['updated_at']]);
+    }
+
     // ─────────────────────────── access ──
 
     public function access(): JsonResponse

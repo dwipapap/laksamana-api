@@ -27,6 +27,17 @@ class Brankas
 {
     public const KEPT_KEYS = ['rekening', 'piutang', 'bayar', 'investor', 'mutasi'];
 
+    /** The five wallets both finance panels agree on (legacy BANKS + KAS_K). */
+    public const WALLETS = ['bri', 'mandiri', 'bca', 'uob', 'cash'];
+
+    public const WALLET_NAMES = [
+        'bri' => 'BRI',
+        'mandiri' => 'Mandiri',
+        'bca' => 'BCA',
+        'uob' => 'UOB',
+        'cash' => 'Cash / Brankas Fisik',
+    ];
+
     public function db(): ConnectionInterface
     {
         return Modules::db('finance');
@@ -49,6 +60,115 @@ class Brankas
         $data ??= ['rekening' => [], 'piutang' => [], 'bayar' => [], 'investor' => [], 'mutasi' => [], 'setting' => new stdClass];
 
         return ['data' => $data, 'akses' => $this->akses(), 'peran' => $this->peran(), 'updated_at' => $ts];
+    }
+
+    /**
+     * Vault-side wallet balances — the vault half of the old `saldoSemua()`
+     * (deploy/finance/brankas/index.html), the same formula Kas Kecil's
+     * Payment Planning reuses (deploy/finance/kas/index.html: saldoSemua).
+     * This is the ONE place that computes it: GET /finance/vault exposes the
+     * raw blob for `brankas` holders, and the narrow
+     * GET /finance/petty-cash/wallet-balances calls this for `finance`
+     * holders — never a copied formula.
+     *
+     * Only what the vault blob itself records: opening balances
+     * (`setting.awal`), paid plans (`bayar` with status `paid`), wallet
+     * transfers (`mutasi`) and investor flows (`returns` out of a wallet,
+     * `tambahan` into one). Kompas sales (Aktual Masuk, setoran) are NOT
+     * folded in — no PHP port of that mapping exists, and finance holders
+     * already read kompas state, so the client adds them with the same
+     * engine as the Brankas panel. Rows naming no known wallet are ignored,
+     * never guessed (as legacy); scheduled (unpaid) plans change nothing.
+     *
+     * @return array{wallets: list<array{wallet: string, nama: string, saldo: int}>, total: int, peta: array}
+     */
+    public function walletBalances(?array $data = null): array
+    {
+        $data ??= $this->read()['data'];
+        $bal = [];
+        foreach (self::WALLETS as $w) {
+            $bal[$w] = 0;
+        }
+        $setting = isset($data['setting']) && is_array($data['setting']) ? $data['setting'] : [];
+        $awal = isset($setting['awal']) && is_array($setting['awal']) ? $setting['awal'] : [];
+        foreach (self::WALLETS as $w) {
+            $bal[$w] += self::num($awal[$w] ?? 0);
+        }
+        foreach (isset($data['bayar']) && is_array($data['bayar']) ? $data['bayar'] : [] as $p) {
+            if (! is_array($p) || ($p['status'] ?? null) !== 'paid') {
+                continue;
+            }
+            $w = isset($p['dari']) ? (string) $p['dari'] : '';
+            if (isset($bal[$w])) {
+                $bal[$w] -= self::num($p['amount'] ?? 0);
+            }
+        }
+        foreach (isset($data['mutasi']) && is_array($data['mutasi']) ? $data['mutasi'] : [] as $m) {
+            if (! is_array($m)) {
+                continue;
+            }
+            $n = self::num($m['nominal'] ?? 0);
+            if ($n === 0) {
+                continue;
+            }
+            $jenis = isset($m['jenis']) ? (string) $m['jenis'] : '';
+            $dari = isset($m['dari']) ? (string) $m['dari'] : '';
+            $ke = isset($m['ke']) ? (string) $m['ke'] : '';
+            if ($jenis === 'masuk') {
+                if (isset($bal[$ke])) {
+                    $bal[$ke] += $n;
+                }
+            } elseif ($jenis === 'keluar') {
+                if (isset($bal[$dari])) {
+                    $bal[$dari] -= $n;
+                }
+            } elseif ($jenis === 'pindah') {
+                if (isset($bal[$dari])) {
+                    $bal[$dari] -= $n;
+                }
+                if (isset($bal[$ke])) {
+                    $bal[$ke] += $n;
+                }
+            }
+        }
+        foreach (isset($data['investor']) && is_array($data['investor']) ? $data['investor'] : [] as $inv) {
+            if (! is_array($inv)) {
+                continue;
+            }
+            foreach (isset($inv['returns']) && is_array($inv['returns']) ? $inv['returns'] : [] as $r) {
+                $w = is_array($r) && isset($r['dari']) ? (string) $r['dari'] : '';
+                if (isset($bal[$w])) {
+                    $bal[$w] -= self::num(is_array($r) ? ($r['amount'] ?? 0) : 0);
+                }
+            }
+            foreach (isset($inv['tambahan']) && is_array($inv['tambahan']) ? $inv['tambahan'] : [] as $t) {
+                $w = is_array($t) && isset($t['ke']) ? (string) $t['ke'] : '';
+                if (isset($bal[$w])) {
+                    $bal[$w] += self::num(is_array($t) ? ($t['amount'] ?? 0) : 0);
+                }
+            }
+        }
+        $wallets = [];
+        foreach (self::WALLETS as $w) {
+            $wallets[] = ['wallet' => $w, 'nama' => self::WALLET_NAMES[$w], 'saldo' => $bal[$w]];
+        }
+        $peta = isset($setting['peta']) && is_array($setting['peta']) ? $setting['peta'] : [];
+
+        return ['wallets' => $wallets, 'total' => array_sum($bal), 'peta' => $peta];
+    }
+
+    /** Legacy `num()`: whole rupiah from free text; unparseable is 0. */
+    public static function num(mixed $v): int
+    {
+        if (is_int($v)) {
+            return $v;
+        }
+        if (is_float($v)) {
+            return (int) round($v);
+        }
+        $s = preg_replace('/[^0-9-]/', '', (string) $v);
+
+        return ($s === '' || $s === '-') ? 0 : (int) $s;
     }
 
     public function akses(): object
