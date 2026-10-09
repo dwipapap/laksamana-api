@@ -23,7 +23,7 @@ Route::middleware(['auth:sanctum', 'module:marketing'])->prefix('marketing')->gr
     Route::get('activities', [C::class, 'activities']);
     Route::post('activities', [C::class, 'logActivity']);
 
-    // settings documents (settings, baseline, rolePerms, roleNav, menuDb, katalog, fbFormats, fbSubs, roleAcc)
+    // settings documents (settings, baseline, rolePerms, roleNav, menuDb, katalog, fbFormats, fbSubs, roleAcc, kalkHistori)
     Route::get('documents/{doc}', [C::class, 'document']);
     Route::put('documents/{doc}', [C::class, 'putDocument']);
 

@@ -414,7 +414,7 @@
       "DocumentWrite": {
         "type": "object",
         "additionalProperties": true,
-        "description": "A settings document (`settings`, `baseline`, `rolePerms`, `roleNav`, `menuDb`, `katalog`, `fbFormats`, `fbSubs`, `roleAcc`)."
+        "description": "A settings document (`settings`, `baseline`, `rolePerms`, `roleNav`, `menuDb`, `katalog`, `fbFormats`, `fbSubs`, `roleAcc`, `kalkHistori`)."
       },
       "FileWrite": {
         "type": "object",

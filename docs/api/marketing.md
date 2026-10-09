@@ -23,7 +23,7 @@ This is the contract for **laksamana-office-vue**, the old laksamana-office if i
 | Timeline & Audit Log | `GET /activities`, `POST /activities` |
 | Notification Center | `/notifications` |
 | Pegawai & Akses, User Management | `/staff`, `/users` (module roster); Office accounts come from `/api/v1/account/*` |
-| Database Menu, Menu Kalkulator | `documents/menuDb`, `documents/fbFormats`, `documents/fbSubs` |
+| Database Menu, Menu Kalkulator | `documents/menuDb`, `documents/fbFormats`, `documents/fbSubs`, `documents/kalkHistori` (named calculator history) |
 | Katalog | `documents/katalog` |
 | Pengaturan | `documents/settings`, `documents/baseline`; role matrix in `documents/rolePerms`, `documents/roleNav`, `documents/roleAcc` |
 | Purchase Order | bd module (not in marketing) |
@@ -55,7 +55,7 @@ Resources: `clients`, `events`, `followups`, `approvals`, `users`, `staff`, `tas
 
 ## Documents (settings)
 
-Documents: `settings`, `baseline`, `rolePerms`, `roleNav`, `menuDb`, `katalog`, `fbFormats`, `fbSubs`, `roleAcc`.
+Documents: `settings`, `baseline`, `rolePerms`, `roleNav`, `menuDb`, `katalog`, `fbFormats`, `fbSubs`, `roleAcc`, `kalkHistori` (the Menu Kalkulator named history, stored as legacy `extra:kalkHistori`).
 
 - `GET /documents/{doc}` returns `data` = the value, and `meta.version` = its content hash.
 - `PUT /documents/{doc}` with `If-Match: "<hash>"`. The body is the whole new value. A stale hash returns 409.

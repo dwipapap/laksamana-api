@@ -43,7 +43,7 @@ class MarketingRecords
     ];
 
     /** Settings documents editable through v1 (whole-object, hash-versioned). */
-    public const DOCUMENTS = ['settings', 'baseline', 'rolePerms', 'roleNav', 'menuDb', 'katalog', 'fbFormats', 'fbSubs', 'roleAcc'];
+    public const DOCUMENTS = ['settings', 'baseline', 'rolePerms', 'roleNav', 'menuDb', 'katalog', 'fbFormats', 'fbSubs', 'roleAcc', 'kalkHistori'];
 
     private function db(): ConnectionInterface
     {
