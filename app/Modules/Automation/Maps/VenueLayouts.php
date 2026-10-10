@@ -14,6 +14,7 @@ namespace App\Modules\Automation\Maps;
 final class VenueLayouts
 {
     public const W = 1600;
+
     public const H = 1160;
 
     /** @return array<string, array{name:string, fixed:list<array>, tables:list<array>}> */

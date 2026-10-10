@@ -15,6 +15,7 @@ use DateTimeInterface;
 use DateTimeZone;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 
 /**
  * /api/v1/automation/* — the read-only n8n feeds (#234).
@@ -127,10 +128,10 @@ class FeedController
      * the guest opens. The token is the only credential; it carries no PII
      * and dies after DenahLink::TTL_SECONDS. Nothing is stored server-side.
      */
-    public function denah(Request $request): \Illuminate\Http\Response
+    public function denah(Request $request): Response
     {
         $checked = DenahLink::verify((string) $request->query('t', ''), time());
-        if (!$checked['ok']) {
+        if (! $checked['ok']) {
             $code = $checked['error'] === 'expired' ? 410 : 403;
             $msg = $checked['error'] === 'expired' ? 'Link denah sudah kedaluwarsa.' : 'Link denah tidak valid.';
 
