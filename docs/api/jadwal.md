@@ -48,7 +48,7 @@ Cell fields are the legacy `jadwal_sel` columns, abbreviated as in the old app:
 
 | Method | Path | Returns |
 |---|---|---|
-| GET | `/roster` | Every Office User with their Divisi attached: `[{id, name, keterangan, noHp, talentaId, active, branch, organization, jobPosition, jobLevel, employmentStatus, joinDate, divisi}]`. `divisi` follows the legacy `jdw_divisi_user` rule: Penempatan Divisi (`divOverride`) wins, then Tim words (`bar`/`bartender`, `kitchen`/`dapur`, `floor`/`service`/`waiter`/…, `cashier`/`kasir`), with `office`/`kantor` winning over every division word; otherwise `nonshift`. Combine with `/heads` to sort heads first, as the screens do. |
+| GET | `/roster` | Every Office User with their Divisi attached: `[{id, name, keterangan, noHp, talentaId, active, branch, organization, jobPosition, jobLevel, employmentStatus, joinDate, divisi, tim}]`. `tim` = the Beranda team keys of the Tim column (`AppSupportTim`, same as `/me`). `divisi` follows the legacy `jdw_divisi_user` rule: Penempatan Divisi (`divOverride`) wins, then Tim words (`bar`/`bartender`, `kitchen`/`dapur`, `floor`/`service`/`waiter`/…, `cashier`/`kasir`), with `office`/`kantor` winning over every division word; otherwise `nonshift`. Combine with `/heads` to sort heads first, as the screens do. |
 
 ## Settings and heads
 

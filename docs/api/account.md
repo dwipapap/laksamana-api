@@ -34,7 +34,7 @@ The Office screens (`deploy/index.html`: Kelola User / Kelola Akses; `deploy/jad
 |---|---|---|
 | POST | `/api/v1/auth/login` | `{login, pin, device?}`. Username first, then full name; active accounts only. Rate limited (10 failed attempts / 15 min per IP+login). Returns `{token, tokenType, expiresAt, user}`. Wrong/inactive → 401 `invalid_credentials`. |
 | POST | `/api/v1/auth/logout` | Revokes the current token. → `{loggedOut: true}` |
-| GET | `/api/v1/me` | The caller's profile (`id, name, username, keterangan, modules, adminModules, headDivisi`, the six HR columns, `noHp`, `talentaId`, `ulid`). |
+| GET | `/api/v1/me` | The caller's profile (`id, name, username, keterangan, modules, adminModules, headDivisi`, the six HR columns, `tim`, `noHp`, `talentaId`, `ulid`). `tim` = `[{key, label}]`, the Beranda teams read whole-word from the Tim column (`AppSupportTim`; several per User, never an access rule). v1 only: legacy `whoami` is unchanged. |
 | PUT | `/api/v1/me/pin` | `{currentPin, newPin}`. Unlike legacy `changePin` this verifies the current PIN. Wrong → 422 `invalid_credentials`; bad shape → 422 `validation_failed`. |
 | PUT | `/api/v1/me/username` | `{username}` (may be `null`/empty to clear). → `{username}`. Invalid → 422 `bad_username`; taken → 422 `username_taken`. |
 

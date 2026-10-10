@@ -9,6 +9,7 @@ use App\Support\JsonDoc;
 use App\Support\Legacy\Sesi;
 use App\Support\Modules;
 use App\Support\RowSync;
+use App\Support\Tim;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -300,6 +301,7 @@ class JadwalService
         foreach ($this->sesi->roster() as $uid => $m) {
             $m = (array) $m;
             $m['divisi'] = $this->divisiUser((string) $uid);
+            $m['tim'] = Tim::keys((string) ($m['keterangan'] ?? ''));
             $out[] = $m;
         }
 

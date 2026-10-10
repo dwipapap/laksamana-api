@@ -6,6 +6,7 @@ use App\Auth\AccountRepository;
 use App\Auth\OfficeAccess;
 use App\Modules\Account\Services\AccountService;
 use App\Support\Api\ApiResponse;
+use App\Support\Tim;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -55,7 +56,10 @@ class AuthController
             'token' => $token->plainTextToken,
             'tokenType' => 'Bearer',
             'expiresAt' => $token->accessToken->expires_at?->toIso8601String(),
-            'user' => $this->access->profile($row) + ['ulid' => $this->users->userUlid($row['id'])],
+            'user' => $this->access->profile($row) + [
+                'tim' => Tim::of($row['keterangan'] ?? ''),
+                'ulid' => $this->users->userUlid($row['id']),
+            ],
         ]);
     }
 
@@ -63,7 +67,9 @@ class AuthController
     {
         $row = $this->access->userById((string) $request->user()->getKey());
 
+        // `tim` is v1 only: profile() is also the legacy whoami shape, which stays as it was.
         return ApiResponse::ok($this->access->profile($row) + AccountService::hrJson($row) + [
+            'tim' => Tim::of($row['keterangan'] ?? ''),
             'noHp' => (string) ($row['no_hp'] ?? ''),
             'talentaId' => (string) ($row['talenta_id'] ?? ''),
             'ulid' => $this->users->userUlid((string) $row['id']),

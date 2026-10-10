@@ -2,6 +2,7 @@
 
 use App\Auth\AccountRepository;
 use App\Auth\OfficeAccess;
+use App\Support\Tim;
 
 it('issues a Sanctum token for valid Office credentials and /me matches legacy module resolution', function () {
     $u = anyActiveUser();
@@ -16,6 +17,7 @@ it('issues a Sanctum token for valid Office credentials and /me matches legacy m
         ->assertOk()
         ->assertJsonPath('data.id', $u['id'])
         ->assertJsonPath('data.modules', $expected)
+        ->assertJsonPath('data.tim', Tim::of($u['keterangan'] ?? ''))
         ->assertJsonMissingPath('data.pin');
 });
 
