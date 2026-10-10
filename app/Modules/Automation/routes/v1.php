@@ -17,4 +17,13 @@ Route::middleware(['auth:sanctum', 'automation.token', 'throttle:30,1'])->prefix
     Route::get('info-pagi', [FeedController::class, 'infoPagi']);
     Route::get('event-publik', [FeedController::class, 'eventPublik']);
     Route::get('talent-hari-ini', [FeedController::class, 'talentHariIni']);
+    Route::post('denah-link', [FeedController::class, 'denahLink']);
+});
+
+/*
+ * Public denah page (option A): no login — the signed ?t= token is the only
+ * credential. Same throttle as the feeds; nothing is stored server-side.
+ */
+Route::middleware(['throttle:30,1'])->prefix('automation')->group(function () {
+    Route::get('denah', [FeedController::class, 'denah']);
 });

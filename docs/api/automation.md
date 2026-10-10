@@ -245,9 +245,31 @@ Confirmed talent appearances (DJ/Band) of one day — **event DB only**
 }
 ```
 
-- Only `schedules.status = "Confirmed"` rows are returned.
+- Only `schedules.status` in `Scheduled`/`Confirmed`/`Done` rows are returned (same visible set as the Office calendar; `Cancelled` hidden).
 - `talent`/`event` fall back to the stored id when the joined row is gone.
 - No phone numbers, no fees, no photo blobs.
+
+### `POST /api/v1/automation/denah-link` + `GET /api/v1/automation/denah?t=`
+
+Temporary public floor map for the guest chatbot (option A: link, no
+storage). n8n mints (automation token) with `{date, time}`, attaches the URL
+to the draft/confirm message; the guest opens it without login.
+
+| | |
+|---|---|
+| Mint | `POST denah-link`, body `{date: YYYY-MM-DD, time: HH:MM}` → `{data: {url}}` |
+| View | `GET denah?t=` — public, no auth; the token is the only credential |
+| Expiry | 30 minutes (`410` past expiry, `403` tampered/missing) |
+| Overlay | TERISI = booked within <180 min of the time (same buffer as the bot) |
+
+- The map draws the **built-in plans** (Lt1 weekday/weekend + Lt2, canvas
+  1600×1160 from `venue-layouts.ts`); per-date master overrides are NOT
+  applied in v1.
+- Booked tables show TERISI + blocking time only — **no guest names,
+  phones, fees or DP**, same privacy rule as every feed.
+- No tables are added to the GRANT list (`reservations` read is covered).
+- A source failure renders `503` ("coba lagi"), never a map that pretends
+  everything is free.
 
 ## `meta.errors` — degenerate answers stay 200
 
