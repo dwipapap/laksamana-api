@@ -1,5 +1,6 @@
 <?php
 
+use App\Modules\Hr\Http\V1\HrAdminController as AD;
 use App\Modules\Hr\Http\V1\HrController as C;
 use Illuminate\Support\Facades\Route;
 
@@ -39,4 +40,10 @@ Route::middleware(['auth:sanctum', 'module:hr'])->prefix('hr')->group(function (
     Route::put('{resource}/{id}', [C::class, 'update'])->where('resource', $all);
     Route::patch('{resource}/{id}', [C::class, 'patch'])->where('resource', $all);
     Route::delete('{resource}/{id}', [C::class, 'destroy'])->where('resource', $all);
+});
+
+// G-13 (#187): whole-state import and reset — module admin, typed confirmation.
+Route::middleware(['auth:sanctum', 'module:hr,admin'])->prefix('hr/admin')->group(function () {
+    Route::post('import', [AD::class, 'import']);
+    Route::post('reset', [AD::class, 'reset']);
 });

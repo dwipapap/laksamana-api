@@ -188,3 +188,29 @@ Numbers are read like the old screen sends them: everything but digits, `.` and 
 | 422 | `validation_failed` | Bad body; legacy reasons are passed through (`nama produk kosong`, `newQty bukan angka`, `format tanggal jemput harus YYYY-MM-DD`, `stock kosong`, `tanggal wajib diisi`, `foto bukti wajib diunggah`, `barang bukan barang Central Kitchen: …`, `Hanya berkas .xlsx/.xls.`, `Isi berkas tidak terbaca.`, …) |
 | 428 | `version_required` | Write without a version |
 | 503 | `settings_unavailable` | Writing Akses Halaman while `stock_settings` is missing |
+
+## Break & Loss — `/stock/breakloss` (module `breakloss`)
+
+Legacy `stock-mysql/breakloss.php` + `lib_stock_breakloss.php` (9–10 Oct 2026), panel `deploy/stock/breakloss`.
+**Inventory** (plates, glasses, bar tools) that breaks or goes missing — not ingredients (that is Waste).
+Its own Office key `breakloss`; the superadmin grants it in Kelola Akses.
+
+Tables `bl_item` / `bl_mutasi` live in the stock database and are created by the legacy PHP at runtime
+(`bl_pastikan`). The API never runs DDL: until they exist every endpoint answers **503 `breakloss_unavailable`**
+(editing a movement also needs the later `riwayat` / `diubah_*` columns). Not available when stock runs on `core`.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/stock/breakloss?dari=&ke=` | `{items, mutasi}`. `items[]`: `id, nama, kategori, satuan, lokasi, harga, stokMin, aktif, catatan, thumb, adaFoto, stok, nMutasi, totBreak, totLoss, dibuatOleh, dibuatAt, diubahOleh, diubahAt` — `stok` = SUM of every live movement (whole history, never the range); `totBreak`/`totLoss` all time, positive. `mutasi[]` (only the range filters these; newest first, max 3000): `id, itemId, tanggal, jenis, qty (signed), harga, sebab, pic, tim, catatan, adaFoto, oleh, waktu, batalAt, batalOleh, batalAlasan, diubahOleh, diubahAt, riwayat[]`. Lists carry `thumb`, never the full photo. |
+| GET | `/stock/breakloss/items/{id}/photo` · `/movements/{id}/photo` | `{foto, fotoNama}` (data URI); 404 when there is none |
+| POST | `/stock/breakloss/items` | `{nama, kategori?, satuan? (default "pcs"), lokasi?, harga?, stokMin?, catatan?, stokAwal?, foto?, thumb?, fotoNama?}` → 201 `{id}`. The opening stock is recorded as a `masuk` movement (sebab "Stok awal") in the same transaction. Name unique → 422 `Nama barang "…" sudah terdaftar.` |
+| PATCH | `/stock/breakloss/items/{id}` | Same fields minus `stokAwal`. `foto`/`thumb` **absent or null = keep**, `""` = remove. → `{id}` |
+| PUT | `/stock/breakloss/items/{id}/active` | `{aktif: bool}` — deactivate/reactivate, never delete. → `{id, aktif}` |
+| POST | `/stock/breakloss/movements` | `{itemId, jenis: break\|loss\|masuk\|opname, tanggal, qty (break/loss/masuk) \| fisik (opname), sebab (required for break/loss), tim?, catatan?, foto?, fotoNama?}` → 201 `{id, delta, stok, mutasi}`. Opname: the server computes `fisik − stok` with the item row locked. The item price is copied onto the row. A deactivated item is refused. |
+| PATCH | `/stock/breakloss/movements/{id}` | **Live break/loss rows only** (masuk/opname: cancel and record again). `{itemId, jenis: break\|loss, tanggal, qty, sebab, tim?, catatan?, foto?, fotoNama?}`. The previous values are appended to `riwayat` (last 20) with `diubahOleh/At`. Same item keeps the row price; another item takes its price; moving to a deactivated item is refused. Photo absent = kept. → `{id, stok, mutasi}` |
+| POST | `/stock/breakloss/movements/{id}/cancel` | `{alasan}` (required). Once only: a cancelled row → 404 `catatan tidak ditemukan atau sudah dibatalkan`. → `{id, mutasi}` |
+
+Rules: every quantity is a whole number (`qty`, `fisik`, `stokAwal`, `stokMin`); `harga`/`stokMin` not negative;
+photos must be `data:image/(jpeg|png|webp|gif);base64,…` (≤ 4 MB, thumbnail ≤ 300 KB). `pic` and `oleh` are the
+acting user. Validation errors are 422 `validation_failed` with the legacy message; missing fields also come as
+`details.kurang` (e.g. `["sebab","qty"]`). There is **no DELETE** route.

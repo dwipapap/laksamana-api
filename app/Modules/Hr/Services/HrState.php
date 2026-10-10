@@ -328,6 +328,121 @@ class HrState
         });
     }
 
+    // ───────────────────────────── admin: import / reset (G-13, #187) ──
+
+    /**
+     * importJson (deploy/hr Pengaturan "Impor Backup"): the whole state from a
+     * backup file REPLACES the current one through saveAll, as the old page did
+     * (S = data; save()). A file without `employees` and `settings` is refused
+     * like legacy ('format'). One audit row names who did it. Attendance months
+     * missing from the file survive, exactly as with any legacy save.
+     */
+    public function importAll(mixed $data, string $userId, string $by): array
+    {
+        if (! $data instanceof stdClass || ! isset($data->employees) || ! is_array($data->employees) || ! isset($data->settings) || ! is_object($data->settings)) {
+            return ['ok' => false, 'error' => 'format'];
+        }
+
+        return $this->replaceWhole($data, $userId, $by, 'Impor backup', 'Seluruh data diganti dari berkas backup');
+    }
+
+    /** resetAll (deploy/hr "Reset ke data awal"): back to seed() — divisions, KPI templates, career paths; no crew. */
+    public function resetAll(string $userId, string $by): array
+    {
+        return $this->replaceWhole(self::seed(), $userId, $by, 'Reset data', 'Seluruh data dikembalikan ke data awal');
+    }
+
+    private function replaceWhole(stdClass $data, string $userId, string $by, string $action, string $detail): array
+    {
+        $data->audit = array_values(array_filter(is_array($data->audit ?? null) ? $data->audit : [], 'is_object'));
+        $data->audit[] = (object) ['id' => 'au_'.substr(bin2hex(random_bytes(6)), 0, 10), 'at' => gmdate('Y-m-d\TH:i:s.000\Z'),
+            'userId' => $userId, 'userName' => $by, 'action' => $action, 'detail' => $detail];
+        $m = $this->meta();
+
+        return $this->saveAll($data, $m ? (int) $m->rev : null, $by);
+    }
+
+    /**
+     * uid() of deploy/hr: 7 base-36 characters. Legacy seed() passes a prefix
+     * ('kpit', 'ki', 'cp') that its uid() ignores — so does this one.
+     */
+    private static function uid(string $ignored = ''): string
+    {
+        $s = '';
+        for ($i = 0; $i < 7; $i++) {
+            $s .= '0123456789abcdefghijklmnopqrstuvwxyz'[random_int(0, 35)];
+        }
+
+        return $s;
+    }
+
+    /**
+     * seed() of deploy/hr/index.html — the "data awal". The crew list is EMPTY on
+     * purpose (legacy comment: made-up rows with real names once reached production).
+     */
+    public static function seed(): stdClass
+    {
+        $k = fn (string $divId, array $items) => (object) ['id' => self::uid('kpit'), 'divId' => $divId,
+            'items' => array_map(fn ($it) => (object) ['id' => self::uid('ki'), 'name' => $it[0], 'weight' => $it[1], 'target' => $it[2], 'unit' => $it[3], 'dir' => $it[4]], $items)];
+        $obj = fn (array $a) => (object) $a;
+
+        return $obj([
+            'version' => 1,
+            'settings' => $obj([
+                'venueName' => 'Laksamana Muda Coffee & Live Space',
+                'scoreWeights' => $obj(['attendance' => 20, 'kpi' => 30, 'training' => 10, 'review' => 15, 'discipline' => 10, 'teamwork' => 10, 'initiative' => 5]),
+                'grades' => array_map($obj, [['g' => 'A+', 'min' => 90], ['g' => 'A', 'min' => 85], ['g' => 'B+', 'min' => 80], ['g' => 'B', 'min' => 70], ['g' => 'C', 'min' => 60], ['g' => 'D', 'min' => 0]]),
+                'violationDeduct' => $obj(['Ringan' => 5, 'Sedang' => 15, 'Berat' => 30]),
+                'spRules' => $obj(['ringanToSP1' => 3, 'spValidMonths' => 6]),
+                'passingGrade' => 80,
+                'reviewLayerWeights' => $obj(['self' => 10, 'manager' => 40, 'hr' => 20, 'ceo' => 30]),
+                'defaultComponentScore' => 75,
+                'pointRules' => $obj(['badge' => 50, 'trainingPass' => 20, 'eom' => 150]),
+                'attendanceRules' => $obj([
+                    'lateToleranceMin' => 15, 'lateCapMin' => 45, 'noCheckoutCredit' => 0.5,
+                    'excusedCaps' => $obj(['I' => 3, 'S' => 2]),
+                    'excusedCodes' => ['OTL', 'CT', 'CKM'],
+                    'offShifts' => ['dayoff', 'National Holiday'],
+                    'offShiftContains' => ['dayoff', 'day off', 'libur', 'holiday'],
+                    'weights' => $obj(['presence' => 70, 'punctuality' => 30]),
+                ]),
+            ]),
+            'divisions' => array_map($obj, [
+                ['id' => 'd_mgmt', 'name' => 'Management', 'color' => '#0B1F33'],
+                ['id' => 'd_kitchen', 'name' => 'Kitchen', 'color' => '#C0392B'],
+                ['id' => 'd_bar', 'name' => 'Bar', 'color' => '#B8893A'],
+                ['id' => 'd_store', 'name' => 'Store / Service', 'color' => '#1E8E5A'],
+                ['id' => 'd_marketing', 'name' => 'Marketing & Digital', 'color' => '#2563EB'],
+                ['id' => 'd_finance', 'name' => 'Finance', 'color' => '#7C3AED'],
+                ['id' => 'd_event', 'name' => 'Event', 'color' => '#DB2777'],
+                ['id' => 'd_hrga', 'name' => 'HR / GA / Legal', 'color' => '#0891B2'],
+            ]),
+            'employees' => [],
+            'kpiTemplates' => [
+                $k('d_kitchen', [['Food Cost', 30, 30, '%', 'down'], ['Kecepatan Penyajian (menit)', 15, 15, 'mnt', 'down'], ['Waste', 20, 3, '%', 'down'], ['Hygiene Audit', 20, 90, 'skor', 'up'], ['Kepatuhan SOP', 15, 90, 'skor', 'up']]),
+                $k('d_bar', [['Beverage Cost', 30, 22, '%', 'down'], ['Speed of Service (menit)', 20, 7, 'mnt', 'down'], ['Upselling', 25, 15, 'juta', 'up'], ['Konsistensi Rasa (QC pass)', 25, 90, '%', 'up']]),
+                $k('d_marketing', [['Reach (ribu)', 20, 500, 'rb', 'up'], ['Leads / Inquiry', 25, 60, 'leads', 'up'], ['Konten Terbit', 20, 30, 'konten', 'up'], ['Closing Sponsor/Partner', 35, 50, 'juta', 'up']]),
+                $k('d_finance', [['Ketepatan Laporan (on-time)', 35, 100, '%', 'up'], ['Umur Piutang (hari)', 30, 14, 'hari', 'down'], ['Cash Accuracy', 35, 100, '%', 'up']]),
+                $k('d_store', [['Omzet vs Target', 30, 100, '%', 'up'], ['Komplain Pelanggan (kasus)', 20, 2, 'kasus', 'down'], ['Rating Google', 25, 4.7, '★', 'up'], ['Repeat Customer', 25, 30, '%', 'up']]),
+                $k('d_event', [['Event Terlaksana', 25, 4, 'event', 'up'], ['Uplift Revenue Event', 35, 100, '% target', 'up'], ['Kepuasan Klien Event', 25, 90, 'skor', 'up'], ['On-time Rundown', 15, 90, '%', 'up']]),
+            ],
+            'kpiActuals' => new stdClass,
+            'monthlyInputs' => new stdClass,
+            'attendance' => new stdClass,
+            'okrs' => [], 'reviews' => [], 'competencies' => [], 'trainings' => [], 'trainingRecords' => [],
+            'coachings' => [], 'rewards' => [], 'badges' => [], 'violations' => [], 'feedbacks' => [],
+            'careerPaths' => [
+                $obj(['id' => self::uid('cp'), 'track' => 'Service', 'steps' => ['Junior Waiter', 'Senior Waiter', 'Captain', 'Supervisor', 'Store Manager'],
+                    'req' => 'Attendance >95%, KPI >85, Training wajib lulus, Tanpa SP aktif, Min. 1 tahun di level']),
+                $obj(['id' => self::uid('cp'), 'track' => 'Bar', 'steps' => ['Bar Crew', 'Barista', 'Senior Barista', 'Head Bar'],
+                    'req' => 'Sertifikasi Coffee Knowledge, KPI >85, Kompetensi rata-rata ≥4★']),
+                $obj(['id' => self::uid('cp'), 'track' => 'Kitchen', 'steps' => ['Cook Helper', 'Cook', 'Senior Cook', 'Sous Chef', 'Head Chef'],
+                    'req' => 'Hygiene Test lulus, Food cost dalam target 3 bulan, Tanpa SP aktif']),
+            ],
+            'successions' => [], 'moods' => [], 'suggestions' => [], 'calendar' => [], 'audit' => [],
+        ]);
+    }
+
     /**
      * Run $write inside one transaction after the rev check under FOR UPDATE.
      * $write returns [savedBy, versi|null]; versi null keeps the stored value.

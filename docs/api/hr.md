@@ -100,3 +100,14 @@ Indexed columns are extracted exactly as legacy does. Missing values become `''`
 | 409 | `already_exists`, `version_conflict` |
 | 422 | `validation_failed` |
 | 428 | `version_required` |
+
+## Admin — import & reset (G-13, #187)
+
+Module admin only. Both replace the WHOLE state through the same saveAll as the old page (rev bumped; respond with the new `rev` as `meta.version`/ETag) and append one audit row naming the caller. Attendance months missing from the payload survive, as with any legacy save.
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/hr/admin/import` | `{konfirmasi: "IMPOR", data: {…backup JSON…}}`. `data` must carry `employees` (array) and `settings` (object), else 422 `invalid_backup`. → `{rev}` |
+| POST | `/hr/admin/reset` | `{konfirmasi: "RESET"}` — "Reset ke data awal": the old `seed()` (8 divisions, KPI templates, 3 career paths, default settings, **no crew**). → `{rev}` |
+
+Wrong confirmation → 422 `confirmation_required`; another save in between → 409 `version_conflict` (`details.savedBy/savedAt/rev`).

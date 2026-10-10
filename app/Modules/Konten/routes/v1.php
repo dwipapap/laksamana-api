@@ -1,5 +1,6 @@
 <?php
 
+use App\Modules\Konten\Http\V1\KontenAdminController as AD;
 use App\Modules\Konten\Http\V1\KontenController as C;
 use Illuminate\Support\Facades\Route;
 
@@ -40,3 +41,6 @@ Route::middleware(['auth:sanctum', 'module:konten'])->prefix('konten')->group(fu
     Route::patch('{resource}/{id}', [C::class, 'patch'])->where('resource', $res);
     Route::delete('{resource}/{id}', [C::class, 'destroy'])->where('resource', $res);
 });
+
+// G-13 (#187): restore the whole database from a backup file — module admin, typed confirmation PULIHKAN.
+Route::middleware(['auth:sanctum', 'module:konten,admin'])->post('konten/admin/restore', [AD::class, 'restore']);

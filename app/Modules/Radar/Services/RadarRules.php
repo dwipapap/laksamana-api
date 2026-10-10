@@ -16,8 +16,16 @@ final class RadarRules
     /** Marketing statuses that mean "this will happen" (agPasti, ST_MKT_JALAN). */
     public const MKT_JALAN = ['deal', 'confirmed', 'event done'];
 
-    /** Event-module statuses that mean "this will happen" (ST_EVT_JALAN). */
-    public const EVT_JALAN = ['upcoming', 'today', 'finished'];
+    /**
+     * Event-module statuses that mean "this will happen" (ST_EVT_JALAN, legacy
+     * 4ee871e, 7 Oct 2026). The Event module migrated its statuses (Draft →
+     * Planning, Today → Upcoming, Finished → Event Done); the old list let 1 of 26
+     * production events through. The list equals EVT_STATUS_HASIL in deploy/event
+     * (Approval, Upcoming, Event Done); the old names stay for rows not saved
+     * since the migration. Planning and Prospect are not decided yet. If
+     * EVT_STATUS_HASIL changes, this list MUST follow. DwGuests uses it too.
+     */
+    public const EVT_JALAN = ['approval', 'upcoming', 'event done', 'today', 'finished'];
 
     /**
      * Event-detail keys that hold prices / DP / settlement (RADAR_KUNCI_UANG),

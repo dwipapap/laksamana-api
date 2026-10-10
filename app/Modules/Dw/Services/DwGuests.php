@@ -4,6 +4,7 @@ namespace App\Modules\Dw\Services;
 
 use App\Modules\Event\Services\EventState;
 use App\Modules\Marketing\Services\MarketingState;
+use App\Modules\Radar\Services\RadarRules;
 use App\Modules\Reservasi\Services\ReservasiRecords;
 use RuntimeException;
 
@@ -39,8 +40,12 @@ class DwGuests
     /** Marketing statuses that mean the event will happen (tamuPasti). */
     private const MKT_JALAN = ['deal', 'confirmed', 'event done'];
 
-    /** Event-module statuses that mean the event will happen (tamuPasti). */
-    private const EVT_JALAN = ['upcoming', 'today', 'finished'];
+    /**
+     * Event-module statuses that mean the event will happen (tamuPasti) — the
+     * same list as Radar (RadarRules::EVT_JALAN), so the Event status migration
+     * of Oct 2026 is followed in one place.
+     */
+    private const EVT_JALAN = RadarRules::EVT_JALAN;
 
     public function __construct(
         private readonly MarketingState $marketing,

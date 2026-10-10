@@ -146,8 +146,12 @@ class InvestorAnalytics
         return $out;
     }
 
-    /** ringkas_investor */
-    public function summary(): array
+    /**
+     * ringkas_investor. $viewer = [id, name] of the session User; $all = the
+     * viewer may see every investor (module admin). The defaults keep the old
+     * whole-list behaviour for callers that hand no session.
+     */
+    public function summary(?array $viewer = null, bool $all = true): array
     {
         $peta = $this->kompas->dailyMap();
         $b = self::monthly($peta);
@@ -205,15 +209,25 @@ class InvestorAnalytics
             'tahunan' => $tahunan,
             'harian' => $harian,
             'lapor' => $this->reports(),
-            'dividen' => $this->dividends(),
+            'dividen' => $this->dividends($viewer, $all),
             'labaRugi' => self::profitLoss($peta),
             'terakhir' => $terakhir,
             'adaData' => count($peta) > 0,
         ];
     }
 
-    /** dividen_investor — capital returns recorded in Finance → Brankas (names, dates, amounts only). */
-    public function dividends(): array
+    /**
+     * dividen_investor — capital returns recorded in Finance → Brankas (names,
+     * dates, amounts only).
+     *
+     * Per investor (legacy, 6 Oct 2026): a module admin sees every investor;
+     * anyone else only the records that are theirs. Filtered HERE, on the server —
+     * a full list filtered by the browser is still readable in devtools. A record
+     * is the viewer's when its `akunId` equals the viewer's id, or, for a record
+     * WITHOUT `akunId`, when its name equals the viewer's name (case and edge
+     * spaces ignored). A record that has an `akunId` is never matched by name.
+     */
+    public function dividends(?array $viewer = null, bool $all = true): array
     {
         try {
             $inv = app(Brankas::class)->read()['data']['investor'] ?? null;
@@ -223,14 +237,31 @@ class InvestorAnalytics
         if (! is_array($inv)) {
             return ['riwayat' => [], 'gagal' => true];
         }
+        $uid = trim(self::s($viewer['id'] ?? ''));
+        $unama = mb_strtolower(trim(self::s($viewer['name'] ?? '')), 'UTF-8');
+
         $riwayat = [];
         $modal = 0;
+        $per = [];
+        $jumlahSemua = 0;
         foreach ($inv as $i) {
             if (! is_array($i)) {
                 continue;
             }
-            $modal += KompasState::num($i['capital'] ?? 0);
+            $jumlahSemua++;
+            $akun = trim(self::s($i['akunId'] ?? ''));
+            if (! $all) {
+                $milik = ($akun !== '' && $uid !== '' && $akun === $uid)
+                    || ($akun === '' && $unama !== '' && mb_strtolower(trim(self::s($i['name'] ?? '')), 'UTF-8') === $unama);
+                if (! $milik) {
+                    continue;
+                }
+            }
+            $modalI = self::capitalTotal($i);
+            $modal += $modalI;
             $nama = self::teks($i['name'] ?? '', 80);
+            $kembaliI = 0;
+            $nI = 0;
             foreach (is_array($i['returns'] ?? null) ? $i['returns'] : [] as $r) {
                 if (! is_array($r)) {
                     continue;
@@ -239,12 +270,37 @@ class InvestorAnalytics
                 $n = KompasState::num($r['amount'] ?? 0);
                 if ($t && $n) {
                     $riwayat[] = ['tgl' => $t, 'investor' => $nama, 'nominal' => $n];
+                    $kembaliI += $n;
+                    $nI++;
                 }
             }
+            $per[] = ['nama' => $nama, 'modal' => $modalI, 'kembali' => $kembaliI, 'kali' => $nI,
+                'kepemilikan' => KompasState::num($i['ownership'] ?? 0), 'terhubung' => $akun !== ''];
         }
+        // newest first: what an investor opens first is "when was I last paid"
         usort($riwayat, fn ($a, $b) => strcmp($b['tgl'], $a['tgl']));
 
-        return ['riwayat' => $riwayat, 'total' => array_sum(array_column($riwayat, 'nominal')), 'modal' => $modal, 'investor' => count($inv), 'gagal' => false];
+        return ['riwayat' => $riwayat, 'total' => array_sum(array_column($riwayat, 'nominal')), 'modal' => $modal,
+            'investor' => count($per), 'per' => $per,
+            // the full count is none of a plain investor's business
+            'semua' => $all, 'jumlahSemua' => $all ? $jumlahSemua : null, 'gagal' => false];
+    }
+
+    /**
+     * An investor's capital: `capital` plus every `tambahan[].amount` (Tambah
+     * Modal, 6 Oct 2026) — twin of modalTotal() in deploy/finance/brankas. Without
+     * the additions the page states less capital than Brankas does.
+     */
+    public static function capitalTotal(array $i): int
+    {
+        $n = KompasState::num($i['capital'] ?? 0);
+        foreach (is_array($i['tambahan'] ?? null) ? $i['tambahan'] : [] as $t) {
+            if (is_array($t)) {
+                $n += KompasState::num($t['amount'] ?? 0);
+            }
+        }
+
+        return $n;
     }
 
     // ═════════════════════════════ investor agenda ══

@@ -65,6 +65,12 @@ The Office screens (`deploy/index.html`: Kelola User / Kelola Akses; `deploy/jad
 |---|---|---|
 | POST | `/import` | Legacy `import`: `{users?, modules?, grants?, admins?}` upserted in that order (users first, so grants/admins resolve). Users are keyed by `id`, modules by `key`; a blank Talenta ID in an incoming user does not erase the stored one. → `{diproses: {users, modules, grants, admins}}` |
 
+## Investor account (Finance → Brankas)
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| POST | `/account/investor-akun` | admin of `investor`, `brankas` or `finance` (or Superadmin) | Legacy `investorAkun` (6 Oct 2026). `{userId}` **links** an existing account: that account is not changed in any column. `{name, noHp?, pin}` **creates** one (`keterangan: "Investor"`, active; `pin` required, 4–6 digits → 422 `bad_pin`; empty name → 422 `missing_fields`; taken name → 422 `name_taken`). Both grant module `investor` (never admin, never revokes anything). Unknown `userId` → 404. → `{id, name}` (no PIN). Brankas stores `id`/`name` as the investor record’s `akunId`/`akunNama`; the picker of existing accounts reads `GET /account/roster`. |
+
 ## Rosters
 
 | Method | Path | Auth | Notes |

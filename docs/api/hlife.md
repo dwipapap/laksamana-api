@@ -81,3 +81,9 @@ An unsaved setting reads as its default, and its version is the hash of that def
 | 409 | `already_exists`, `version_conflict` |
 | 422 | `validation_failed` (the body is not a JSON object, the body `id` does not match the URL, or `value` is missing) |
 | 428 | `version_required` |
+
+## Admin — reset (G-13, #187)
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/hlife/admin/reset` | **Module admin.** `{konfirmasi: "KOSONGKAN"}` (case-insensitive; otherwise 422 `confirmation_required`). "Reset data" of the old Pengaturan: every collection and the ledger emptied, `auth` (the login hash) kept, `firstRun` false, `mood` 3, `energy` 4, `focus`/`weeklyTarget` "", `channels`/`dump` []. → `{reset: true, state}` (the new full state). |

@@ -1,5 +1,6 @@
 <?php
 
+use App\Modules\Stock\Http\V1\BreakLossController as BL;
 use App\Modules\Stock\Http\V1\HppController as H;
 use App\Modules\Stock\Http\V1\StockAdminController as A;
 use App\Modules\Stock\Http\V1\StockController as C;
@@ -159,4 +160,18 @@ Route::middleware(['auth:sanctum', 'module:ordering,admin'])->prefix('stock')->g
     Route::post('training', [A::class, 'trainingStore']);
     Route::get('training/{target}', [A::class, 'trainingList']);
     Route::get('training/{target}/{name}', [A::class, 'trainingDownload'])->where('name', '.+');
+});
+
+// Break & Loss Panel (legacy 9 Oct 2026, its own key `breakloss`): inventory that
+// breaks or goes missing. No DELETE: movements are cancelled, items deactivated.
+Route::middleware(['auth:sanctum', 'module:breakloss'])->prefix('stock/breakloss')->group(function () {
+    Route::get('/', [BL::class, 'index']);
+    Route::post('items', [BL::class, 'storeItem']);
+    Route::patch('items/{id}', [BL::class, 'updateItem']);
+    Route::put('items/{id}/active', [BL::class, 'setActive']);
+    Route::get('items/{id}/photo', [BL::class, 'itemPhoto']);
+    Route::post('movements', [BL::class, 'storeMovement']);
+    Route::patch('movements/{id}', [BL::class, 'updateMovement']);
+    Route::post('movements/{id}/cancel', [BL::class, 'cancelMovement']);
+    Route::get('movements/{id}/photo', [BL::class, 'movementPhoto']);
 });

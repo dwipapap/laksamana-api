@@ -151,7 +151,7 @@ class KompasLegacyController extends LegacyController
             case 'investorRingkas':
                 $u = $this->investor($req);
 
-                return Envelope::json(['ok' => true, 'data' => $this->inv->summary(),
+                return Envelope::json(['ok' => true, 'data' => $this->inv->summary($u, Sesi::isModuleAdmin($u, 'investor')),
                     'user' => ['nama' => $u['name'] ?? '', 'bolehUnggah' => Sesi::isModuleAdmin($u, 'investor')]]);
 
             case 'investorAgenda':

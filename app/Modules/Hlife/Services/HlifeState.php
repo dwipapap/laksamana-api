@@ -189,6 +189,31 @@ class HlifeState
         return ['ok' => true];
     }
 
+    /**
+     * resetAll (deploy/howandi_life "Reset data", G-13 / #187): empty every
+     * collection, keep `auth` (the login hash), firstRun false — the same state
+     * the old page built (emptyState()) and sent through saveAll.
+     */
+    public function resetAll(): array
+    {
+        $auth = $this->read()['auth'] ?? self::settingDefault('auth');
+        $s = new stdClass;
+        foreach (array_keys(self::COLLECTIONS) as $k) {
+            $s->$k = [];
+        }
+        $s->finance = (object) ['ledger' => []];
+        $s->firstRun = false;
+        $s->mood = 3;
+        $s->energy = 4;
+        $s->focus = '';
+        $s->weeklyTarget = '';
+        $s->auth = $auth;
+        $s->channels = [];
+        $s->dump = [];
+
+        return $this->saveAll($s);
+    }
+
     /** hl_simpan_koleksi — upsert every record, then delete rows not in the list. */
     private function replaceTable(string $table, array $list): void
     {
