@@ -105,6 +105,34 @@ class KontenState
         }
     }
 
+    /**
+     * restoreJSON (deploy/konten Pengaturan "Pulihkan", G-13 / #187): the whole
+     * database is REPLACED by one backup file. The old page did `DB = file;
+     * save()`, but through saveAll the ordering guard keeps any server row newer
+     * than the file — so every collection the file carries is emptied first, then
+     * the file goes through the normal saveAll, all in one transaction under
+     * konten_save. Logs stay append-only (the trail of the restore survives).
+     * A file without `users` and `brands` is refused like legacy.
+     */
+    public function restoreAll(mixed $state): array
+    {
+        if (! is_array($state) || ! isset($state['users'], $state['brands']) || ! is_array($state['users']) || ! is_array($state['brands'])) {
+            throw new RuntimeException('File backup tidak valid');
+        }
+
+        return NamedLock::run('konten', 'konten_save', function () use ($state) {
+            return $this->db()->transaction(function () use ($state) {
+                foreach (KontenSchema::defs() as $name => $def) {
+                    if (array_key_exists($name, $state)) {
+                        $this->db()->delete('DELETE FROM `'.$def['table'].'`');
+                    }
+                }
+
+                return $this->saveAllLocked($state);
+            });
+        });
+    }
+
     /** saveAll body; caller must hold the konten_save lock. */
     public function saveAllLocked(mixed $state): array
     {

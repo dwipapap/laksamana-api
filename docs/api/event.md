@@ -126,3 +126,9 @@ There is **no orphan cleanup**, on purpose: a KTP scan that is still referenced 
 | 409 | `version_conflict` | Stale version; `details.current` is the live record / value |
 | 422 | `validation_failed` / `invalid_file` | Bad body, bad date, bad file, a `batalDari` that is not a check-in id, cancelling a cancellation, or a `ticket_id` that does not match the cancelled check-in |
 | 428 | `version_required` | Update/delete (or replacing an existing detail) without a version |
+
+## Admin — reset (G-13, #187)
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/event/admin/reset` | **Module admin.** `{konfirmasi: "KOSONGKAN"}` (case-insensitive) — "KOSONGKAN SEMUA DATA" of the old Pengaturan. Empties every record collection (talents, events, schedules, recurring rules, talent payments, ticket classes, seats, orders, tickets, refunds, ideas, calendar extra) and the event details, under `ems_save` in one transaction; `entertainmentRules` back to seven blank days, `role` "Director". **Check-ins stay** (append-only); seat holds and `layoutTemplates` are not touched. (The old page sent an empty state through saveAll, which never empties a table — this endpoint does what the button says.) → `{reset: true, jumlah: {collection: rowsDeleted}}` |

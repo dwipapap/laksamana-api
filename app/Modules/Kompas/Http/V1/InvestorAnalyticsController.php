@@ -29,7 +29,15 @@ class InvestorAnalyticsController
 
     public function summary(Request $r): JsonResponse
     {
-        return $this->gate($r, 'investor') ?? ApiResponse::ok($this->svc->summary(), ['canUpload' => $this->isAdmin($r, 'investor')]);
+        if ($denied = $this->gate($r, 'investor')) {
+            return $denied;
+        }
+        // a module admin sees every investor, anyone else only their own (server-side filter)
+        $id = (string) $r->user()->getKey();
+        $admin = $this->isAdmin($r, 'investor');
+        $viewer = ['id' => $id, 'name' => (string) ($this->access->userById($id)['name'] ?? '')];
+
+        return ApiResponse::ok($this->svc->summary($viewer, $admin), ['canUpload' => $admin]);
     }
 
     public function agenda(Request $r): JsonResponse

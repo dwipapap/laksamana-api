@@ -109,6 +109,39 @@ class EventState
         return self::locked(fn () => $this->saveAllLocked($state));
     }
 
+    /**
+     * resetData (deploy/event Pengaturan "KOSONGKAN SEMUA DATA", G-13 / #187):
+     * the old page sent bawaanKosong() through saveAll — every collection [],
+     * no event details, blank entertainment rules, role Director. saveAll never
+     * empties a table from an empty payload (RowSync::deleteMissing), so here
+     * every collection table and event_details are emptied explicitly, under
+     * the ems_save lock in one transaction. Check-ins stay (append-only, never
+     * deleted), seat holds and the ticket shop's own tables are not touched, and
+     * settings outside bawaanKosong (layout templates) are kept.
+     *
+     * @return array{jumlah: array<string,int>}
+     */
+    public function resetAll(): array
+    {
+        return self::locked(function () {
+            $db = $this->db();
+
+            return $db->transaction(function () use ($db) {
+                $n = [];
+                foreach (EventSchema::defs() as $name => $c) {
+                    $n[$name] = $db->delete("DELETE FROM `{$c['table']}`");
+                }
+                $n['eventDetails'] = $db->delete('DELETE FROM `'.EventSchema::table('event_details').'`');
+                $settings = EventSchema::table('settings');
+                RowSync::putSetting($db, 'entertainmentRules', array_map(fn ($d) => ['day' => $d, 'rule' => ''],
+                    ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu']), $settings, EventSchema::onCore());
+                RowSync::putSetting($db, 'role', 'Director', $settings, EventSchema::onCore());
+
+                return ['jumlah' => $n];
+            });
+        });
+    }
+
     private function saveAllLocked(mixed $state): array
     {
         if (! is_array($state)) {

@@ -1,5 +1,6 @@
 <?php
 
+use App\Modules\Event\Http\V1\EventAdminController as AD;
 use App\Modules\Event\Http\V1\EventController as C;
 use Illuminate\Support\Facades\Route;
 
@@ -39,3 +40,6 @@ Route::middleware(['auth:sanctum', 'module:event'])->prefix('event')->group(func
     Route::patch('{resource}/{id}', [C::class, 'patch'])->where('resource', $res);
     Route::delete('{resource}/{id}', [C::class, 'destroy'])->where('resource', $res);
 });
+
+// G-13 (#187): "KOSONGKAN SEMUA DATA" — module admin, typed confirmation KOSONGKAN.
+Route::middleware(['auth:sanctum', 'module:event,admin'])->post('event/admin/reset', [AD::class, 'reset']);

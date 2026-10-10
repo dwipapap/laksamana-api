@@ -1,5 +1,6 @@
 <?php
 
+use App\Modules\Hlife\Http\V1\HlifeAdminController as AD;
 use App\Modules\Hlife\Http\V1\HlifeController as C;
 use Illuminate\Support\Facades\Route;
 
@@ -20,3 +21,6 @@ Route::middleware(['auth:sanctum', 'module:howandi_life'])->prefix('hlife')->gro
     Route::patch('{resource}/{id}', [C::class, 'patch'])->where('resource', $res);
     Route::delete('{resource}/{id}', [C::class, 'destroy'])->where('resource', $res);
 });
+
+// G-13 (#187): "Reset data" — module admin, typed confirmation KOSONGKAN.
+Route::middleware(['auth:sanctum', 'module:howandi_life,admin'])->post('hlife/admin/reset', [AD::class, 'reset']);

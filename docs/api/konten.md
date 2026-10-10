@@ -96,3 +96,9 @@ Documents: `settings`, `perms`, `seeded`.
 | GET | `/files/{key}` | Streams the file. |
 
 Store the returned `key` inside the record (e.g. in an attachment field or a `?action=receipt&key=` URL). Files that no record in `content`, `assets` or `bank` references are hard-deleted 1 hour after upload.
+
+## Admin — restore from backup (G-13, #187)
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/konten/admin/restore` | **Module admin.** `{konfirmasi: "PULIHKAN", data: {…backup JSON…}}` — `restoreJSON` of the old Pengaturan: the whole database is REPLACED by the file. Every collection the file carries is emptied first (otherwise the ordering guard keeps rows newer than the file), then the file goes through the normal saveAll — one transaction under `konten_save`. Logs stay append-only. `data` must carry `users` and `brands` (arrays), else 422 `invalid_backup`. A file without `perms` leaves the stored `perms` as they are (the old page filled the default client-side). → `{restored, jumlah, bentrok}` |

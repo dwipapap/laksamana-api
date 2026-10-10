@@ -107,6 +107,23 @@ class AccountAdminController
         return self::result($this->account->setModuleAccessCore((string) $request->user()->getKey(), $id, $data['module'], (bool) $data['access']));
     }
 
+    /**
+     * Investor account from Finance → Brankas: {userId} links an existing
+     * account, {name, noHp?, pin} creates one; both grant `investor`. Admins of
+     * investor|brankas|finance (route middleware). Returns {id, name}, never a PIN.
+     */
+    public function investorAccount(Request $request): JsonResponse
+    {
+        $body = $request->validate([
+            'userId' => ['nullable', 'string', 'max:64'],
+            'name' => ['nullable', 'string', 'max:120'],
+            'noHp' => ['nullable', 'string', 'max:32'],
+            'pin' => ['nullable', 'string', 'max:16'],
+        ]);
+
+        return self::result($this->account->investorAccountCore((string) $request->user()->getKey(), $body));
+    }
+
     public function setAdmin(Request $request, string $id): JsonResponse
     {
         $data = $request->validate(['module' => ['required', 'string', 'max:64'], 'admin' => ['required', 'boolean']]);

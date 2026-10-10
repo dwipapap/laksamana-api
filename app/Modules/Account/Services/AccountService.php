@@ -704,6 +704,53 @@ class AccountService
         return ['ok' => true];
     }
 
+    /**
+     * aksi_investor_akun (legacy, 6 Oct 2026): the Office account of an investor
+     * recorded in Finance → Brankas, so they can open Investor Compass. Gate
+     * (admin of investor|brankas|finance, or superadmin) is the caller's job.
+     *
+     *   {userId}             -> LINK an existing account
+     *   {name, noHp?, pin}   -> CREATE a new one (keterangan 'Investor', active)
+     *
+     * Both end with grant `investor` = 1 and return {id, name}. On purpose:
+     *  - a linked account is NOT changed in any column (not name, PIN or active) —
+     *    linking a staff member who also invests must not rewrite their PIN;
+     *  - nothing is ever revoked (unlinking in Brankas leaves access to Kelola Akses);
+     *  - never module admin: an investor reads, does not manage;
+     *  - the PIN is required, 4–6 digits: saveUserCore's '1111' fallback is no
+     *    option for an account that sees capital figures.
+     */
+    public function investorAccountCore(string $callerId, array $body): array
+    {
+        $userId = self::s($body['userId'] ?? '');
+        if ($userId !== '') {
+            $u = $this->access->userById($userId);
+            if (! $u) {
+                return ['ok' => false, 'error' => 'not_found'];
+            }
+            $nama = self::s($u['name'] ?? '');
+        } else {
+            $nama = self::s($body['name'] ?? '');
+            $pin = self::s($body['pin'] ?? '');
+            if ($nama === '') {
+                return ['ok' => false, 'error' => 'missing_fields'];
+            }
+            if (! preg_match('/^\d{4,6}$/', $pin)) {
+                return ['ok' => false, 'error' => 'bad_pin'];
+            }
+            $r = $this->saveUserCore(['name' => $nama, 'pin' => $pin, 'keterangan' => 'Investor',
+                'noHp' => self::s($body['noHp'] ?? ''), 'active' => true]);
+            if (empty($r['ok'])) {
+                return $r; // name_taken etc. as they are
+            }
+            $userId = self::s($r['id']);
+        }
+        $this->users->upsertGrant($userId, 'investor', true, $callerId);
+        $this->access->forgetUser($userId);
+
+        return ['ok' => true, 'id' => $userId, 'name' => $nama];
+    }
+
     // ------------------------------------------------------------ rosters (open reads)
 
     public function listModuleMembers(array $body): array

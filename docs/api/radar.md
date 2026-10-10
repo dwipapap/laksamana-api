@@ -27,7 +27,7 @@ The read-only coordination board (laksamana-office `deploy/radar`, "Pusat Koordi
 | `vip` | Marketing `vip[]` | `tanggal` / `jamMulai`–`jamSelesai` | `meja` joined | upper bound `paxMax` → `paxMin` | — |
 | `evt` | Event `events[]` | `start_datetime` / `end_datetime`, **shifted to WIB** when zoned (`Z`, `±hh:mm`); plain values as is | `venue` | `capacity` | — |
 
-Only what will happen (agPasti): Marketing `Deal`, `Confirmed`, `Event Done`; Event `Upcoming`, `Today`, `Finished`; VIP every row without `batalAt` that is not cancelled / no-show.
+Only what will happen (agPasti): Marketing `Deal`, `Confirmed`, `Event Done`; Event `Approval`, `Upcoming`, `Event Done` (the statuses of the Event module since Oct 2026, = `EVT_STATUS_HASIL`) plus the old names `Today`, `Finished` for rows not saved since; Planning and Prospect never; VIP every row without `batalAt` that is not cancelled / no-show.
 
 ### `reservations[]`
 

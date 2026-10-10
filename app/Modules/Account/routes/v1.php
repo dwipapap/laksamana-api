@@ -25,6 +25,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('account/roster/{id}', [AccountAdminController::class, 'rosterDestroy']);
     });
 
+    // investor account from Finance → Brankas: admins of the modules holding the investor list
+    Route::post('account/investor-akun', [AccountAdminController::class, 'investorAccount'])
+        ->middleware('module:investor|brankas|finance,admin');
+
     // superadmin
     Route::middleware('module:*,admin')->prefix('account')->group(function () {
         Route::get('users', [AccountAdminController::class, 'users']);

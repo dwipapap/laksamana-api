@@ -1386,6 +1386,98 @@
         ]
       }
     },
+    "/api/v1/account/investor-akun": {
+      "post": {
+        "tags": [
+          "account"
+        ],
+        "summary": "Create or link an investor account (grants module investor)",
+        "operationId": "postApiV1AccountInvestorAkun",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "userId": {
+                    "type": "string",
+                    "description": "Link this existing account (not changed in any column)"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "noHp": {
+                    "type": "string"
+                  },
+                  "pin": {
+                    "type": "string",
+                    "pattern": "^d{4,6}$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK — {id, name}",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized (missing/invalid Bearer token)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (not an admin of investor, brankas or finance)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found (userId)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (missing_fields, bad_pin, name_taken)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/account/roster": {
       "get": {
         "tags": [
