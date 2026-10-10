@@ -26,7 +26,7 @@ Deliberately **not** done: `config:cache`, `route:cache`, `view:cache` (built in
    - secrets `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD`;
    - variable `APP_HOST` = the subdomain, without `https://`;
    - optional variables `PHP_VERSION` (default `8.4`, set it to the server's), `FTP_PROTOCOL` (`ftp` default, `ftps` if Rumahweb accepts it), `FTP_DIR` (default `./`).
-   - For `production`, add yourself as a required reviewer, so a deploy waits for your click.
+   - No required reviewers on either environment: deploys run without manual approval.
 5. **Core database**: create an empty database (e.g. `lakk5493_laksamana_core`), then locally run `tools/core-schema.sh` and import the file it writes (`../core-schema.sql`) through phpMyAdmin → Import. It holds every core table empty, plus the migration list. Sanctum tokens for new apps are stored there. Do this for dev before production.
 6. **MySQL user** with rights on that core database **and** on every legacy database the API serves (`lakk5493_db_*` for production, the dev ones for dev).
 7. **Create `.env`** in the app folder with cPanel File Manager (template below). No deploy ever uploads or deletes it.
@@ -87,7 +87,7 @@ If the run summary says **composer.lock changed**, run in cPanel Terminal for th
 
 1. The change is on `main` and dev has deployed it (Actions shows a green **deploy** run for that commit).
 2. Try it on dev.
-3. Actions → **deploy** → Run workflow → target `production` (approve it if a reviewer is required).
+3. Actions → **deploy** → Run workflow → target `production` (no approval needed).
 
 **Rollback:** run the workflow on the previous good commit (Run workflow → "Use workflow from" a branch or tag at that commit). Nothing in the database changes on deploy, so code rollback is enough.
 
