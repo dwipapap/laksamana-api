@@ -9,7 +9,7 @@ This is the contract for **laksamana-office-vue**, the old laksamana-office if i
   - failure: `{error: {code, message, details?}}`
 - **Fields:** the legacy field names (`tgl`, `keterangan`, `kategori_id`, `baris[{pos_id, debet, kredit}]`, `nama`, `urut`, `aktif`). Amounts are whole rupiah (integers).
 
-Status: complete. The contract covers **Kas Kecil + Akses Halaman** (#25), **Brankas** (#26) and **invoices & kwitansi** (#27).
+Status: complete. The contract covers **Kas Kecil + Akses Halaman** (#25), **Brankas** (#26), **invoices & kwitansi** (#27) and **Tagihan Rutin** (recurring subscriptions).
 
 ## Screen → endpoint map (every page of both Panels)
 
@@ -23,6 +23,7 @@ Some finance pages only **display data owned by other modules**: kompas' sales r
 | Buku Kas (`kk_buku`) | `GET /petty-cash/transactions?from&to`, `PATCH …/{id}` (Input/Bon ticks), `DELETE …/{id}` |
 | Pos & Kategori (`kk_pos`) | `/petty-cash/sources`, `/petty-cash/categories` |
 | Planning Pembayaran (`bayar`) | `GET/PUT /petty-cash/payment-plan`; the vault-side wallet balances come from `GET /petty-cash/wallet-balances` (kompas sales are added client-side from kompas state, as in the old page) |
+| Tagihan Rutin (`tagihan`) | `/tagihan` (list, create, update, activate), `/tagihan/{id}/payments`, `/tagihan/payments/{id}/cancel` |
 | Invoice & Kwitansi (`invoice`) | `/invoices` (queue, decisions), `/invoices/settings`, `/invoices/signatories` |
 | Akses Halaman (`akses`) | `GET /petty-cash/access`, `PUT /petty-cash/access/matrix`, `PUT /petty-cash/access/roles/{userId}` |
 | Rekap Penjualan (`rekap`), Bulanan (`bulanan`), Analytics (`analytics`), Void Bill (`voidb`), Kasir (`kasir`), BRI (`bri`) | kompas' sales recap (kompas contract, #28) |
@@ -147,6 +148,35 @@ One request per reservation or marketing deal (`resId`, unique). A decision move
 
 Validation errors keep the legacy messages (`resId kosong`, `alasan penolakan wajib diisi`, `nama penanda tangan wajib diisi`, …) → `422 invalid_request`. Versions are content hashes (`If-Match` / `?version=`; `428` / `409`).
 
+## Tagihan Rutin — `/api/v1/finance/tagihan`
+
+Recurring subscriptions (wifi, Claude, ChatGPT, Spotify, YouTube): *when is each due* and *how much have we paid in total*. Port of `finance-mysql/lib_tagihan.php` (`tagihanList/Simpan/Aktif/Bayar/Batal`), gated by module `finance`. No versioning: the legacy actions carry none, and concurrent edits to different bills never collide; the one true race (two people paying the same due date) is guarded server-side in the payment transaction.
+
+**Two tables, and the split is what keeps the totals trustworthy:** `kk_tagihan` (the subscriptions — what CHANGES) and `kk_tagihan_bayar` (one row per payment that really happened, with the nominal AS OF THEN — what must never change). The tables are created by the old PHP at runtime, never by a migration: until they exist the endpoints answer `503 tagihan_unavailable`.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/` | `{tagihan: [...], bayar: [...]}` (the `tg_baca` shape), tagihan by `aktif` then `nama`, payments newest first |
+| POST | `/` | Create a tagihan (`tg_simpan` without id). → `201` the new tagihan |
+| PATCH | `/{id}` | Update a tagihan. Partial bodies are merged over the current row first (legacy defaults would wipe unsent fields) |
+| PUT | `/{id}/active` | `{aktif: bool}` — deactivate (or reactivate); a tagihan is never deleted |
+| POST | `/{id}/payments` | Record a payment (`tg_bayar`). → `201` the new payment |
+| POST | `/payments/{id}/cancel` | `{alasan*}` — cancel a payment (`tg_batal`); there is no DELETE |
+
+Shapes (legacy field names, camelCase as stored):
+
+- tagihan: `{id, nama, kategori, nominal, siklus, mulai, metode, catatan, aktif, dibuatOleh, dibuatAt, diubahOleh, diubahAt}`. `mulai` is `""` when the date is not known yet.
+- payment: `{id, tagihanId, periode, tglBayar, nominal, catatan, oleh, at, batalAt, batalOleh, batalAlasan}`. `batalAt` is `null` while live.
+
+Rules (each covered by `tests/Feature/Finance/TagihanRutinTest.php`):
+
+- `siklus` is one of 1, 2, 3, 6, 12 months; anything else → `422 invalid_request`.
+- The nominal is COPIED onto the payment row as typed. "Sudah dibayar" totals = live rows only, never price × months.
+- Due dates are NOT stored. The client computes them from `mulai` + `siklus` (add months, clamp day 31 to the month's last day; sweep from the first due date, count past-unpaid as late). The server only guards that one due date is not paid twice: `tg_bayar`'s transaction + `FOR UPDATE` on the tagihan row, cancelled payments excluded. A duplicate → `422` naming who recorded the first payment.
+- No DELETE for payments: cancel with a required `alasan`, once only. A tagihan is deactivated, never deleted.
+- `dibuatOleh` / `diubahOleh` / `oleh` / `batalOleh` always come from the Bearer token, never the body.
+- Every SQL placeholder is used once per statement (`EMULATE_PREPARES=false` binds by position).
+
 ## Errors
 
 | Status | code |
@@ -157,3 +187,4 @@ Validation errors keep the legacy messages (`resId kosong`, `alasan penolakan wa
 | 409 | `version_conflict` |
 | 422 | `validation_failed`, `invalid_request` |
 | 428 | `version_required` |
+| 503 | `tagihan_unavailable` |
