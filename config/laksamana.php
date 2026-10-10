@@ -65,6 +65,10 @@ $modules = [
     // Registered so the maintenance middleware resolves; it is not a Modul
     // anyone is granted — the token ability `automation:read` is the gate.
     'automation' => ['env' => 'AUTOMATION', 'database' => 'lakk5493_db_reservasi', 'connection' => 'core'],
+    // radar owns no database: the read-only board joins marketing, event,
+    // reservasi and bd on the server. Registered so the maintenance
+    // middleware resolves; the v1 gate stays `module:radar`.
+    'radar' => ['env' => 'RADAR', 'database' => 'lakk5493_db_ems', 'connection' => 'core'],
 ];
 
 // Legacy routes dispatch by action, not HTTP method. During an offline cutover
