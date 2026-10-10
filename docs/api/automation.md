@@ -258,9 +258,14 @@ to the draft/confirm message; the guest opens it without login.
 | | |
 |---|---|
 | Mint | `POST denah-link`, body `{date: YYYY-MM-DD, time: HH:MM}` → `{data: {url}}` |
-| View | `GET denah?t=` — public, no auth; the token is the only credential |
+| View | `GET /d/<token>` — public, no auth; the token is the only credential |
+| Legacy view | `GET /api/v1/automation/denah?t=<token>` still works (same page) |
 | Expiry | 30 minutes (`410` past expiry, `403` tampered/missing) |
 | Overlay | TERISI = booked within <180 min of the time (same buffer as the bot) |
+
+The short `/d/<token>` path exists so a WhatsApp message-template URL button can
+use a stable base (`https://api.laksamanamuda.id/d/{{1}}`) with a dynamic
+suffix — the token changes per message.
 
 - The map draws the **built-in plans** (Lt1 weekday/weekend + Lt2, canvas
   1600×1160 from `venue-layouts.ts`); per-date master overrides are NOT

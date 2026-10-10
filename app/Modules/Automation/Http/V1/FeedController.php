@@ -118,7 +118,7 @@ class FeedController
         }
 
         return ApiResponse::ok(
-            ['url' => url('api/v1/automation/denah').'?t='.$minted['token']],
+            ['url' => url('d/'.$minted['token'])],
             $this->meta('denah-link', (string) $v['date'], [])
         );
     }
@@ -130,7 +130,8 @@ class FeedController
      */
     public function denah(Request $request): Response
     {
-        $checked = DenahLink::verify((string) $request->query('t', ''), time());
+        $token = (string) ($request->query('t') ?: $request->route('token') ?: '');
+        $checked = DenahLink::verify($token, time());
         if (! $checked['ok']) {
             $code = $checked['error'] === 'expired' ? 410 : 403;
             $msg = $checked['error'] === 'expired' ? 'Link denah sudah kedaluwarsa.' : 'Link denah tidak valid.';
