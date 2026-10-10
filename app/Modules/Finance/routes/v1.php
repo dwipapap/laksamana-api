@@ -2,6 +2,7 @@
 
 use App\Modules\Finance\Http\V1\InvoiceController as I;
 use App\Modules\Finance\Http\V1\PettyCashController as C;
+use App\Modules\Finance\Http\V1\TagihanRutinController as T;
 use App\Modules\Finance\Http\V1\VaultController as V;
 use Illuminate\Support\Facades\Route;
 
@@ -56,6 +57,17 @@ Route::middleware(['auth:sanctum', 'module:brankas'])->prefix('finance/vault')->
     Route::put('{list}/{id}', [V::class, 'update'])->whereIn('list', $lists);
     Route::patch('{list}/{id}', [V::class, 'patch'])->whereIn('list', $lists);
     Route::delete('{list}/{id}', [V::class, 'destroy'])->whereIn('list', $lists);
+});
+
+// Tagihan Rutin: recurring subscriptions + their payments (module `finance`).
+// No DELETE route on purpose: payments are cancelled, tagihan deactivated.
+Route::middleware(['auth:sanctum', 'module:finance'])->prefix('finance/tagihan')->group(function () {
+    Route::get('/', [T::class, 'index']);
+    Route::post('/', [T::class, 'store']);
+    Route::patch('{id}', [T::class, 'update'])->whereNumber('id');
+    Route::put('{id}/active', [T::class, 'setActive'])->whereNumber('id');
+    Route::post('{id}/payments', [T::class, 'pay'])->whereNumber('id');
+    Route::post('payments/{id}/cancel', [T::class, 'cancel'])->whereNumber('id');
 });
 
 // Invoices & kwitansi. Requests / status / file serve Reservasi and Marketing too
