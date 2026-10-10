@@ -152,9 +152,9 @@ class EventPublik
             .' FROM `schedules` s'
             .' LEFT JOIN `talents` t ON t.id = s.talent_id'
             .' LEFT JOIN `events` e ON e.id = s.event_id'
-            .' WHERE s.tanggal = ? AND s.status = ?'
+            .' WHERE s.tanggal = ? AND s.status IN (\'Scheduled\',\'Confirmed\',\'Done\')'
             .' ORDER BY s.start_time, t.name',
-            [$date, 'Confirmed']
+            [$date]
         );
 
         $out = [];

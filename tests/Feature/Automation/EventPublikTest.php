@@ -101,6 +101,18 @@ it('talent-hari-ini: returns confirmed DJ/Band with event names, no phones or fe
         ->not->toContain('1500000')->not->toContain('Band Sore');
 });
 
+it('talent-hari-ini: Scheduled rows are included like the Office calendar', function () {
+    autoEventSeedEvent('auto-tal-ev2', 'Live Malam', '2031-09-06 20:00:00', 'Upcoming', 'Hall A');
+    autoEventSeedTalent('auto-tal-3', 'DJ Sore', 'DJ', '0812000111');
+    autoEventSeedSchedule('auto-sch-3', 'auto-tal-3', 'auto-tal-ev2', '2031-09-06', 'Scheduled');
+
+    $token = autoEventToken('u-andry');
+    $res = $this->withToken($token)->getJson('/api/v1/automation/talent-hari-ini?date=2031-09-06')->assertOk();
+
+    $rows = $res->json('data.rows');
+    expect($rows)->toHaveCount(1)->and($rows[0]['talent'])->toBe('DJ Sore');
+});
+
 it('event-publik and talent-hari-ini: a staff * token is forbidden, no token is 401', function () {
     $staff = loginAs(officeUser('u-andry'));
     $this->withToken($staff)->getJson('/api/v1/automation/event-publik?from=2031-09-01&to=2031-09-07')
