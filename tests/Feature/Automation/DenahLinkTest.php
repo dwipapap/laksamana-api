@@ -32,9 +32,9 @@ it('denah-link: mints a URL, the page marks the booked table, no PII leaks', fun
     $token = autoDenahToken('u-andry');
     $mint = $this->withToken($token)->postJson('/api/v1/automation/denah-link', ['date' => '2031-07-10', 'time' => '19:00'])->assertOk();
     $url = $mint->json('data.url');
-    expect($url)->toContain('/api/v1/automation/denah?t=');
+    expect($url)->toContain('/d/');
 
-    $page = $this->get(parse_url($url, PHP_URL_PATH).'?'.parse_url($url, PHP_URL_QUERY))->assertOk();
+    $page = $this->get(parse_url($url, PHP_URL_PATH))->assertOk();
     $html = $page->getContent();
     expect($html)
         ->toContain('data-table="U1" data-status="booked"')
