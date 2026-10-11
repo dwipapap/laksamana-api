@@ -110,10 +110,9 @@ class FeedController
         $v = $request->validate([
             'date' => ['required', 'date_format:Y-m-d'],
             'time' => ['required', 'date_format:H:i'],
-            'current' => ['nullable', 'string', 'max:24'],
         ]);
 
-        $minted = DenahLink::mint((string) $v['date'], (string) $v['time'], time(), (string) ($v['current'] ?? ''));
+        $minted = DenahLink::mint((string) $v['date'], (string) $v['time'], time());
         if ($minted === null) {
             return ApiResponse::error('invalid_request', 'date must be YYYY-MM-DD and time HH:MM.', 422);
         }
@@ -145,7 +144,7 @@ class FeedController
         }
 
         try {
-            $html = $this->denah->render($checked['date'], $checked['time'], $checked['exp'], $checked['current'] ?? '');
+            $html = $this->denah->render($checked['date'], $checked['time'], $checked['exp']);
         } catch (\Throwable $e) {
             report($e);
 

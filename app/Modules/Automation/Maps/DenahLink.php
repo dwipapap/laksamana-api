@@ -20,7 +20,7 @@ final class DenahLink
     public const TTL_SECONDS = 1800;
 
     /** @return array{token:string,expiresAt:int}|null null when the payload is invalid */
-    public static function mint(string $date, string $time, int $now, string $current = ''): ?array
+    public static function mint(string $date, string $time, int $now): ?array
     {
         if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
             return null;
@@ -28,11 +28,7 @@ final class DenahLink
         if (! preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $time)) {
             return null;
         }
-        $payloadArr = ['v' => 1, 'date' => $date, 'time' => $time, 'exp' => $now + self::TTL_SECONDS];
-        if ($current !== '') {
-            $payloadArr['cur'] = substr($current, 0, 24);
-        }
-        $payload = json_encode($payloadArr);
+        $payload = json_encode(['v' => 1, 'date' => $date, 'time' => $time, 'exp' => $now + self::TTL_SECONDS]);
         if (! is_string($payload)) {
             return null;
         }
@@ -69,7 +65,7 @@ final class DenahLink
             return ['ok' => false, 'error' => 'expired'];
         }
 
-        return ['ok' => true, 'date' => $date, 'time' => $time, 'exp' => $exp, 'current' => isset($payload['cur']) ? (string) $payload['cur'] : ''];
+        return ['ok' => true, 'date' => $date, 'time' => $time, 'exp' => $exp];
     }
 
     private static function key(): string
