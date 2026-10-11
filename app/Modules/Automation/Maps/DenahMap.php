@@ -61,7 +61,7 @@ final class DenahMap
         return $out;
     }
 
-    public function render(string $date, string $time, int $expiresAt): string
+    public function render(string $date, string $time, int $expiresAt, string $current = ''): string
     {
         $dow = (int) (new \DateTimeImmutable($date.'T00:00:00'))->format('w');
         $weekend = $dow === 0 || $dow === 5 || $dow === 6;
@@ -72,9 +72,10 @@ final class DenahMap
         $body = '<div class="wrap">'
             .'<h1>Denah Meja • '.e($title).' jam '.e(str_replace(':', '.', $time)).' WIB</h1>'
             .'<p class="legend"><span class="sw free"></span>Tersedia<span class="sw busy"></span>Terisi '
+            .($current !== '' ? '<span class="sw cur"></span>Meja awal Kakak ' : '')
             .'<span class="exp">Link berlaku hingga '.e($exp).' WIB</span></p>'
-            .$this->canvas($weekend ? 'weekend' : 'weekday', 'Lantai 1', $booked)
-            .$this->canvas($weekend ? 'lantai2_weekend' : 'lantai2', 'Lantai 2', $booked)
+            .$this->canvas($weekend ? 'weekend' : 'weekday', 'Lantai 1', $booked, $current)
+            .$this->canvas($weekend ? 'lantai2_weekend' : 'lantai2', 'Lantai 2', $booked, $current)
             .'<p class="foot">Laksamana Muda • denah standar, tanpa nama tamu</p></div>';
 
         return '<!DOCTYPE html><html lang="id"><head><meta charset="utf-8">'
@@ -90,6 +91,8 @@ final class DenahMap
             .'.tbl b{font-weight:800;color:#5a4a2a;font-size:clamp(8px,1.15cqw,16px)}'
             .'.tbl span{font-weight:700;color:#7d6c49;font-size:clamp(6px,.62cqw,10px)}'
             .'.tbl.busy{background:#E0A82E;border-color:#b98417}.tbl.busy b{color:#3a2a00}.tbl.busy span{color:#5c4200}'
+            .'.tbl.cur{background:#DCEBDA;border:2px solid #2F7D46;box-shadow:0 0 0 3px rgba(47,125,70,.28)}.tbl.cur b{color:#1F5B33}.tbl.cur span{color:#2F7D46}'
+            .'.sw.cur{background:#DCEBDA;border:1px solid #2F7D46}'
             .'.cap{position:absolute;text-align:center;font-weight:700;color:#8f8676;font-size:clamp(5px,.6cqw,10px);white-space:nowrap;line-height:1}'
             .'.cap.busy{color:#9b2c1c;font-weight:800}'
             .'.fix{position:absolute;display:flex;align-items:center;justify-content:center;text-align:center;border-radius:6px;font-weight:800;letter-spacing:.5px;font-size:clamp(7px,1.6cqw,26px);box-sizing:border-box}'
@@ -103,7 +106,7 @@ final class DenahMap
     }
 
     /** @param array<string, true> $booked */
-    private function canvas(string $key, string $label, array $booked): string
+    private function canvas(string $key, string $label, array $booked, string $current = ''): string
     {
         $plans = VenueLayouts::all();
         $plan = $plans[$key] ?? null;
@@ -121,14 +124,15 @@ final class DenahMap
         }
         foreach ($plan['tables'] as $t) {
             $id = (string) $t['id'];
-            $busy = isset($booked[$id]);
+            $cur = ($current !== '' && $id === $current);
+            $busy = isset($booked[$id]) && ! $cur;
             $cap = (string) ($t['cap'] ?? '');
             $paxTeks = $cap !== '' ? $cap.' pax' : '';
             $x = (float) $t['x'];
             $y = (float) $t['y'];
             $tw = (float) $t['w'];
             $th = (float) $t['h'];
-            $html .= '<div class="tbl'.($busy ? ' busy' : '').'" data-table="'.e($id).'" data-status="'.($busy ? 'booked' : 'free').'"'
+            $html .= '<div class="tbl'.($busy ? ' busy' : '').($cur ? ' cur' : '').'" data-table="'.e($id).'" data-status="'.($cur ? 'current' : ($busy ? 'booked' : 'free')).'"'
                 .' style="left:'.$pct($x, $w).';top:'.$pct($y, $h)
                 .';width:'.$pct($tw, $w).';height:'.$pct($th, $h).'">'
                 .'<b>'.e($id).'</b>'.($paxTeks !== '' ? '<span>'.e($paxTeks).'</span>' : '').'</div>';
@@ -137,7 +141,7 @@ final class DenahMap
             // Skipped where another table sits right below (tight rows like
             // M1–M10): the caption would hide under it, and "N pax" is already
             // inside the box.
-            $capTeks = $busy ? 'terisi' : ($paxTeks !== '' ? 'bisa '.$paxTeks : '');
+            $capTeks = $cur ? 'meja awal Kakak' : ($busy ? 'terisi' : ($paxTeks !== '' ? 'bisa '.$paxTeks : ''));
             if ($capTeks !== '' && self::adaRuangBawah($plan, $x, $y + $th, $tw)) {
                 $html .= '<div class="cap'.($busy ? ' busy' : '').'" style="left:'.$pct($x - 20, $w).';top:'.$pct($y + $th + 6, $h)
                     .';width:'.$pct($tw + 40, $w).'">'.e($capTeks).'</div>';
