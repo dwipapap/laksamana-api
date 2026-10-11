@@ -148,7 +148,7 @@ Photos never stay inline. A `data:` URI in a photo field is written to `<RESERVA
 | GET | `/audit?page&perPage&q` | The newest 500 audit entries (`q` narrows, `page`/`perPage` cuts, `meta.total` counts) |
 | POST | `/audit` | Append one action that belongs to no reservation row |
 | GET | `/guests/summary?before&phone` | Whole-history guest summary in the legacy `ringkasTamu` shape |
-| POST | `/kwitansi-pdf` | Body `{resId}` → an automatic **DP receipt PDF** (`application/pdf`) for that reservation, generated from the row (name, table, date/time, pax, `dps[]`/`dpTotal`, status). The WhatsApp bot attaches it after Xendit confirms the DP; it is NOT Finance's signed kwitansi and never waits on Finance. No phone number is printed. `404 not_found` when the id is unknown |
+| POST | `/kwitansi-pdf` | Body `{resId, inv?}` → a one-page A4 **DP kwitansi PDF** (`application/pdf`) mirroring the Office sheet (kop + logo, meta, item table, TOTAL DITERIMA, transfer box, "DP DITERIMA" badge, signature block). `inv` = the issued Finance document (`{no, cap?, penanda?[{nama,jabatan,ttd?}]}`, each image a data URI) so an approved one shows the **official number** and signatures; without it the venue placeholder `KW/YYYYMMDD/XXXX` and the default signer are used. Written by hand like TicketPdf + JPEG image XObjects (GD). `404 not_found` when the id is unknown |
 | GET / PUT | `/files/{key}` | `{key, data}` / body `{data}`; empty `data` deletes the file |
 
 ## Errors

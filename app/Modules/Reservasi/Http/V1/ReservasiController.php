@@ -329,13 +329,17 @@ class ReservasiController
      */
     public function kwitansiPdf(Request $r): \Illuminate\Http\Response
     {
-        $v = $r->validate(['resId' => ['required', 'string', 'max:64']]);
+        $v = $r->validate([
+            'resId' => ['required', 'string', 'max:64'],
+            'inv' => ['nullable', 'array'],
+        ]);
         $rec = $this->records->find((string) $v['resId']);
         if (! $rec) {
             return response(ApiResponse::error('not_found', 'Reservation not found.', 404)->getContent(), 404)
                 ->header('Content-Type', 'application/json');
         }
-        $pdf = \App\Modules\Reservasi\Services\KwitansiPdf::render($rec['row'], time());
+        $inv = is_array($v['inv'] ?? null) ? $v['inv'] : null;
+        $pdf = \App\Modules\Reservasi\Services\KwitansiPdf::render($rec['row'], $inv, time());
 
         return response($pdf)
             ->header('Content-Type', 'application/pdf')
