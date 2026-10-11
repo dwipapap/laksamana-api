@@ -321,6 +321,28 @@ class ReservasiController
         return ApiResponse::ok($out, ['ver' => $this->state->ver()]);
     }
 
+    /**
+     * POST /api/v1/reservasi/kwitansi-pdf {resId} — an automatic DP receipt
+     * (PDF) for the WhatsApp bot, generated from the reservation row. This is
+     * NOT the Office's signed kwitansi (Finance keeps that); it never waits on
+     * Finance. No phone number is printed.
+     */
+    public function kwitansiPdf(Request $r): \Illuminate\Http\Response
+    {
+        $v = $r->validate(['resId' => ['required', 'string', 'max:64']]);
+        $rec = $this->records->find((string) $v['resId']);
+        if (! $rec) {
+            return response(ApiResponse::error('not_found', 'Reservation not found.', 404)->getContent(), 404)
+                ->header('Content-Type', 'application/json');
+        }
+        $pdf = \App\Modules\Reservasi\Services\KwitansiPdf::render($rec['row'], time());
+
+        return response($pdf)
+            ->header('Content-Type', 'application/pdf')
+            ->header('Content-Disposition', 'inline; filename="'.\App\Modules\Reservasi\Services\KwitansiPdf::fileName($rec['row']).'"')
+            ->header('Cache-Control', 'no-store');
+    }
+
     // ─────────────────────────── helpers ──
 
     private function write(\Closure $fn, int $status = 200): JsonResponse
