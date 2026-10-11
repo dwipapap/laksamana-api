@@ -220,6 +220,8 @@ class KwitansiPdf
             ? $inv['penanda']
             : [['nama' => '(Wandi Pranata)', 'jabatan' => 'Finance', 'ttd' => '']];
 
+        $kategori = trim((string) ($row['category'] ?? ''));
+
         return [
             'no' => $no,
             'resmi' => $resmi,
@@ -227,7 +229,7 @@ class KwitansiPdf
             'hp' => self::tampilHp((string) ($row['phone'] ?? '')),
             'metode' => $metode !== [] ? implode(', ', $metode) : (string) ($row['dpMethod'] ?? '-'),
             'tanggalTerbit' => self::tglId(date('Y-m-d')),
-            'keterangan' => 'Reservasi '.((string) ($row['category'] ?? '')) ?: 'Reservasi Tamu Umum',
+            'keterangan' => 'Reservasi '.($kategori !== '' ? $kategori : 'Tamu Umum'),
             'subKeterangan' => trim(self::tglId($tgl).' · '.($jam === '' ? '-' : $jam).' WIB'.($meja !== '' ? ' · Meja '.$meja : '')),
             'pax' => (string) (int) ($row['pax'] ?? 0),
             'total' => $total,
