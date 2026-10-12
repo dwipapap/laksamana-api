@@ -263,9 +263,20 @@ to the draft/confirm message; the guest opens it without login.
 | Expiry | 30 minutes (`410` past expiry, `403` tampered/missing) |
 | Overlay | TERISI = booked within <180 min of the time (same buffer as the bot) |
 
-The short `/d/<token>` path exists so a WhatsApp message-template URL button can
-use a stable base (`https://api.laksamanamuda.id/d/{{1}}`) with a dynamic
-suffix — the token changes per message.
+The short `/d/<token>` path exists so the guest link stays short and stable:
+the token (compact, ~23 chars, self-expiring) is the only part that changes.
+
+**Public base.** `denah-link` answers with `config('denah.public_base')` +
+`/d/<token>` (`config/denah.php`, env `DENAH_PUBLIC_BASE`), defaulting to
+`APP_URL`. Set it to the customer domain (e.g. `https://laksamanamuda.id`) and
+put the one-file forwarder there (`docs/deploy/denah-forwarder/`) so the
+address bar stays on the brand domain while the map is still rendered by the
+API. Leave it unset and the link keeps pointing at `api.laksamanamuda.id`.
+The n8n workflow needs no change — it attaches whatever URL the API returns.
+
+- Token format v2 (current): `base64url(pack('nnN', days, minutes, exp))` +
+  `'.'` + first 8 bytes of HMAC-SHA256. The legacy v1 JSON token is still
+  accepted on verify until it expires; nothing mints it anymore.
 
 - The map draws the **built-in plans** (Lt1 weekday/weekend + Lt2, canvas
   1600×1160 from `venue-layouts.ts`); per-date master overrides are NOT

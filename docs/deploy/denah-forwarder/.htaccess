@@ -1,0 +1,16 @@
+# Send /d/<token> straight to index.php, and never cache a one-time map.
+#
+# Placed in public_html/d/ (Apache on the customer domain). Keep AllowOverride
+# enabled for that folder. If the host has no mod_rewrite, call the forwarder
+# as https://laksamanamuda.id/d/index.php?t=<token> instead and set
+# DENAH_PUBLIC_BASE to https://laksamanamuda.id/d/index.php?t=
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteRule ^([A-Za-z0-9._-]+)/?$ index.php?t=$1 [L,QSA]
+</IfModule>
+
+<IfModule mod_headers.c>
+  Header set Cache-Control "no-store"
+  Header set X-Robots-Tag "noindex"
+</IfModule>
