@@ -257,7 +257,7 @@ to the draft/confirm message; the guest opens it without login.
 
 | | |
 |---|---|
-| Mint | `POST denah-link`, body `{date: YYYY-MM-DD, time: HH:MM}` → `{data: {url}}` |
+| Mint | `POST denah-link`, body `{date: YYYY-MM-DD, time: HH:MM, current?}` → `{data: {url}}` |
 | View | `GET /d/<token>` — public, no auth; the token is the only credential |
 | Legacy view | `GET /api/v1/automation/denah?t=<token>` still works (same page) |
 | Expiry | 30 minutes (`410` past expiry, `403` tampered/missing) |
