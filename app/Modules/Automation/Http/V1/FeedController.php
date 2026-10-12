@@ -119,7 +119,7 @@ class FeedController
         }
 
         return ApiResponse::ok(
-            ['url' => url('d/'.$minted['token'])],
+            ['url' => rtrim((string) config('denah.public_base', config('app.url')), '/').'/d/'.$minted['token']],
             $this->meta('denah-link', (string) $v['date'], [])
         );
     }
