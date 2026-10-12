@@ -3,7 +3,7 @@
 This is the contract for **laksamana-office-vue**, the old laksamana-office if it migrates, and any other app.
 
 - **Base URL:** `/api/v1/event`
-- **Auth:** `Authorization: Bearer <token>`, obtained from `POST /api/v1/auth/login {login, pin}`. The account needs module `event` in its effective grants (the old page's SSO gate applies the same rule).
+- **Auth:** `Authorization: Bearer <token>`, obtained from `POST /api/v1/auth/login {login, pin}`. The account needs module `event` in its effective grants (the old page's SSO gate applies the same rule). One exception: `GET /events` (the list, with its filters) is also open to module `marketing`, whose calendar draws the EMS events read-only; every other path, and every write, stays `event` only.
 - **Envelope:**
   - success: `{data, meta?}`
   - failure: `{error: {code, message, details?}}`
