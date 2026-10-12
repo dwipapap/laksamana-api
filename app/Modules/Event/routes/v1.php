@@ -7,6 +7,12 @@ use Illuminate\Support\Facades\Route;
 // The Event Planner's page permissions (Akses Halaman per peran) are enforced by
 // the app itself; the old backend was open to every holder, so v1 gates on the
 // module only.
+//
+// The event list is also open to Marketing: its calendar shows the EMS events as
+// a read-only band, as the old open backend let it (registered first, so it wins
+// over the module:event `{resource}` route below).
+Route::middleware(['auth:sanctum', 'module:event|marketing'])->get('event/events', [C::class, 'index'])->defaults('resource', 'events');
+
 Route::middleware(['auth:sanctum', 'module:event'])->prefix('event')->group(function () {
     Route::get('state', [C::class, 'state']);
     Route::get('stats', [C::class, 'stats']);
