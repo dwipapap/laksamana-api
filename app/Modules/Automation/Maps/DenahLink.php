@@ -23,7 +23,9 @@ use DateTimeZone;
  *
  * The older v1 format (base64url(JSON payload) + full 32-byte HMAC) is still
  * ACCEPTED on verify so links minted before this change keep working until
- * they expire; nothing mints it anymore.
+ * they expire. It is also still MINTED when a `current` table highlight is
+ * requested (the 8-byte compact payload has no room for it); plain links
+ * without `current` always mint v2.
  *
  * No env() here (config:cache would freeze it); the key comes from config.
  */
@@ -41,13 +43,26 @@ final class DenahLink
     private const SECONDS_PER_DAY = 86400;
 
     /** @return array{token:string,expiresAt:int}|null null when the payload is invalid */
-    public static function mint(string $date, string $time, int $now): ?array
+    public static function mint(string $date, string $time, int $now, string $current = ''): ?array
     {
         if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
             return null;
         }
         if (! preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $time)) {
             return null;
+        }
+        // A highlighted "current" table does not fit the 8-byte compact
+        // payload, so those links keep the v1 JSON format (with `cur`).
+        if ($current !== '') {
+            $payloadArr = ['v' => 1, 'date' => $date, 'time' => $time, 'exp' => $now + self::TTL_SECONDS];
+            $payloadArr['cur'] = substr($current, 0, 24);
+            $payload = json_encode($payloadArr);
+            if (! is_string($payload)) {
+                return null;
+            }
+            $body = self::b64urlEncode($payload);
+
+            return ['token' => $body.'.'.self::b64urlEncode(hash_hmac('sha256', $body, self::key(), true)), 'expiresAt' => $now + self::TTL_SECONDS];
         }
         $d = DateTimeImmutable::createFromFormat('!Y-m-d', $date, new DateTimeZone('UTC'));
         if ($d === false) {
@@ -116,12 +131,13 @@ final class DenahLink
             return ['ok' => false, 'error' => 'expired'];
         }
 
-        return ['ok' => true, 'date' => $date, 'time' => $time, 'exp' => $exp];
+        return ['ok' => true, 'date' => $date, 'time' => $time, 'exp' => $exp, 'current' => ''];
     }
 
     /**
-     * The legacy JSON payload (v1): accepted, never minted. Keeps links already
-     * delivered before the compact format was introduced working until expiry.
+     * The JSON payload (v1): accepted for every link, and still minted when a
+     * `current` table highlight is requested. Keeps links already delivered
+     * before the compact format was introduced working until expiry.
      */
     private static function verifyV1(?string $raw, int $now): array
     {
@@ -139,7 +155,7 @@ final class DenahLink
             return ['ok' => false, 'error' => 'expired'];
         }
 
-        return ['ok' => true, 'date' => $date, 'time' => $time, 'exp' => $exp];
+        return ['ok' => true, 'date' => $date, 'time' => $time, 'exp' => $exp, 'current' => isset($payload['cur']) ? (string) $payload['cur'] : ''];
     }
 
     /** Truncated HMAC tag over the encoded body. */

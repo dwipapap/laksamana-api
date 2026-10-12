@@ -252,12 +252,12 @@ Confirmed talent appearances (DJ/Band) of one day — **event DB only**
 ### `POST /api/v1/automation/denah-link` + `GET /api/v1/automation/denah?t=`
 
 Temporary public floor map for the guest chatbot (option A: link, no
-storage). n8n mints (automation token) with `{date, time}`, attaches the URL
+storage). n8n mints (automation token) with `{date, time, current?}`, attaches the URL
 to the draft/confirm message; the guest opens it without login.
 
 | | |
 |---|---|
-| Mint | `POST denah-link`, body `{date: YYYY-MM-DD, time: HH:MM}` → `{data: {url}}` |
+| Mint | `POST denah-link`, body `{date: YYYY-MM-DD, time: HH:MM, current?}` → `{data: {url}}` |
 | View | `GET /d/<token>` — public, no auth; the token is the only credential |
 | Legacy view | `GET /api/v1/automation/denah?t=<token>` still works (same page) |
 | Expiry | 30 minutes (`410` past expiry, `403` tampered/missing) |
@@ -274,9 +274,10 @@ address bar stays on the brand domain while the map is still rendered by the
 API. Leave it unset and the link keeps pointing at `api.laksamanamuda.id`.
 The n8n workflow needs no change — it attaches whatever URL the API returns.
 
-- Token format v2 (current): `base64url(pack('nnN', days, minutes, exp))` +
-  `'.'` + first 8 bytes of HMAC-SHA256. The legacy v1 JSON token is still
-  accepted on verify until it expires; nothing mints it anymore.
+- Token format v2 (default, ~23 chars): `base64url(pack('nnN', days, minutes, exp))` +
+  `'.'` + first 8 bytes of HMAC-SHA256. When `current` is passed the link keeps
+  the v1 JSON format (with `cur`) so the map can highlight the guest's table;
+  v1 is still accepted on verify until it expires.
 
 - The map draws the **built-in plans** (Lt1 weekday/weekend + Lt2, canvas
   1600×1160 from `venue-layouts.ts`); per-date master overrides are NOT
