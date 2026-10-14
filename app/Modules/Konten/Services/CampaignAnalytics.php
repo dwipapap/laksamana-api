@@ -34,17 +34,26 @@ use RuntimeException;
 class CampaignAnalytics
 {
     public const TIKTOK_SCOPE = 'user.info.basic,user.info.profile,user.info.stats,video.list';
+
     public const IG_SCOPE = 'instagram_business_basic,instagram_business_manage_insights';
+
     public const IG_GRAPH = 'https://graph.instagram.com/v23.0';
+
     public const AI_MODELS = ['muse-spark-1.3-contributor', 'muse-spark-1.3', 'muse-spark-1.2-contributor', 'muse-spark-1.2'];
+
     public const AI_URL = 'https://api.meta.ai/v1/messages';
+
     public const KATEGORI_MAKS = 20;
+
     public const PROFIL_BAWAAN = 'Laksamana Muda: coffee shop, resto, dan venue nongkrong di Pekanbaru, Riau. '
         .'Ramai malam hari dan akhir pekan, punya live music, DJ, nobar, dan event. '
         .'Kanal utama TikTok @laksamanamuda.id dan Instagram.';
+
     public const KATEGORI_BAWAAN = ['Hook 3 Detik & Retensi', 'Format Konten & Visual', 'Topik & Tren', 'Waktu Tayang',
         'Promo & Ajakan', 'Sentimen & Masukan', 'Kolaborasi & KOL'];
+
     public const STATUSES = ['DRAF', 'TERJADWAL', 'TAYANG', 'BATAL'];
+
     public const BANK_STATUSES = ['IDE', 'TERJADWAL', 'ARSIP'];
 
     private function db(): ConnectionInterface
@@ -126,15 +135,15 @@ class CampaignAnalytics
             KEY tanggal (tanggal))");
         $db->statement("CREATE TABLE IF NOT EXISTS cg_riset (id VARCHAR(40) PRIMARY KEY, jenis VARCHAR(20) DEFAULT 'tren',
             topik VARCHAR(255), platform VARCHAR(40), catatan TEXT, hasil MEDIUMTEXT, model VARCHAR(60), oleh VARCHAR(120), at BIGINT)");
-        $db->statement("CREATE TABLE IF NOT EXISTS cg_post (platform VARCHAR(20), post_id VARCHAR(80), judul TEXT, url VARCHAR(600),
+        $db->statement('CREATE TABLE IF NOT EXISTS cg_post (platform VARCHAR(20), post_id VARCHAR(80), judul TEXT, url VARCHAR(600),
             cover VARCHAR(900), tayang_at BIGINT, views BIGINT, likes BIGINT, comments BIGINT, shares BIGINT, durasi INT,
             sync_at BIGINT, hilang TINYINT DEFAULT 0, reach BIGINT NULL, saves BIGINT NULL, insight_at BIGINT,
-            PRIMARY KEY (platform, post_id))");
-        $db->statement("CREATE TABLE IF NOT EXISTS cg_akun (platform VARCHAR(20) PRIMARY KEY, nama VARCHAR(160), avatar VARCHAR(900),
+            PRIMARY KEY (platform, post_id))');
+        $db->statement('CREATE TABLE IF NOT EXISTS cg_akun (platform VARCHAR(20) PRIMARY KEY, nama VARCHAR(160), avatar VARCHAR(900),
             follower BIGINT, open_id VARCHAR(120), access_token TEXT, refresh_token TEXT, token_exp BIGINT, refresh_exp BIGINT,
             scope VARCHAR(255), sync_at BIGINT, sync_galat VARCHAR(400), oleh VARCHAR(120), at BIGINT,
             bio TEXT, profil_url VARCHAR(400), terverifikasi TINYINT DEFAULT 0,
-            following BIGINT DEFAULT 0, likes_total BIGINT DEFAULT 0, jml_video BIGINT DEFAULT 0, stats_ada TINYINT DEFAULT 0)");
+            following BIGINT DEFAULT 0, likes_total BIGINT DEFAULT 0, jml_video BIGINT DEFAULT 0, stats_ada TINYINT DEFAULT 0)');
         $db->statement("CREATE TABLE IF NOT EXISTS cg_bank (id VARCHAR(40) PRIMARY KEY, judul VARCHAR(200), platform VARCHAR(20),
             format VARCHAR(80), pilar VARCHAR(80), hook TEXT, caption TEXT, tanggal DATE NULL, jam VARCHAR(5), alasan TEXT,
             sumber VARCHAR(20) DEFAULT 'manual', batch VARCHAR(40), status VARCHAR(20) DEFAULT 'IDE', jadwal_id VARCHAR(40),
@@ -313,10 +322,12 @@ class CampaignAnalytics
         foreach (['reach', 'impr', 'views', 'likes', 'comments', 'shares', 'saves', 'cta', 'follow'] as $k) {
             if (is_array($api) && array_key_exists($k, $api)) {
                 $out[$k] = ['v' => (float) $api[$k], 's' => 'api'];
+
                 continue;
             }
             if (is_array($manual) && isset($manual[$k]) && $manual[$k] !== '' && is_numeric($manual[$k])) {
                 $out[$k] = ['v' => (float) $manual[$k], 's' => 'manual'];
+
                 continue;
             }
             $out[$k] = ['v' => null, 's' => ''];
@@ -1598,6 +1609,7 @@ class CampaignAnalytics
                 $ix = $this->igInsightMedia($tok, $id);
                 if ($ix === null) {
                     $this->db()->update("UPDATE cg_post SET insight_at=? WHERE platform='instagram' AND post_id=?", [$now, $id]);
+
                     continue;
                 }
                 $this->db()->update("UPDATE cg_post SET views=?, reach=?, saves=?, shares=?, insight_at=? WHERE platform='instagram' AND post_id=?",
