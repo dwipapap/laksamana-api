@@ -76,18 +76,125 @@ class KontenRecords
     public function list(string $resource, array $f, int $page, int $perPage): array
     {
         $r = self::resource($resource);
-        $rows = array_values(array_filter($this->tableRows($r['def'], $f), fn ($x) => is_array($x) && $this->matches($x, $f)));
+        $rows = array_values(array_filter($this->tableRows($r['def'], $f, $resource), fn ($x) => is_array($x) && $this->matches($x, $f, $resource)));
         $total = count($rows);
+        $facets = null;
+        if ($resource === 'content' && ($f['facets'] ?? '') === 'pic') {
+            $facets = $this->picFacets($f);
+        }
+        $rows = array_slice($rows, ($page - 1) * $perPage, $perPage);
+        if ($resource === 'content' && ! empty($f['ringkas'])) {
+            $rows = array_map([self::class, 'projectContent'], $rows);
+        }
 
-        return ['rows' => array_slice($rows, ($page - 1) * $perPage, $perPage), 'total' => $total];
+        return ['rows' => $rows, 'total' => $total, 'facets' => $facets];
     }
 
-    private function tableRows(array $def, array $f): array
+    /**
+     * Slim content projection for list screens (#282): the dozen columns a
+     * table shows, never the heavy blobs (refs photos, detailing, checklist,
+     * discussion, performance). The full row stays on show()/find().
+     */
+    public static function projectContent(array $row): array
+    {
+        $keep = ['id', 'title', 'brand', 'platforms', 'platform', 'pillar',
+            'contentTypes', 'contentType', 'printTypes', 'printType', 'pic',
+            'priority', 'status', 'deadline', 'publishDate', 'publishRecord', 'updatedAt', 'createdAt'];
+
+        return array_intersect_key($row, array_flip($keep));
+    }
+
+    /** PIC choice counts under every OTHER filter (F.13): pic id, or __none__. */
+    private function picFacets(array $f): array
+    {
+        $g = $f;
+        unset($g['pic']);
+        $counts = ['__none__' => 0];
+        $total = 0;
+        foreach ($this->tableRows(self::resource('content')['def'], $g, 'content') as $x) {
+            if (! is_array($x) || ! $this->matches($x, $g, 'content')) {
+                continue;
+            }
+            $total++;
+            $pic = (string) ($x['pic'] ?? '');
+            $counts[$pic !== '' ? $pic : '__none__'] = ($counts[$pic !== '' ? $pic : '__none__'] ?? 0) + 1;
+        }
+        $counts[''] = $total;
+
+        return $counts;
+    }
+
+    private static function normPlatform(mixed $p): string
+    {
+        // Mirror of normPlatform in laksamana-office-vue/app/utils/konten.ts.
+        $s = trim((string) ($p ?? ''));
+        $alias = ['Instagram' => 'IG', 'TikTok' => 'TT', 'YouTube' => 'YT',
+            'Facebook' => 'FB', 'Google Business' => 'Google', 'Google Bisnis' => 'Google'];
+
+        return $alias[$s] ?? $s;
+    }
+
+    /** @return string[] */
+    private static function contentPlatforms(array $row): array
+    {
+        $list = [];
+        if (! empty($row['platforms']) && is_array($row['platforms'])) {
+            $list = $row['platforms'];
+        } elseif (! empty($row['platform'])) {
+            $list = [$row['platform']];
+        }
+        $out = [];
+        foreach ($list as $p) {
+            $n = self::normPlatform($p);
+            if ($n !== '' && ! in_array($n, $out, true)) {
+                $out[] = $n;
+            }
+        }
+
+        return $out;
+    }
+
+    private static function sudahArsip(array $row): bool
+    {
+        return in_array($row['status'] ?? '', ['Posted', 'Cancelled'], true);
+    }
+
+    /** Detailing text, both shapes (F.28): `detail`, else the four old fields. */
+    private static function contentDetail(array $row): string
+    {
+        if (! empty($row['detail'])) {
+            return (string) $row['detail'];
+        }
+        $p = [];
+        if (! empty($row['keyword'])) {
+            $p[] = 'Keyword: '.$row['keyword'];
+        }
+        if (! empty($row['caption'])) {
+            $p[] = "Caption:\n".$row['caption'];
+        }
+        if (! empty($row['hashtags']) && is_array($row['hashtags'])) {
+            $p[] = 'Hashtag: '.implode(' ', $row['hashtags']);
+        }
+        if (! empty($row['script'])) {
+            $p[] = "Script / Storyboard:\n".$row['script'];
+        }
+
+        return implode("\n\n", $p);
+    }
+
+    private function tableRows(array $def, array $f, string $resource = ''): array
     {
         $cols = $def['cols'];
         $where = [];
         $args = [];
-        foreach (['status' => 'status', 'brand' => 'brand', 'pic' => 'pic', 'platform' => 'platform', 'campaign' => 'campaign', 'kolId' => 'kol_id'] as $key => $col) {
+        $skipPlatform = $resource === 'content' && ! empty($f['platform']);
+        foreach (['status' => 'status', 'brand' => 'brand', 'pic' => 'pic', 'platform' => 'platform', 'campaign' => 'campaign', 'kolId' => 'kol_id', 'pillar' => 'pillar'] as $key => $col) {
+            if ($key === 'platform' && $skipPlatform) {
+                continue; // multi-platform match below; the mirror column alone lies
+            }
+            if ($key === 'pic' && $resource === 'content' && ($f['pic'] ?? '') === '__none__') {
+                continue; // __none__ means empty pic, matched in PHP (F.13)
+            }
             if (! empty($f[$key]) && isset($cols[$col])) {
                 $where[] = "`$col` = ?";
                 $args[] = $f[$key];
@@ -109,7 +216,11 @@ class KontenRecords
             $where[] = '`updated_at` > ?';
             $args[] = (int) $f['updatedSince'];
         }
-        $order = ! empty($def['created']) ? KontenSchema::createdOrder() : KontenSchema::idOrder();
+        if ($resource === 'content' && ($f['sort'] ?? '') === 'deadline' && isset($cols['deadline'])) {
+            $order = "COALESCE(NULLIF(`deadline`, ''), '2099-12-31') ASC";
+        } else {
+            $order = ! empty($def['created']) ? KontenSchema::createdOrder() : KontenSchema::idOrder();
+        }
         $sql = "SELECT data FROM `{$def['table']}`".($where ? ' WHERE '.implode(' AND ', $where) : '')." ORDER BY $order";
         $out = [];
         foreach ($this->db()->select($sql, $args) as $row) {
@@ -122,17 +233,43 @@ class KontenRecords
         return $out;
     }
 
-    /** Free-text q on any row (plus the same date/status guards for safety). */
-    private function matches(array $row, array $f): bool
+    /** Free-text q on title + detailing (plus the same date/status guards for safety). */
+    private function matches(array $row, array $f, string $resource = ''): bool
     {
         if (! empty($f['status']) && isset($row['status']) && (string) $row['status'] !== $f['status']) {
             return false;
         }
+        if ($resource === 'content') {
+            // Archive filter is skipped when the status itself is archived (F.2).
+            if (! empty($f['arsip']) && ! (($f['status'] ?? '') !== '' && in_array($f['status'], ['Posted', 'Cancelled'], true))) {
+                $isArsip = self::sudahArsip($row);
+                if (($f['arsip'] === 'arsip') !== $isArsip) {
+                    return false;
+                }
+            }
+            if (! empty($f['pillar']) && (string) ($row['pillar'] ?? '') !== $f['pillar']) {
+                return false;
+            }
+            if (! empty($f['platform']) && ! in_array($f['platform'], self::contentPlatforms($row), true)) {
+                return false;
+            }
+            if (array_key_exists('pic', $f) && $f['pic'] !== '' && $f['pic'] !== null) {
+                $pic = (string) ($row['pic'] ?? '');
+                if ($f['pic'] === '__none__' ? $pic !== '' : $pic !== $f['pic']) {
+                    return false;
+                }
+            }
+        }
         if (! empty($f['updatedSince']) && RowSync::ms($row['updatedAt'] ?? 0) <= (int) $f['updatedSince']) {
             return false;
         }
-        if (! empty($f['q']) && stripos(json_encode($row, JSON_UNESCAPED_UNICODE), (string) $f['q']) === false) {
-            return false;
+        if (! empty($f['q'])) {
+            $hay = $resource === 'content'
+                ? ((string) ($row['title'] ?? '').' '.self::contentDetail($row))
+                : json_encode($row, JSON_UNESCAPED_UNICODE);
+            if (stripos($hay, (string) $f['q']) === false) {
+                return false;
+            }
         }
 
         return true;
