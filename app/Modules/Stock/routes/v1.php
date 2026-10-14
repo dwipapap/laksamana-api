@@ -101,18 +101,22 @@ Route::middleware(['auth:sanctum', 'module:usage'])->prefix('stock')->group(func
 });
 
 // ─── #36: HPP & Resep (the HPP Panel) ───
-// G-25 (#279): Marketing's Menu Kalkulator reads the live HPP recipe graph
-// without holding a stock module — as it already does against the ungated
-// legacy hpp.php/items.php. Read-only; every HPP write stays hpp-only.
+// G-25 (#279, #284): Marketing's Menu Kalkulator reads the live HPP recipe
+// graph without holding a stock module — as it already does against the
+// ungated legacy hpp.php/items.php. Read-only; every HPP write stays hpp-only.
+// NOTE: each URI below exists exactly once in this file. A duplicate
+// identical URI+method collapses to the LAST registration (verified via
+// route:list -v), silently re-gating it — see #281.
 Route::middleware(['auth:sanctum', 'module:hpp|tree|marketing'])->prefix('stock/hpp')->group(function () {
     Route::get('ingredients', [H::class, 'ingredientIndex']);
+    Route::get('ingredients/{nama}', [H::class, 'ingredientShow'])->where('nama', '.+');
     Route::get('recipes', [H::class, 'recipeIndex']);
+    Route::get('recipes/{id}', [H::class, 'recipeShow']);
     Route::get('settings', [H::class, 'settingsShow']);
 });
 
 Route::middleware(['auth:sanctum', 'module:hpp'])->prefix('stock/hpp')->group(function () {
     Route::post('ingredients', [H::class, 'ingredientStore']);
-    Route::get('ingredients/{nama}', [H::class, 'ingredientShow'])->where('nama', '.+');
     Route::patch('ingredients/{nama}', [H::class, 'ingredientUpdate'])->where('nama', '.+');
     Route::delete('ingredients/{nama}', [H::class, 'ingredientDestroy'])->where('nama', '.+');
     Route::post('ingredients-import', [H::class, 'ingredientImport']);
@@ -122,7 +126,6 @@ Route::middleware(['auth:sanctum', 'module:hpp'])->prefix('stock/hpp')->group(fu
     Route::post('align-names', [H::class, 'alignNames']);
 
     Route::post('recipes', [H::class, 'recipeStore']);
-    Route::get('recipes/{id}', [H::class, 'recipeShow']);
     Route::patch('recipes/{id}', [H::class, 'recipeUpdate']);
     Route::delete('recipes/{id}', [H::class, 'recipeDestroy']);
     Route::post('recipes-import', [H::class, 'recipeImport']);
@@ -134,13 +137,8 @@ Route::middleware(['auth:sanctum', 'module:hpp'])->prefix('stock/hpp')->group(fu
 // The one-time move from Excel can wipe HPP (`replace`): HPP admins only.
 Route::middleware(['auth:sanctum', 'module:hpp,admin'])->post('stock/hpp/import', [H::class, 'import']);
 
-// Pohon Resep is a read-only Panel: its Users may read single ingredients and
-// recipes, never write them. (Lists + settings live in the G-25 group above,
-// same handlers.)
-Route::middleware(['auth:sanctum', 'module:tree'])->prefix('stock/hpp')->group(function () {
-    Route::get('ingredients/{nama}', [H::class, 'ingredientShow'])->where('nama', '.+');
-    Route::get('recipes/{id}', [H::class, 'recipeShow']);
-});
+// Pohon Resep reads through the G-25 group above (same handlers); nothing
+// tree-only remains here — the Panel keeps working via hpp|tree|marketing.
 
 // #37: Purchasing crew, Ordering crew, Akses Halaman settings and the training archive.
 Route::middleware(['auth:sanctum', 'module:purchasing,admin'])->prefix('stock')->group(function () {
