@@ -101,6 +101,15 @@ Route::middleware(['auth:sanctum', 'module:usage'])->prefix('stock')->group(func
 });
 
 // ─── #36: HPP & Resep (the HPP Panel) ───
+// G-25 (#279): Marketing's Menu Kalkulator reads the live HPP recipe graph
+// without holding a stock module — as it already does against the ungated
+// legacy hpp.php/items.php. Read-only; every HPP write stays hpp-only.
+Route::middleware(['auth:sanctum', 'module:hpp|tree|marketing'])->prefix('stock/hpp')->group(function () {
+    Route::get('ingredients', [H::class, 'ingredientIndex']);
+    Route::get('recipes', [H::class, 'recipeIndex']);
+    Route::get('settings', [H::class, 'settingsShow']);
+});
+
 Route::middleware(['auth:sanctum', 'module:hpp'])->prefix('stock/hpp')->group(function () {
     Route::get('ingredients', [H::class, 'ingredientIndex']);
     Route::post('ingredients', [H::class, 'ingredientStore']);

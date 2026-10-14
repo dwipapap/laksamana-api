@@ -62,3 +62,16 @@ it('edits the promos document with its version', function () {
         ->assertOk()->assertJsonPath('data.0.nama', 'Promo');
     expect(Modules::db('bd')->selectOne(bdSql("SELECT v FROM settings WHERE k='promos'"))->v)->toBe('[{"id":"pm1","nama":"Promo"}]');
 });
+
+/* G-24 (#279): marketing reads its POs and files its own batch; realisasi stays bd-only. */
+it('opens purchase-orders reads and batch to marketing, realisasi stays bd', function () {
+    $mkt = loginAs(officeUser('u-aurel'));
+    $this->withToken($mkt)->getJson('/api/v1/bd/purchase-orders')->assertOk()->assertJsonPath('error', null);
+    $ids = $this->withToken($mkt)->postJson('/api/v1/bd/purchase-orders/batch', ['items' => [['item' => 'Kertas MKT', 'amount' => 1000]]])
+        ->assertCreated()->json('data.ids');
+    expect($ids)->toHaveCount(1);
+    $this->withToken($mkt)->getJson('/api/v1/bd/purchase-orders/'.$ids[0])->assertOk();
+    $this->withToken($mkt)->putJson("/api/v1/bd/purchase-orders/{$ids[0]}/realisasi", ['realisasi' => 900])
+        ->assertStatus(403)->assertJsonPath('error.code', 'module_not_granted');
+    $this->withToken($mkt)->getJson('/api/v1/bd/tasks')->assertStatus(403);
+});

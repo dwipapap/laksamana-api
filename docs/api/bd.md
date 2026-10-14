@@ -3,7 +3,7 @@
 This is the contract for **laksamana-office-vue**, the old laksamana-office if it migrates, and any other app.
 
 - **Base URL:** `/api/v1/bd`
-- **Auth:** `Authorization: Bearer <token>`, obtained from `POST /api/v1/auth/login {login, pin}`. The account needs module `bd`.
+- **Auth:** `Authorization: Bearer <token>`, obtained from `POST /api/v1/auth/login {login, pin}`. The account needs module `bd` — except `GET /purchase-orders[/{id}]` and `POST /purchase-orders/batch`, open to `bd|marketing` (G-24, #279: the legacy `getAll`/`addPo` had no gate; batch stays insert-only, realisasi stays bd-only).
 - **Envelope:**
   - success: `{data, meta?}`
   - failure: `{error: {code, message, details?}}`
