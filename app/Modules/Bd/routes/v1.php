@@ -26,7 +26,7 @@ Route::middleware(['auth:sanctum', 'module:bd'])->prefix('bd')->group(function (
     Route::put('settings/{key}', [C::class, 'putDocument'])->where('key', $docs);
 
     // cross-module purchasing writes (Finance realisation; Marketing files
-    // its own batch through the G-24 literal route above)
+    // its own batch through the G-24 literal route above, same handler)
     Route::put('purchase-orders/{id}/realisasi', [C::class, 'realisasi']);
 
     $res = 'people|projects|tasks|routines|coord-requests|purchase-orders|purchase-requests|agenda';
