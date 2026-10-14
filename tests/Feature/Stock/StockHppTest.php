@@ -142,6 +142,7 @@ it('opens hpp reads to marketing, writes stay hpp', function () {
     $this->withToken($mkt)->getJson('/api/v1/stock/hpp/ingredients')->assertOk();
     $this->withToken($mkt)->getJson('/api/v1/stock/hpp/recipes')->assertOk();
     $this->withToken($mkt)->getJson('/api/v1/stock/hpp/settings')->assertOk();
+    $this->withToken($mkt)->getJson('/api/v1/stock/hpp/ingredients/Gula Merah')->assertOk();
     $this->withToken($mkt)->postJson('/api/v1/stock/hpp/ingredients', ['nama' => 'MKT Bahan', 'qty_beli' => 1, 'harga_beli' => 1])
         ->assertStatus(403)->assertJsonPath('error.code', 'module_not_granted');
 });
