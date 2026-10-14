@@ -41,7 +41,7 @@ Resources: `users`, `brands`, `campaigns`, `content`, `prod-tasks`, `shootings`,
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/{resource}` | Filters: `from`, `to` (on `tanggal`, else start date), `status`, `brand`, `pic`, `platform`, `campaign`, `kolId`, `updatedSince` (ms), `q` (free text), `page`, `perPage` (≤1000, default 100). Returns `meta.total`. |
+| GET | `/{resource}` | Filters: `from`, `to` (on `tanggal`, else start date), `status`, `brand`, `pic`, `platform`, `campaign`, `kolId`, `updatedSince` (ms), `q` (free text), `page`, `perPage` (≤1000, default 100). Returns `meta.total`. Content extras (#282): `pillar`, `arsip=aktif\|arsip` (skipped when `status` is itself archived, F.2), `sort=deadline` (undated last), `facets=pic` (→ `meta.facets` counts per PIC + `__none__`, ignoring the `pic` filter itself, F.13), `ringkas=1` (slim table projection, no photo/detail blobs — full row stays on `GET /{resource}/{id}`). `platform` matches any of the row's platforms (F.27); `q` searches title + detailing only. |
 | GET | `/{resource}/{id}` | `meta.version` and the `ETag` header hold the version. |
 | POST | `/{resource}` | Body = the record (object). `id` is optional; the server generates `<prefix>_xxxxxxxxxx` if omitted. Returns 201 + version. A duplicate id returns 409 `already_exists`. |
 | PUT | `/{resource}/{id}` | Replaces the whole record. Needs `If-Match: "<version>"` or `"version"` in the body. |

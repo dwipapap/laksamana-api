@@ -113,14 +113,21 @@ class KontenController
             'from' => ['nullable', 'date_format:Y-m-d'], 'to' => ['nullable', 'date_format:Y-m-d'],
             'status' => ['nullable', 'string'], 'brand' => ['nullable', 'string'], 'pic' => ['nullable', 'string'],
             'platform' => ['nullable', 'string'], 'campaign' => ['nullable', 'string'], 'kolId' => ['nullable', 'string'],
+            'pillar' => ['nullable', 'string'], 'arsip' => ['nullable', 'in:aktif,arsip'],
+            'sort' => ['nullable', 'in:deadline'], 'facets' => ['nullable', 'in:pic'],
+            'ringkas' => ['nullable', 'boolean'],
             'updatedSince' => ['nullable', 'integer'], 'q' => ['nullable', 'string', 'max:100'],
             'page' => ['nullable', 'integer', 'min:1'], 'perPage' => ['nullable', 'integer', 'min:1', 'max:1000'],
         ]);
         $page = (int) ($f['page'] ?? 1);
         $per = (int) ($f['perPage'] ?? 100);
         $out = $this->records->list($resource, $f, $page, $per);
+        $meta = ['total' => $out['total'], 'page' => $page, 'perPage' => $per];
+        if (isset($out['facets']) && is_array($out['facets'])) {
+            $meta['facets'] = $out['facets'];
+        }
 
-        return ApiResponse::ok($out['rows'], ['total' => $out['total'], 'page' => $page, 'perPage' => $per]);
+        return ApiResponse::ok($out['rows'], $meta);
     }
 
     public function show(string $resource, string $id): JsonResponse
