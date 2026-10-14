@@ -1,5 +1,6 @@
 <?php
 
+use App\Modules\Konten\Http\V1\CampaignController as CA;
 use App\Modules\Konten\Http\V1\KontenAdminController as AD;
 use App\Modules\Konten\Http\V1\KontenController as C;
 use Illuminate\Support\Facades\Route;
@@ -40,6 +41,52 @@ Route::middleware(['auth:sanctum', 'module:konten'])->prefix('konten')->group(fu
     Route::put('{resource}/{id}', [C::class, 'update'])->where('resource', $res);
     Route::patch('{resource}/{id}', [C::class, 'patch'])->where('resource', $res);
     Route::delete('{resource}/{id}', [C::class, 'destroy'])->where('resource', $res);
+});
+
+// Campaign analytics panel (Insight, Kalender, Riset, Bank Konten, Pengaturan,
+// TikTok/Instagram OAuth) — v1 port of konten-mysql/lib_campaign.php (#276).
+// Gate konten|campaign: the Beranda kartu holds both keys (old Planning = konten,
+// old Analytics = campaign). Settings writes need a campaign module admin.
+Route::middleware(['auth:sanctum', 'module:konten|campaign'])->prefix('konten/analytics')->group(function () {
+    Route::get('state', [CA::class, 'state']);
+    Route::get('top', [CA::class, 'top']);
+    Route::get('accounts', [CA::class, 'accounts']);
+    Route::get('bank', [CA::class, 'bank']);
+    Route::get('settings', [CA::class, 'settings']);
+
+    Route::post('insights', [CA::class, 'saveInsight']);
+    Route::patch('insights/{id}', [CA::class, 'saveInsight']);
+    Route::post('insights/{id}/arsip', [CA::class, 'archiveInsight']);
+    Route::post('insights/suggest', [CA::class, 'suggestInsights']);
+
+    Route::post('schedules', [CA::class, 'saveSchedule']);
+    Route::patch('schedules/{id}', [CA::class, 'saveSchedule']);
+
+    Route::post('research', [CA::class, 'runResearch']);
+
+    Route::post('bank', [CA::class, 'saveBank']);
+    Route::patch('bank/{id}', [CA::class, 'saveBank']);
+    Route::post('bank/{id}/arsip', [CA::class, 'archiveBank']);
+    Route::delete('bank/{id}', [CA::class, 'deleteBank']);
+    Route::post('bank/generate', [CA::class, 'generateBank']);
+
+    Route::post('oauth/tiktok/start', [CA::class, 'tiktokStart']);
+    Route::post('oauth/tiktok/sync', [CA::class, 'tiktokSync']);
+    Route::post('oauth/tiktok/disconnect', [CA::class, 'tiktokDisconnect']);
+    Route::post('oauth/instagram/start', [CA::class, 'igStart']);
+    Route::post('oauth/instagram/sync', [CA::class, 'igSync']);
+    Route::post('oauth/instagram/disconnect', [CA::class, 'igDisconnect']);
+});
+
+Route::middleware(['auth:sanctum', 'module:campaign,admin'])->prefix('konten/analytics')->group(function () {
+    Route::put('settings', [CA::class, 'saveSettings']);
+});
+
+// OAuth callbacks are public: the single-use state token is the guard,
+// like the legacy campaign-tiktok.php / campaign-instagram.php.
+Route::prefix('konten/analytics')->group(function () {
+    Route::get('oauth/tiktok/callback', [CA::class, 'tiktokCallback']);
+    Route::get('oauth/instagram/callback', [CA::class, 'igCallback']);
 });
 
 // G-13 (#187): restore the whole database from a backup file — module admin, typed confirmation PULIHKAN.
