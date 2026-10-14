@@ -127,7 +127,7 @@ Nothing here changes the Stock Today snapshot (the next upload replaces it whole
 
 ## HPP & Resep
 
-Modul `hpp` for everything below (`/hpp/import`: HPP admins). Records are the rows of the old `hpp.php` (snake_case columns). Costs are **not** computed by the server — the client computes them, cascading through recipes that use other recipes — except `per1` = `harga_beli / qty_beli` on each ingredient. `updated_by` is always the acting user. Versions are content hashes (the rename cascade into recipe lines does not bump `updated_at`).
+Modul `hpp` for everything below (`/hpp/import`: HPP admins). Exception (G-25, #279): `GET /hpp/ingredients`, `/hpp/recipes`, `/hpp/settings` also open to `tree|marketing` (read-only — Marketing's Menu Kalkulator reads the live recipe graph, as against the ungated legacy `hpp.php`); every write stays `hpp`. Records are the rows of the old `hpp.php` (snake_case columns). Costs are **not** computed by the server — the client computes them, cascading through recipes that use other recipes — except `per1` = `harga_beli / qty_beli` on each ingredient. `updated_by` is always the acting user. Versions are content hashes (the rename cascade into recipe lines does not bump `updated_at`).
 
 | Method | Path | Notes |
 |---|---|---|

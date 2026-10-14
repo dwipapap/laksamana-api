@@ -135,3 +135,13 @@ it('refuses the import (409) while HPP holds data, for an admin', function () {
     $this->withToken(loginAs(officeUser('u-wandi')))->postJson('/api/v1/stock/hpp/import', ['bahan' => [['nama' => 'X']]])
         ->assertStatus(409)->assertJsonPath('error.code', 'hpp_not_empty');
 });
+
+/* G-25 (#279): marketing reads the live recipe graph for its kalkulator; writes stay hpp. */
+it('opens hpp reads to marketing, writes stay hpp', function () {
+    $mkt = loginAs(officeUser('u-aurel'));
+    $this->withToken($mkt)->getJson('/api/v1/stock/hpp/ingredients')->assertOk();
+    $this->withToken($mkt)->getJson('/api/v1/stock/hpp/recipes')->assertOk();
+    $this->withToken($mkt)->getJson('/api/v1/stock/hpp/settings')->assertOk();
+    $this->withToken($mkt)->postJson('/api/v1/stock/hpp/ingredients', ['nama' => 'MKT Bahan', 'qty_beli' => 1, 'harga_beli' => 1])
+        ->assertStatus(403)->assertJsonPath('error.code', 'module_not_granted');
+});
