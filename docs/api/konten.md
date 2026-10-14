@@ -102,3 +102,56 @@ Store the returned `key` inside the record (e.g. in an attachment field or a `?a
 | Method | Path | Notes |
 |---|---|---|
 | POST | `/konten/admin/restore` | **Module admin.** `{konfirmasi: "PULIHKAN", data: {…backup JSON…}}` — `restoreJSON` of the old Pengaturan: the whole database is REPLACED by the file. Every collection the file carries is emptied first (otherwise the ordering guard keeps rows newer than the file), then the file goes through the normal saveAll — one transaction under `konten_save`. Logs stay append-only. `data` must carry `users` and `brands` (arrays), else 422 `invalid_backup`. A file without `perms` leaves the stored `perms` as they are (the old page filled the default client-side). → `{restored, jumlah, bentrok}` |
+
+## Analytics — Campaign panel (#276)
+
+v1 port of `konten-mysql/lib_campaign.php`: the Konten Analytics panel
+(Insight, Kalender, Riset, Bank Konten, Pengaturan, TikTok/Instagram OAuth).
+Base: `/api/v1/konten/analytics`. Gate `konten|campaign` (the Beranda kartu
+holds both keys); settings writes need a campaign module admin; the two
+OAuth callbacks are public (the single-use state token is the guard, like
+legacy) and redirect to the Vue app (`OFFICE_VUE_URL`, else `APP_URL`).
+
+Reads and writes share the physical `cg_*` tables with the old analytics
+frontend (created with `CREATE TABLE IF NOT EXISTS`, same shape as
+`cg_pastikan`), under the same `konten_save` lock. Writes append
+`<Label> … (API)` to the module audit trail.
+
+Insight/jadwal/bank rows carry `version` = `diubah_at` (fallback
+`dibuat_at`), in `meta.version` + `ETag`. Updates need it (`If-Match` or
+`version` in the body): missing → 428 `version_required`, stale → 409
+`version_conflict` + `error.details.current`, identical payload → no-op
+success. Validation messages are the legacy Indonesian strings verbatim.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/analytics/state` | Full read: insight (≤1000), jadwal (≤1500), riset (30, decoded), bank (≤1000), postInfo, akun (no tokens), setting summary, `boleh.admin`. |
+| GET | `/analytics/top?platform&urut=views\|er&dari&sampai&hal&per` | One page of top posts (API pulls + Input Performa, deduped by url, WIB dates). `per` clamped 5–50. → `{baris, total, hal, per, halMaks}`. Each row: `rinci` (9 numbers, `v` + `s` = api/manual/''), `tercatat`, `er`. |
+| GET | `/analytics/accounts` | Connected accounts (no tokens), each with `terhubung`. |
+| GET | `/analytics/bank?status=IDE\|TERJADWAL\|ARSIP&platform` | Bank Konten ideas (≤1000). |
+| GET | `/analytics/settings` | Setting summary (no secrets): aiSiap/aiModel/ai, kategori, profil, tiktokSiap, redirectUri, igSiap, igRedirectUri. |
+| PUT | `/analytics/settings` | **Campaign admin.** Secrets: empty = keep, `HAPUS` = clear. `aiModelMeta` from the closed list; `kategori` non-empty (≤20×60); `profil` ≤1500. |
+| POST/PATCH | `/analytics/insights[/{id}]` | `{platform, kategori, temuan*, url* (https), tglTayang*, metrik, aksi, sumber}`. |
+| POST | `/analytics/insights/{id}/arsip` | `{arsip: bool}`. |
+| POST | `/analytics/insights/suggest` | AI suggestions (never stored): invented urls dropped, off-list categories emptied. |
+| POST/PATCH | `/analytics/schedules[/{id}]` | `{platform, judul*, tanggal*, jam (JJ:MM), status (DRAF/TERJADWAL/TAYANG/BATAL), insightId, pic, tautan (https, required for TAYANG), catatan, bankId}` — `bankId` marks the idea TERJADWAL. |
+| POST | `/analytics/research` | `{topik*, platform, catatan}` → AI tren research, stored in `cg_riset`. 1–2 min; the failure stays readable (not a toast). |
+| POST/PATCH | `/analytics/bank[/{id}]` | `{judul*, platform, format, pilar, hook, caption, tanggal, jam, alasan, sumber (manual/riset), batch}`. Status/jadwal_id untouched (see arsip/schedules). |
+| POST | `/analytics/bank/{id}/arsip` | `{arsip: bool}` — restore returns to TERJADWAL when it has a jadwal. |
+| DELETE | `/analytics/bank/{id}` | ARSIP only (enforced in SQL); schedules born from the idea stay. |
+| POST | `/analytics/bank/generate` | `{dari*, sampai* (≤62 days), platform, jumlah (3–20), fokus}` → AI planning stored as IDE ideas (≤20). Out-of-range dates and off-list pilars emptied. |
+| POST | `/analytics/oauth/tiktok/start` | → `{url}` (state, 15 min). Needs client key+secret. |
+| GET | `/analytics/oauth/tiktok/callback?code&state` | Public. Exchanges, saves token, syncs once, redirects to Vue `?tiktok=ok\|gagal&pesan=…#insight`. |
+| POST | `/analytics/oauth/tiktok/sync` | Profile + 2 newest pages + 5 history pages + 40 oldest refresh (≤9 TikTok calls). Missing videos → `hilang=1`. Errors stored in `sync_galat`. → `{jumlah, total, riwayatSelesai}`. |
+| POST | `/analytics/oauth/tiktok/disconnect` | Clears tokens (posts stay). |
+| POST | `/analytics/oauth/instagram/start` | → `{url}` (business login, `force_authentication=1`). |
+| GET | `/analytics/oauth/instagram/callback?code&state` | Public. Short token → 60-day token, syncs once, redirects `?instagram=ok\|gagal&pesan=…#insight`. |
+| POST | `/analytics/oauth/instagram/sync` | Profile + 1×50 newest + 3 history pages + 25 media insights (tiered `views,reach,saved,shares` → `reach,saved` → `reach`; missing → null). Token refreshed when <30 days left and older than 24 h. |
+| POST | `/analytics/oauth/instagram/disconnect` | Clears tokens (posts stay). |
+
+Secrets precedence: `META_MODEL_API_KEY`, `TIKTOK_CLIENT_KEY/SECRET`,
+`INSTAGRAM_APP_ID/SECRET` from the environment win over the settings table
+(like `config.php` constants won in legacy). OAuth redirect URIs are
+`{API_PUBLIC_URL}/api/v1/konten/analytics/oauth/{tiktok,instagram}/callback`
+(both must be registered in the TikTok/Meta apps, dev and production).
+`OFFICE_VUE_URL` tells the callbacks where the Vue app lives.
