@@ -111,7 +111,6 @@ Route::middleware(['auth:sanctum', 'module:hpp|tree|marketing'])->prefix('stock/
 });
 
 Route::middleware(['auth:sanctum', 'module:hpp'])->prefix('stock/hpp')->group(function () {
-    Route::get('ingredients', [H::class, 'ingredientIndex']);
     Route::post('ingredients', [H::class, 'ingredientStore']);
     Route::get('ingredients/{nama}', [H::class, 'ingredientShow'])->where('nama', '.+');
     Route::patch('ingredients/{nama}', [H::class, 'ingredientUpdate'])->where('nama', '.+');
@@ -122,7 +121,6 @@ Route::middleware(['auth:sanctum', 'module:hpp'])->prefix('stock/hpp')->group(fu
     Route::post('remove-shadows', [H::class, 'removeShadows']);
     Route::post('align-names', [H::class, 'alignNames']);
 
-    Route::get('recipes', [H::class, 'recipeIndex']);
     Route::post('recipes', [H::class, 'recipeStore']);
     Route::get('recipes/{id}', [H::class, 'recipeShow']);
     Route::patch('recipes/{id}', [H::class, 'recipeUpdate']);
@@ -131,17 +129,16 @@ Route::middleware(['auth:sanctum', 'module:hpp'])->prefix('stock/hpp')->group(fu
 
     Route::get('usage/{bulan}', [H::class, 'monthShow']);
     Route::patch('usage/{bulan}', [H::class, 'monthUpdate']);
-    Route::get('settings', [H::class, 'settingsShow']);
     Route::patch('settings', [H::class, 'settingsUpdate']);
 });
 // The one-time move from Excel can wipe HPP (`replace`): HPP admins only.
 Route::middleware(['auth:sanctum', 'module:hpp,admin'])->post('stock/hpp/import', [H::class, 'import']);
 
-// Pohon Resep is a read-only Panel: its Users may read the recipe graph, never write it.
+// Pohon Resep is a read-only Panel: its Users may read single ingredients and
+// recipes, never write them. (Lists + settings live in the G-25 group above,
+// same handlers.)
 Route::middleware(['auth:sanctum', 'module:tree'])->prefix('stock/hpp')->group(function () {
-    Route::get('ingredients', [H::class, 'ingredientIndex']);
     Route::get('ingredients/{nama}', [H::class, 'ingredientShow'])->where('nama', '.+');
-    Route::get('recipes', [H::class, 'recipeIndex']);
     Route::get('recipes/{id}', [H::class, 'recipeShow']);
 });
 
