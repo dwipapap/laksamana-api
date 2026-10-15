@@ -35,6 +35,8 @@ final class HrisPengingatCommand extends Command
             $this->line('Persetujuan menunggu diingatkan: '.$tunggu['diingatkan']);
             $ajar = $pengingat->tenggatBelajar();
             $this->line('Tenggat belajar diingatkan: '.$ajar['diingatkan']);
+            $ob = $pengingat->onboardingJatuhTempo();
+            $this->line('Onboarding lewat tenggat diingatkan: '.$ob['diingatkan']);
         }
         $this->info('Selesai.');
 

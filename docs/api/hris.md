@@ -302,6 +302,30 @@ after 12 months (`hris:harian`); HR can delete manually.
   ringkasan}`. The score is advice; HR moves the stages. Every result is
   stored with provider, model and prompt version.
 
+## B6 — coordination tickets and onboarding
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/hris/coordination?status&divisi` | Scoped (own division traffic + own tickets; heads their divisions; HR all) |
+| POST | `/hris/coordination` | `{judul, keDivisi, prioritas?, tenggat?, proyek?, detail?}` — from your division, status `Diminta`. `201` |
+| GET | `/hris/coordination/{id}` | One ticket with the BD version (`berubah`) |
+| PATCH | `/hris/coordination/{id}` | `{pelaksana?, status?, berubah}` — target head assigns; assignee/head/HR advance `Diminta → Diproses → Review → Selesai` (forward only; stale `berubah` is `409` with the live record) |
+| GET | `/hris/design-requests` | Marketing → Konten requests, read-only |
+| GET | `/hris/design-requests/{id}` | One request, read-only (reference bytes withheld) |
+| GET | `/hris/onboarding/templates` | HR division templates |
+| POST | `/hris/onboarding/templates` | `{divisi, langkah: [{kunci, judul, tenggat_hari?}], program_akademi_id?}`. `201` |
+| GET | `/hris/onboarding?user` | Scoped checklists with progress |
+| POST | `/hris/onboarding/start` | `{user, mulai, divisi?}` — steps from the template (or the O1 fallback), deadlines from `mulai`, Akademi program linked. `201` |
+| POST | `/hris/onboarding/{id}/langkah/{kunci}` | `{selesai, catatan?}` — self/HR; `eval-*` takes HR/head |
+
+- Ticket rows live in BD (`coord-requests`) and are touched only through
+  `BdRecords` — same lock, same `RowSync`, same version guard as the BD
+  panel. The assignee stores the legacy User id (stable across renames).
+- Onboarding learning stays in Akademi (linked program id + title/deadline
+  read, never copied); program progress rows are deliberately not written
+  (no invented conventions in Akademi's store). Overdue steps join the
+  daily reminders.
+
 ## For laksamana-hris
 
 `packages/api` generates types from `openapi.json` (tag `hris`). Mobile:

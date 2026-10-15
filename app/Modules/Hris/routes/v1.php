@@ -2,11 +2,14 @@
 
 use App\Modules\Hris\Http\V1\HrisBalanceController as B;
 use App\Modules\Hris\Http\V1\HrisCalendarController as K;
+use App\Modules\Hris\Http\V1\HrisCoordinationController as T;
+use App\Modules\Hris\Http\V1\HrisDesignRequestController as G;
 use App\Modules\Hris\Http\V1\HrisDeviceController as V;
 use App\Modules\Hris\Http\V1\HrisDisiplinController as D;
 use App\Modules\Hris\Http\V1\HrisFaceController as F;
 use App\Modules\Hris\Http\V1\HrisKpiController as P;
 use App\Modules\Hris\Http\V1\HrisMealController as E;
+use App\Modules\Hris\Http\V1\HrisOnboardingController as J;
 use App\Modules\Hris\Http\V1\HrisPelamarController as A;
 use App\Modules\Hris\Http\V1\HrisPermintaanController as N;
 use App\Modules\Hris\Http\V1\HrisMeController as M;
@@ -108,4 +111,21 @@ Route::middleware(['auth:sanctum', 'module:hris'])->prefix('hris')->group(functi
     Route::post('pelamar/{id}/screen', [A::class, 'screen'])->where('id', '[A-Za-z0-9-]+');
     Route::get('pelamar/{id}/screening', [A::class, 'riwayat'])->where('id', '[A-Za-z0-9-]+');
     Route::delete('pelamar/{id}', [A::class, 'destroy'])->where('id', '[A-Za-z0-9-]+');
+
+    // Coordination tickets via BD + read-only design requests (B6: R6),
+    // onboarding checklist (B6: O1).
+    Route::get('coordination', [T::class, 'index']);
+    Route::post('coordination', [T::class, 'store']);
+    Route::get('coordination/{id}', [T::class, 'show'])->where('id', '[A-Za-z0-9._-]+');
+    Route::patch('coordination/{id}', [T::class, 'update'])->where('id', '[A-Za-z0-9._-]+');
+
+    Route::get('design-requests', [G::class, 'index']);
+    Route::get('design-requests/{id}', [G::class, 'show'])->where('id', '[A-Za-z0-9._-]+');
+
+    Route::get('onboarding/templates', [J::class, 'templates']);
+    Route::post('onboarding/templates', [J::class, 'saveTemplate']);
+    Route::get('onboarding', [J::class, 'index']);
+    Route::post('onboarding/start', [J::class, 'start']);
+    Route::post('onboarding/{id}/langkah/{kunci}', [J::class, 'langkah'])
+        ->where('id', '[A-Za-z0-9-]+')->where('kunci', '[A-Za-z0-9._-]+');
 });

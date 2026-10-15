@@ -11,6 +11,7 @@ use App\Modules\Hris\Models\HrisKetukan;
 use App\Modules\Hris\Models\HrisPengajuan;
 use App\Modules\Hris\Models\HrisPushToken;
 use App\Modules\Hris\Models\HrisReminderLog;
+use App\Modules\Hris\Models\HrisSaldoMutasi;
 use App\Modules\Jadwal\Services\HeadDirectory;
 use App\Modules\Jadwal\Services\JadwalService;
 use App\Support\Divisi;
@@ -35,7 +36,7 @@ final class HrisReminderService
         private readonly OfficeAccess $access,
         private readonly AccountRepository $users,
         private readonly AkademiRecords $akademi,
-        private readonly HrisAuditService $audit,
+        private readonly HrisOnboardingService $onboarding,
     ) {}
 
     private static function s(mixed $v): string
@@ -307,7 +308,6 @@ final class HrisReminderService
     }
 
     // ---------------------------------------------------------------- 7 study
-
     /**
      * 7. Akademi/training near deadline: weekly nudge listing unfinished
      * mandatory materials. (Program-level deadlines ride along when Akademi
@@ -365,6 +365,24 @@ final class HrisReminderService
             }
             if ($n >= 500) {
                 break;
+            }
+        }
+
+        return ['diingatkan' => $n];
+    }
+
+    /**
+     * Overdue onboarding steps (B6, incl. the 30/60/90-day reviews): one
+     * nudge per step. Runs inside `hris:pengingat harian`.
+     */
+    public function onboardingJatuhTempo(?string $today = null): array
+    {
+        $today = PunchRules::tglValid($today ?? PunchRules::tglWib(PunchRules::ms()));
+        $n = 0;
+        foreach ($this->onboarding->langkahJatuhTempo($today) as $l) {
+            if ($this->ingatkan($l['user_id'], 'onboarding_tenggat', $l['onboarding_id'].'|'.$l['kunci'],
+                'Langkah onboarding lewat tenggat', $l['judul'].' sudah lewat tenggat.')) {
+                $n++;
             }
         }
 
