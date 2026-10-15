@@ -20,7 +20,7 @@ final class HrisHarianCommand extends Command
 {
     protected $signature = 'hris:harian';
 
-    protected $description = 'PH harian, PH hangus, sinkron cuti Jadwal lama, retensi pelamar';
+    protected $description = 'PH harian, PH hangus, sinkron cuti Jadwal lama, rekonsiliasi sel Jadwal, retensi pelamar';
 
     public function handle(HrisHarianService $harian, HrisRekrutmenService $rekrutmen): int
     {
@@ -32,6 +32,11 @@ final class HrisHarianCommand extends Command
         $this->line('Cuti Jadwal lama dipakai: '.$cuti['dipakai']);
         if ($cuti['terlewat'] !== []) {
             $this->warn('Terlewat (saldo kurang): '.implode(', ', $cuti['terlewat']));
+        }
+        $rek = $harian->rekonsiliasiJadwal();
+        $this->line('Pengajuan DISETUJUI diperiksa: '.$rek['diperiksa']);
+        if ($rek['hilang'] !== []) {
+            $this->warn('Sel Jadwal hilang: '.implode(', ', array_slice($rek['hilang'], 0, 10)));
         }
         $hapus = $rekrutmen->hapusKedaluwarsa(PunchRules::tglWib(PunchRules::ms()));
         $this->line('Pelamar kedaluwarsa dihapus: '.$hapus);

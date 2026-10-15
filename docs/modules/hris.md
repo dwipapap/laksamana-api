@@ -97,7 +97,6 @@ results cite it.
 | O1 | Onboarding | Akademi program(s) per Divisi (company knowledge + technical skills), auto-assigned, plus an HRIS checklist for non-learning steps (contract, uniform, accounts, buddy, 30/60/90-day review) |
 
 ### Reminders (push via Expo → FCM/APNs; Laravel scheduler from a cPanel cron)
-
 1. No MASUK X minutes after the shift starts.
 2. Left the area without a PULANG (geofence).
 3. Entered the area without a MASUK (geofence).
@@ -107,6 +106,17 @@ results cite it.
 7. An Akademi or onboarding deadline is near.
 
 Contract-expiry reminders follow once contracts exist (⏳).
+
+## Jadwal write-back risk (accepted, reconciled daily)
+
+Approval writes roster cells on the legacy Jadwal connection outside the
+core transaction (two databases cannot share one). If the core commit fails
+after the cells are written, the request stays MENUNGGU_HRD while the cells
+exist; HR re-decides and the retry rewrites the same cells, so the state
+heals itself. Whatever is still missing is reported by the daily
+`hris:harian` reconciliation (`rekonsiliasiJadwal`: approved requests whose
+roster cells are fully absent → `jadwal_sel_hilang` audit) instead of being
+silently trusted.
 
 ## Pending (⏳ HR mentor)
 

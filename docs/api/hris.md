@@ -24,10 +24,10 @@ Code: `app/Modules/Hris`.
 | POST | `/hris/punches` | self | Punch in/out. Repeated MASUK → `200 {duplikat:true}`; repeated PULANG overwrites. `201` otherwise |
 | GET | `/hris/punches?from&to&user` | scoped | History. Crew are forced to their own rows; heads to their divisions |
 | GET | `/hris/punches/{id}/photo` | scoped | Audit photo (self, HR, head of division) |
-| GET | `/hris/queue` | HR + head | Queued punches, longest-waiting first |
+| GET | `/hris/queue` | HR + head | Queued punches, longest-waiting first (rows carry `nama` + `divisi`; no server filters — filter client-side) |
 | POST | `/hris/punches/{id}/decision` | HR + head | `{status: VALID\|DITOLAK, nota?, berubah}` — the seen version; stale → `409 version_conflict`, decided → `409 already_decided` |
 | POST | `/hris/faces/me` | self | Enrol own face: `{descriptor[], model, foto?, consent: true}`. Active at once. Duplicate of another's → `409 wajah_milik_orang_lain` + HR audit |
-| GET | `/hris/faces` | HR | Enrolled faces, **without** descriptors |
+| GET | `/hris/faces` | HR | Enrolled faces, **without** descriptors (`user_id`, `nama`, `model`, `consent_at`, `dibuat_oleh`, `ada_foto`, `version`) |
 | GET | `/hris/faces/{userId}/photo` | HR | Enrolment photo stream |
 | DELETE | `/hris/faces/{userId}` | HR | Reset: the person may enrol again |
 | GET | `/hris/locations` | all | Attendance locations (read is open; the punch screen needs them) |
@@ -58,7 +58,8 @@ Code: `app/Modules/Hris`.
 
 ```json
 {
-  "id": "01j…", "user_id": "u-dwipa", "tanggal_kerja": "2026-10-20",
+  "id": "01j…", "user_id": "u-dwipa", "nama": "Dwipa", "divisi": "bar",
+  "tanggal_kerja": "2026-10-20",
   "arah": "MASUK", "waktu": 1760918400000, "jam": "09:00",
   "lokasi_id": "01j…", "jarak_m": 42, "dalam_area": true,
   "shift_kode": "PAGI", "shift_mulai": "08:00", "shift_selesai": "17:00",
@@ -155,9 +156,10 @@ drives it (docs/deploy.md).
 | DELETE | `/hris/calendar/{id}` | HR | `{hapus: 1}` |
 | POST | `/hris/calendar/import` | HR | `{libur: [{tanggal, nama, jenis?}]}` or multipart `file` (.json/.csv). Upsert by date: `{dibuat, diperbarui}` |
 | GET | `/hris/balances/me` | self | `{PH: {saldo, hangus_dekat}, CUTI: {saldo, jatah_tahunan}}` |
-| GET | `/hris/balances?user` | scoped | Always a list (HR without a filter sees their own) |
+| GET | `/hris/balances?user` | scoped | Always a list (HR without a filter sees their own); rows carry `nama` |
+| GET | `/hris/balances/mutations?user` | scoped | Ledger history newest-first (`id,tanggal,jenis,delta,sumber,catatan,kedaluwarsa`); crew see their own |
 | POST | `/hris/balances/adjust` | HR | `{user, jenis, delta, catatan}` — reason required; negative beyond balance is `422 saldo_kurang` |
-| GET | `/hris/requests?user&status&jenis` | scoped | Request list (max 500) |
+| GET | `/hris/requests?user&status&jenis` | scoped | Request list (max 500); rows carry the requester's `nama` |
 | POST | `/hris/requests` | self | `{jenis, dari, sampai?, alasan, lampiran?, lampiran_nama?}` — IZIN needs proof; CUTI/PH need balance. `201` |
 | GET | `/hris/requests/{id}` | scoped | One request |
 | GET | `/hris/requests/{id}/lampiran` | scoped | Attachment download |

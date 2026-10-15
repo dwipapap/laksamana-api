@@ -79,12 +79,11 @@ final class HrisScoreController extends HrisBaseController
     /** Lock the month (HR). */
     public function kunci(Request $r): JsonResponse
     {
-        $d = $r->validate(['bulan' => ['required', 'date_format:Y-m']]);
         $me = $this->me($r);
+        $this->lingkup->assertHr($me, 'Mengunci skor');
+        $d = $r->validate(['bulan' => ['required', 'date_format:Y-m']]);
 
         return $this->run(function () use ($me, $d) {
-            $this->lingkup->assertHr($me, 'Mengunci skor');
-
             return $this->skor->kunci($d['bulan'], self::s($me['name']));
         });
     }
@@ -109,15 +108,14 @@ final class HrisScoreController extends HrisBaseController
     /** New formula version (HR). Locked snapshots keep their old version. */
     public function saveFormula(Request $r): JsonResponse
     {
+        $me = $this->me($r);
+        $this->lingkup->assertHr($me, 'Mengatur formula');
         $d = $r->validate([
             'komponen' => ['required', 'array'],
             'berlaku_dari' => ['required', 'date_format:Y-m-d'],
         ]);
-        $me = $this->me($r);
 
         return $this->run(function () use ($me, $d) {
-            $this->lingkup->assertHr($me, 'Mengatur formula');
-
             return $this->skor->saveFormula($d['komponen'], $d['berlaku_dari'], self::s($me['name']));
         }, 201);
     }

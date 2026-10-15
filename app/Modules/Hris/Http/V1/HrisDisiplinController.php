@@ -43,6 +43,8 @@ final class HrisDisiplinController extends HrisBaseController
 
     public function store(Request $r): JsonResponse
     {
+        $me = $this->me($r);
+        $this->lingkup->assertHr($me, 'Mencatat pelanggaran');
         $d = $r->validate([
             'user' => ['required', 'string', 'max:64'],
             'tanggal' => ['required', 'date_format:Y-m-d'],
@@ -51,11 +53,8 @@ final class HrisDisiplinController extends HrisBaseController
             'sp_ke' => ['nullable', 'integer', 'min:0', 'max:10'],
             'keterangan' => ['nullable', 'string', 'max:255'],
         ]);
-        $me = $this->me($r);
 
         return $this->run(function () use ($me, $d) {
-            $this->lingkup->assertHr($me, 'Mencatat pelanggaran');
-
             return $this->disiplin->shape($this->disiplin->create($d, self::s($me['name'])));
         }, 201);
     }

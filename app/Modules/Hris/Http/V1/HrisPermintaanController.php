@@ -29,11 +29,16 @@ final class HrisPermintaanController extends HrisBaseController
 
     public function index(Request $r): JsonResponse
     {
+        // Coarse gate first: crew get 403 even with an invalid filter.
+        $me = $this->me($r);
+        if (! $this->lingkup->isHr($me) && ! $this->access->isSuperadmin(self::s($me['id']))
+            && ! $this->lingkup->isHead($me)) {
+            throw new HrisError('forbidden', 'Permintaan tenaga untuk Kepala Divisi dan HR.', 403);
+        }
         $d = $r->validate([
             'divisi' => ['nullable', 'string', 'max:64'],
             'status' => ['nullable', 'string', 'max:16'],
         ]);
-        $me = $this->me($r);
 
         return $this->run(function () use ($me, $d) {
             if ($this->lingkup->isHr($me) || $this->access->isSuperadmin(self::s($me['id']))) {
@@ -56,6 +61,10 @@ final class HrisPermintaanController extends HrisBaseController
 
     public function store(Request $r): JsonResponse
     {
+        $me = $this->me($r);
+        if (! $this->lingkup->isHr($me) && ! $this->lingkup->isHead($me)) {
+            throw new HrisError('forbidden', 'Permintaan tenaga diajukan Kepala Divisi atau HR.', 403);
+        }
         $d = $r->validate([
             'divisi' => ['required', 'string', 'max:64'],
             'posisi' => ['required', 'string', 'max:120'],
@@ -65,7 +74,6 @@ final class HrisPermintaanController extends HrisBaseController
             'dibutuhkan_tgl' => ['nullable', 'date_format:Y-m-d'],
             'kualifikasi' => ['nullable', 'string', 'max:2000'],
         ]);
-        $me = $this->me($r);
 
         return $this->run(fn () => $this->rekrutmen->bentukPermintaan(
             $this->rekrutmen->buatPermintaan($me, $d)), 201);

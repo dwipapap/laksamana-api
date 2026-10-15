@@ -40,13 +40,16 @@ final class HrisQueueController extends HrisBaseController
 
     public function decide(Request $r, string $id): JsonResponse
     {
+        // Coarse gate first: crew get 403 even with an invalid body.
+        // The fine-grained check (own punch, division) still runs inside.
+        $me = $this->me($r);
+        $this->lingkup->queueScope($me);
         $d = $r->validate([
             'status' => ['required', 'string', 'max:16'],
             'nota' => ['nullable', 'string', 'max:255'],
             'berubah' => ['nullable', 'integer', 'min:1'],
             'version' => ['nullable', 'integer', 'min:1'],
         ]);
-        $me = $this->me($r);
 
         return $this->run(function () use ($me, $id, $d) {
             $row = HrisKetukan::query()->find($id);

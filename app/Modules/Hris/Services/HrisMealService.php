@@ -135,7 +135,7 @@ final class HrisMealService
         $nominal = $this->nominalUntuk($divisi, $grade, $bulan.'-28');
         $hari = count($dates);
 
-        return ['user_id' => $userId, 'divisi' => $divisi, 'grade' => $grade,
+        return ['user_id' => $userId, 'nama' => $this->namaOf($userId), 'divisi' => $divisi, 'grade' => $grade,
             'hari_hadir' => $hari, 'nominal' => $nominal, 'total' => $hari * $nominal,
             'rincian' => $dates];
     }
@@ -220,7 +220,8 @@ final class HrisMealService
             $rows = [];
             $total = 0;
             foreach (HrisRekapUangMakan::query()->where('periode_id', $periode->id)->orderBy('user_id')->get() as $r) {
-                $rows[] = ['user_id' => $r->user_id, 'divisi' => $r->divisi, 'grade' => $r->grade,
+                $rows[] = ['user_id' => $r->user_id, 'nama' => $this->namaOf($r->user_id),
+                    'divisi' => $r->divisi, 'grade' => $r->grade,
                     'hari_hadir' => (int) $r->hari_hadir, 'nominal' => (int) $r->nominal,
                     'total' => (int) $r->total, 'rincian' => $r->rincian ?? []];
                 $total += (int) $r->total;
@@ -295,5 +296,16 @@ final class HrisMealService
         }
 
         return mb_substr(trim((string) ($u['job_level'] ?? $u['jobLevel'] ?? '')), 0, 64);
+    }
+
+    private function namaOf(string $userId): string
+    {
+        try {
+            $u = $this->users->userById($userId);
+
+            return $u ? trim((string) ($u['name'] ?? $userId)) : $userId;
+        } catch (\Throwable) {
+            return $userId;
+        }
     }
 }

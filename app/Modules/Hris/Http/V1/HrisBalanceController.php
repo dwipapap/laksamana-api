@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Hris\Http\V1;
 
+use App\Auth\AccountRepository;
 use App\Auth\OfficeAccess;
 use App\Modules\Hris\Services\CutiEntitlement;
 use App\Modules\Hris\Services\HrisBalanceService;
@@ -23,6 +24,7 @@ final class HrisBalanceController extends HrisBaseController
         private readonly HrisBalanceService $saldo,
         private readonly HrisLingkup $lingkup,
         private readonly CutiEntitlement $jatah,
+        private readonly AccountRepository $users,
     ) {
         parent::__construct($access);
     }
@@ -47,26 +49,56 @@ final class HrisBalanceController extends HrisBaseController
             $scope = $this->lingkup->scopeUsers($me, $req === '' ? null : $req);
             $out = [];
             foreach ($scope ?? [self::s($me['id'])] as $uid) {
-                $out[] = ['user_id' => $uid] + $this->saldo->ringkas($uid, $this->jatah->jatahTahunan($uid));
+                $out[] = ['user_id' => $uid, 'nama' => $this->nama($uid)]
+                    + $this->saldo->ringkas($uid, $this->jatah->jatahTahunan($uid));
             }
 
             return $out;
         });
     }
 
+    /** Ledger history for one person, scoped by Lingkup (C2 riwayat mutasi). */
+    public function mutations(Request $r): JsonResponse
+    {
+        $d = $r->validate(['user' => ['nullable', 'string', 'max:64']]);
+        $me = $this->me($r);
+
+        return $this->run(function () use ($me, $d) {
+            $req = self::s($d['user'] ?? '');
+            if ($req === '') {
+                $req = self::s($me['id']);
+            }
+            $this->lingkup->assertCanSee($me, $req);
+
+            return ['user_id' => $req, 'nama' => $this->nama($req),
+                'mutasi' => $this->saldo->riwayat($req)];
+        });
+    }
+
+    private function nama(string $userId): string
+    {
+        try {
+            $u = $this->users->userById($userId);
+
+            return $u ? (string) ($u['name'] ?? $userId) : $userId;
+        } catch (\Throwable) {
+            return $userId;
+        }
+    }
+
     /** HR manual adjustment (positive or negative, reason required). */
     public function adjust(Request $r): JsonResponse
     {
+        $me = $this->me($r);
+        $this->lingkup->assertHr($me, 'Menyesuaikan saldo');
         $d = $r->validate([
             'user' => ['required', 'string', 'max:64'],
             'jenis' => ['required', 'string', 'max:8'],
             'delta' => ['required', 'integer', 'min:-365', 'max:365'],
             'catatan' => ['required', 'string', 'max:255'],
         ]);
-        $me = $this->me($r);
 
         return $this->run(function () use ($me, $d) {
-            $this->lingkup->assertHr($me, 'Menyesuaikan saldo');
             $this->saldo->adjust(self::s($me['name']), self::s($d['user']),
                 self::s($d['jenis']), (int) $d['delta'], self::s($d['catatan']));
 

@@ -2,6 +2,7 @@
 
 use App\Auth\Middleware\RequireModule;
 use App\Modules\Automation\Http\Middleware\RequireAutomationToken;
+use App\Modules\Hris\Services\HrisError;
 use App\Support\Api\ApiResponse;
 use App\Support\Legacy\LegacyCors;
 use App\Support\Maintenance\RejectModuleWrites;
@@ -47,6 +48,12 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $exceptions->render(function (ValidationException $e, Request $r) use ($isV1) {
             return $isV1($r) ? ApiResponse::error('validation_failed', $e->getMessage(), 422, $e->errors()) : null;
+        });
+        // HRIS service errors thrown before the controller's run() wrapper
+        // (auth checks run before validation, so 403 precedes 422) still use
+        // the v1 envelope with their own code and status.
+        $exceptions->render(function (HrisError $e, Request $r) use ($isV1) {
+            return $isV1($r) ? ApiResponse::error($e->errorCode, $e->getMessage(), $e->status, $e->details) : null;
         });
         $exceptions->render(function (AuthenticationException $e, Request $r) use ($isV1) {
             return $isV1($r) ? ApiResponse::error('unauthenticated', 'Login required.', 401) : null;
