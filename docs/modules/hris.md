@@ -32,7 +32,7 @@ Decisions were settled in a grilling session with the owner on 2026-10-15. Items
 | A3 | Enrolment | Self-service at first login, active at once. Photo comes from the live camera only. The new descriptor is compared with **every** enrolled face, and a match with someone else is rejected and reported to HR. Re-enrolment only after an HR reset. HR can see enrolment photos. Biometric consent is shown once |
 | A4 | Liveness | **None.** The defences are face match, the duplicate check, GPS and the audit photo |
 | A5 | Location | GPS radius per attendance location (haversine, clamped). Legacy `lokasi_absen` may be imported once as a starting point |
-| A6 | Rules copied from `AbsensiService` | Server time only; the subject comes from the token; shift window ±minutes; overnight shift (PULANG ≤ 18 h after MASUK belongs to the MASUK date); queue reasons LUAR_AREA, TANPA_SHIFT, HARI_LIBUR, LUAR_SHIFT, WAJAH; MENUNGGU needs a human decision; DITOLAK counts as no punch |
+| A6 | Rules copied from `AbsensiService` | Server time only; the subject comes from the token; shift window ±minutes; overnight shift (PULANG ≤ 18 h after MASUK belongs to the MASUK date); queue reasons LUAR_AREA, TANPA_SHIFT, HARI_LIBUR (the person's own day off — a public holiday never queues, it earns PH), LUAR_SHIFT, WAJAH; MENUNGGU needs a human decision; DITOLAK counts as no punch |
 | A7 | Shifts | Read from Jadwal cells, falling back to each person's default shift (`JadwalService`) |
 | A8 | Geofence | Background geofence is used **only for reminders**. There is no automatic punch |
 | A9 | Login | Existing `POST /api/v1/auth/login {login, pin}`. No device binding, no app biometric lock |
@@ -74,11 +74,25 @@ Decisions were settled in a grilling session with the owner on 2026-10-15. Items
 
 | # | Decision | Value |
 |---|---|---|
-| R1 | Manpower request | Kepala Divisi submits: position, headcount, replacement or addition, reason, date needed, qualifications. Approval goes HR → Owner. Once approved, it becomes a **vacancy** |
+| R1 | Manpower request | Kepala Divisi submits: position, headcount, replacement or addition, reason, date needed, qualifications. Approval goes HR → Owner (superadmin). Once approved, it becomes a **vacancy** |
 | R2 | CVs in | HR uploads them first. A public application form comes later |
-| R3 | AI screening | Behind a `CvScreener` interface (provider: Meta Muse Spark; API not yet verified). PII is redacted server-side before sending (NIK, phone, email, address, photo). The key lives only in the server `.env`. The score is advice with reasons; HR decides. Every result is stored with its prompt and model version |
+| R3 | AI screening | Behind a `CvScreener` interface (provider: Meta Muse Spark; API not yet verified — see research note below). PII is redacted server-side before sending (NIK, phone, email, address, photo). The key lives only in the server `.env`. The score is advice with reasons; HR decides. Every result is stored with its prompt and model version |
 | R4 | Retention | Applicant data is deleted automatically after 12 months, and HR can delete it manually |
 | R5 | Hired | A hired applicant becomes a **draft User**, which HR activates. Onboarding then starts |
+
+#### R3 research note (Muse Spark API — UNVERIFIED, do not build on assumptions)
+
+No research access was available when B5 was built, so the integration
+speaks a plain JSON contract and refuses (`503 ai_belum_dikonfigurasi`)
+until `HRIS_AI_URL` + `HRIS_AI_KEY` are set. Before enabling in production,
+verify against the official Meta docs and record here: the HTTPS endpoint
+and auth scheme (assumed: POST + Bearer key), request/response shapes
+(assumed: `{model, input, criteria, format}` → `{skor, alasan,
+ringkasan}`), rate limits and pricing, data-retention/processing terms
+(CVs are UU PDP personal data — confirm zero-retention or sign a DPA),
+and the exact model name (`muse-spark-1` is a placeholder). Prompt
+version `HRIS-CV-1` — bump it with any wording change, since stored
+results cite it.
 | R6 | Inter-division requests | HRIS screens for every Divisi, with data stored in **BD Permintaan Koordinasi** (Diminta → Diproses → Review → Selesai) through the BD service. Anyone may create one, and the Kepala Divisi of the target Divisi assigns it. Marketing → Konten design requests are shown read-only |
 | O1 | Onboarding | Akademi program(s) per Divisi (company knowledge + technical skills), auto-assigned, plus an HRIS checklist for non-learning steps (contract, uniform, accounts, buddy, 30/60/90-day review) |
 
@@ -99,6 +113,17 @@ Contract-expiry reminders follow once contracts exist (⏳).
 - **Contracts:** where the data lives today; whether probation is part of contract 1; whether the 12 days reset every anniversary within a long contract; whether PKWTT follows the same rule. Proposed shape: `hris_kontrak(user_id, urutan, jenis PROBATION/PKWT/PKWTT, mulai, selesai, akhir_probation, berkas)`.
 - **Team bonus formula:** pool, KPI factor and threshold, how it is split, and the period.
 - **KPI items per Divisi** and validation of the People Score weights.
+
+## Phase b plan (P3 payslip — planned, not built)
+
+Full payslip stays out of HRIS until the owner confirms the components.
+When it is built, the shape is: `hris_gaji_komponen` (person, kind
+fixed/allowance/deduction, amount encrypted at rest, effective-from),
+`hris_slip` (month, person, line snapshot JSON, immutable once locked),
+crew read their own slip, HR reads all, PDF export per slip, and a locked
+month is never reopened. Fixed salary is never derived from attendance;
+attendance only feeds the variable parts (meal allowance now, team bonus
+once ⏳ lands).
 
 ## Schedule (all streams start now)
 

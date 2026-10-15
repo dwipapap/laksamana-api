@@ -52,6 +52,9 @@ $modules = [
     // `homepage_event` switch (which EMS event is on the public website). The
     // event data itself stays in EMS and is read through EventState.
     'homepage' => ['env' => 'HOMEPAGE', 'database' => 'lakk5493_db_homepage', 'connection' => 'core'],
+    // hris is greenfield on `core` like menu/news/homepage (ADR-0009): no
+    // legacy backend, no importer; `database` is unused.
+    'hris' => ['env' => 'HRIS', 'database' => 'lakk5493_db_hris', 'connection' => 'core'],
     // infopagi owns no database: it only reads event+marketing for the 07:00
     // briefing (shared connection, resolved per query). Registered so the
     // maintenance middleware resolves; the v1 gate stays `module:reservasi`

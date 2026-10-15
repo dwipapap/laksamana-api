@@ -33,7 +33,7 @@ restore() { # $1 = dump file, $2 = target database name
   echo ">> $db  <=  $(basename "$f")"
   "$MYSQL_BIN" -uroot -h"$MYSQL_HOST" -e "DROP DATABASE IF EXISTS \`$db\`; CREATE DATABASE \`$db\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
   # First line of MariaDB 10.11 dumps is a MariaDB-only sandbox marker; MySQL chokes on it.
-  zcat "$f" | sed '1{/enable the sandbox mode/d}' | "$MYSQL_BIN" -uroot -h"$MYSQL_HOST" --max_allowed_packet=256M "$db"
+  gzip -dc "$f" | sed '1{/enable the sandbox mode/d;}' | "$MYSQL_BIN" -uroot -h"$MYSQL_HOST" --max_allowed_packet=256M "$db"
 }
 
 for f in "$DUMP_DIR"/*.sql.gz; do
