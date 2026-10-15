@@ -191,7 +191,7 @@ two agents cannot end up sharing a checkout. Details: `docs/agents/worktrees.md`
 | menu | n/a (greenfield) | full contract (docs/api/menu.md) | n/a — no legacy |
 | news | n/a (greenfield) | full contract (docs/api/news.md) | n/a — no legacy |
 | homepage | n/a (greenfield) | event & promo slider, public + office (docs/api/homepage.md) | n/a — no legacy |
-| hris | n/a (greenfield) | B1–B4 attendance + leave + payroll/score + reminders (docs/api/hris.md) | n/a — no legacy |
+| hris | n/a (greenfield) | B1–B5 attendance + leave + payroll/score + reminders + recruitment (docs/api/hris.md) | n/a — no legacy |
 | radar | n/a (no backend; reads 4 modules) | read-only board (docs/api/radar.md) | n/a — no legacy backend |
 | (others) | pending — see docs/modules/README.md | | |
 

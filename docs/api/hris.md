@@ -276,6 +276,32 @@ Settings: `pushAktif` (master switch), `reminderTelatMenit` (5–240),
 `expoAccessToken` (optional, higher limits — secret: writable, never
 served by GET settings). Dead tokens (`DeviceNotRegistered`) are deleted.
 
+## B5 — manpower requests and CV screening
+
+Recruitment (hris.md R1–R5). Owner = superadmin. Applicants auto-delete
+after 12 months (`hris:harian`); HR can delete manually.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/hris/permintaan?divisi&status` | Heads: own divisions; HR/owner: all |
+| POST | `/hris/permintaan` | `{divisi, posisi, jumlah?, jenis?, alasan?, dibutuhkan_tgl?, kualifikasi?}` (head/HR). `201` |
+| POST | `/hris/permintaan/{id}/decision` | `{status, nota?}` — HR step, then Owner step; approval opens a vacancy |
+| DELETE | `/hris/permintaan/{id}` | Cancel before final (requester/HR) |
+| GET | `/hris/lowongan?tutup?` | Vacancies with applicant counts |
+| POST | `/hris/lowongan/{id}/tutup` | HR closes |
+| GET | `/hris/pelamar?lowongan&tahap` | HR, contacts withheld |
+| POST | `/hris/pelamar` | `{lowongan_id, nama, cv (base64 PDF/DOCX/TXT), cv_nama?, kontak?}` — extracts, redacts, encrypts contact. `201` |
+| GET | `/hris/pelamar/{id}` | HR, contact decrypted |
+| POST | `/hris/pelamar/{id}/tahap` | `{tahap, catatan?}` — forward-only; `DITERIMA` hires a draft (nonaktif) User |
+| POST | `/hris/pelamar/{id}/screen` | AI advice (`?async=1` queues on `database`, needs a worker) |
+| GET | `/hris/pelamar/{id}/screening` | Result history (prompts withheld) |
+| DELETE | `/hris/pelamar/{id}` | HR permanent delete (file + rows) |
+
+- Screening (`503 ai_belum_dikonfigurasi` until `HRIS_AI_URL`/`HRIS_AI_KEY`
+  are set): redacted text + vacancy criteria → `{skor 0–100, alasan,
+  ringkasan}`. The score is advice; HR moves the stages. Every result is
+  stored with provider, model and prompt version.
+
 ## For laksamana-hris
 
 `packages/api` generates types from `openapi.json` (tag `hris`). Mobile:

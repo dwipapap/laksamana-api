@@ -7,6 +7,8 @@ use App\Modules\Hris\Http\V1\HrisDisiplinController as D;
 use App\Modules\Hris\Http\V1\HrisFaceController as F;
 use App\Modules\Hris\Http\V1\HrisKpiController as P;
 use App\Modules\Hris\Http\V1\HrisMealController as E;
+use App\Modules\Hris\Http\V1\HrisPelamarController as A;
+use App\Modules\Hris\Http\V1\HrisPermintaanController as N;
 use App\Modules\Hris\Http\V1\HrisMeController as M;
 use App\Modules\Hris\Http\V1\HrisOfficeController as O;
 use App\Modules\Hris\Http\V1\HrisQueueController as Q;
@@ -89,4 +91,21 @@ Route::middleware(['auth:sanctum', 'module:hris'])->prefix('hris')->group(functi
     Route::post('devices', [V::class, 'register']);
     Route::delete('devices', [V::class, 'remove']);
     Route::post('geofence-events', [V::class, 'geofence']);
+
+    // Recruitment (B5: R1–R5).
+    Route::get('permintaan', [N::class, 'index']);
+    Route::post('permintaan', [N::class, 'store']);
+    Route::post('permintaan/{id}/decision', [N::class, 'decide'])->where('id', '[A-Za-z0-9-]+');
+    Route::delete('permintaan/{id}', [N::class, 'destroy'])->where('id', '[A-Za-z0-9-]+');
+
+    Route::get('lowongan', [A::class, 'lowongan']);
+    Route::post('lowongan/{id}/tutup', [A::class, 'tutupLowongan'])->where('id', '[A-Za-z0-9-]+');
+
+    Route::get('pelamar', [A::class, 'index']);
+    Route::post('pelamar', [A::class, 'store']);
+    Route::get('pelamar/{id}', [A::class, 'show'])->where('id', '[A-Za-z0-9-]+');
+    Route::post('pelamar/{id}/tahap', [A::class, 'tahap'])->where('id', '[A-Za-z0-9-]+');
+    Route::post('pelamar/{id}/screen', [A::class, 'screen'])->where('id', '[A-Za-z0-9-]+');
+    Route::get('pelamar/{id}/screening', [A::class, 'riwayat'])->where('id', '[A-Za-z0-9-]+');
+    Route::delete('pelamar/{id}', [A::class, 'destroy'])->where('id', '[A-Za-z0-9-]+');
 });
