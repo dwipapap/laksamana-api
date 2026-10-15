@@ -116,3 +116,9 @@ function hrisToday(): string
 {
     return PunchRules::tglWib(PunchRules::ms());
 }
+
+/** A tiny base64 "photo": enrolment requires one (A3). Fake the disk first. */
+function hrisFoto(): string
+{
+    return base64_encode("\xFF\xD8\xFF\xE0test-jpeg\xFF\xD9");
+}

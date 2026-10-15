@@ -106,14 +106,16 @@ final class HrisLingkup
         throw new HrisError('forbidden', 'Antrean hanya untuk HR dan Kepala Divisi.', 403);
     }
 
-    /** May $me decide the punch of $punchUserId? HR may; heads may, except their own. */
+    /** May $me decide the punch of $punchUserId? HR and heads may — never their own. */
     public function assertMayDecide(array $me, string $punchUserId): void
     {
+        if ($punchUserId === self::id($me)) {
+            throw new HrisError('forbidden', 'Absen sendiri tidak bisa diputus sendiri; minta HR lain atau Kepala Divisi.', 403);
+        }
         if ($this->isHr($me)) {
             return;
         }
         if ($this->isHead($me)
-            && $punchUserId !== self::id($me)
             && in_array($punchUserId, $this->divisionMemberIds($me), true)) {
             return;
         }

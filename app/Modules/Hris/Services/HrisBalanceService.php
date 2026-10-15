@@ -23,12 +23,29 @@ use Illuminate\Support\Str;
  * Idempotency is UNIQUE(sumber_tipe, sumber_id); usage chunks share the
  * source id with a #n suffix. PH is never paid out on resignation (L5):
  * the balance simply sits until it expires.
+ *
+ * Every multi-row write runs in one transaction, and consuming locks the
+ * person's ledger first, so two approvals at once cannot both spend the
+ * same day.
  */
 final class HrisBalanceService
 {
     public const JENIS = ['PH', 'CUTI'];
 
     public function __construct(private readonly HrisAuditService $audit) {}
+
+    /** @template T @param callable():T $fn @return T */
+    private static function atomic(callable $fn): mixed
+    {
+        return HrisSaldoMutasi::query()->getConnection()->transaction($fn);
+    }
+
+    /** Lock one person's ledger for one jenis until the transaction ends. */
+    private static function lockLedger(string $userId, string $jenis): void
+    {
+        HrisSaldoMutasi::query()->where('user_id', $userId)->where('jenis', $jenis)
+            ->lockForUpdate()->pluck('id');
+    }
 
     private static function s(mixed $v): string
     {
@@ -108,13 +125,19 @@ final class HrisBalanceService
             return $ada->all();
         }
         try {
-            $row = HrisSaldoMutasi::query()->create([
-                'user_id' => $userId, 'user_ulid' => null, 'jenis' => $jenis, 'delta' => $jumlah,
-                'sumber_tipe' => mb_substr($sumberTipe, 0, 32), 'sumber_id' => mb_substr($sumberId, 0, 96),
-                'tanggal' => $tanggal, 'kedaluwarsa' => $kedaluwarsa,
-                'catatan' => mb_substr(self::s($catatan), 0, 255),
-            ]);
-            $row->fill(['batch_id' => $row->id])->save();
+            // Row + its batch_id in one step: a half-written earn (no
+            // batch_id) would be invisible to FIFO yet count in saldo().
+            $row = self::atomic(function () use ($userId, $jenis, $jumlah, $sumberTipe, $sumberId, $tanggal, $kedaluwarsa, $catatan) {
+                $row = HrisSaldoMutasi::query()->create([
+                    'user_id' => $userId, 'user_ulid' => null, 'jenis' => $jenis, 'delta' => $jumlah,
+                    'sumber_tipe' => mb_substr($sumberTipe, 0, 32), 'sumber_id' => mb_substr($sumberId, 0, 96),
+                    'tanggal' => $tanggal, 'kedaluwarsa' => $kedaluwarsa,
+                    'catatan' => mb_substr(self::s($catatan), 0, 255),
+                ]);
+                $row->fill(['batch_id' => $row->id])->save();
+
+                return $row;
+            });
         } catch (QueryException) {
             // Lost a race with another earner: return the winner's rows.
             return HrisSaldoMutasi::query()->where('sumber_tipe', $sumberTipe)->where('sumber_id', $sumberId)->get()->all();
@@ -138,38 +161,44 @@ final class HrisBalanceService
             throw new HrisError('validation_failed', 'Pemakaian saldo butuh user dan jumlah ≥ 1.', 422);
         }
         $prefix = mb_substr($sumberId, 0, 90);
-        $ada = HrisSaldoMutasi::query()->where('sumber_tipe', $sumberTipe)
-            ->where('sumber_id', 'like', $prefix.'%')->get();
-        if ($ada->isNotEmpty()) {
-            return $ada->all();
-        }
-        $batches = $this->batchFIFO($userId, $jenis);
-        $total = array_sum(array_column($batches, 'sisa'));
-        if ($total < $jumlah) {
-            throw new HrisError('saldo_kurang', "Saldo {$jenis} kurang: sisa {$total}, butuh {$jumlah}.", 422,
-                ['saldo' => $total, 'butuh' => $jumlah]);
-        }
-        $today = PunchRules::tglWib(PunchRules::ms());
-        $out = [];
-        $sisa = $jumlah;
-        $n = 0;
-        foreach ($batches as $b) {
-            if ($sisa <= 0) {
-                break;
-            }
-            $ambil = min($b['sisa'], $sisa);
-            $out[] = HrisSaldoMutasi::query()->create([
-                'user_id' => $userId, 'user_ulid' => null, 'jenis' => $jenis, 'delta' => -$ambil,
-                'sumber_tipe' => mb_substr($sumberTipe, 0, 32),
-                'sumber_id' => $prefix.($n === 0 ? '' : '#'.$n),
-                'batch_id' => $b['id'], 'tanggal' => $today, 'kedaluwarsa' => null,
-                'catatan' => mb_substr(self::s($catatan), 0, 255),
-            ]);
-            $sisa -= $ambil;
-            $n++;
-        }
 
-        return $out;
+        return self::atomic(function () use ($userId, $jenis, $jumlah, $sumberTipe, $prefix, $catatan): array {
+            // Lock first, then re-read: a concurrent spender waits here and
+            // then sees this one's rows (idempotent hit or a smaller saldo).
+            self::lockLedger($userId, $jenis);
+            $ada = HrisSaldoMutasi::query()->where('sumber_tipe', $sumberTipe)
+                ->where('sumber_id', 'like', $prefix.'%')->get();
+            if ($ada->isNotEmpty()) {
+                return $ada->all();
+            }
+            $batches = $this->batchFIFO($userId, $jenis);
+            $total = array_sum(array_column($batches, 'sisa'));
+            if ($total < $jumlah) {
+                throw new HrisError('saldo_kurang', "Saldo {$jenis} kurang: sisa {$total}, butuh {$jumlah}.", 422,
+                    ['saldo' => $total, 'butuh' => $jumlah]);
+            }
+            $today = PunchRules::tglWib(PunchRules::ms());
+            $out = [];
+            $sisa = $jumlah;
+            $n = 0;
+            foreach ($batches as $b) {
+                if ($sisa <= 0) {
+                    break;
+                }
+                $ambil = min($b['sisa'], $sisa);
+                $out[] = HrisSaldoMutasi::query()->create([
+                    'user_id' => $userId, 'user_ulid' => null, 'jenis' => $jenis, 'delta' => -$ambil,
+                    'sumber_tipe' => mb_substr($sumberTipe, 0, 32),
+                    'sumber_id' => $prefix.($n === 0 ? '' : '#'.$n),
+                    'batch_id' => $b['id'], 'tanggal' => $today, 'kedaluwarsa' => null,
+                    'catatan' => mb_substr(self::s($catatan), 0, 255),
+                ]);
+                $sisa -= $ambil;
+                $n++;
+            }
+
+            return $out;
+        });
     }
 
     /** HR manual adjustment (positive = earn batch, negative = FIFO consume). */
@@ -215,33 +244,38 @@ final class HrisBalanceService
         if ($pakai->isEmpty()) {
             return [];
         }
-        $ada = HrisSaldoMutasi::query()->where('sumber_tipe', 'PENGEMBALIAN')
-            ->where('sumber_id', 'like', $prefix.'%')->get();
-        if ($ada->isNotEmpty()) {
-            return $ada->all();
-        }
-        $today = PunchRules::tglWib(PunchRules::ms());
-        $out = [];
-        $n = 0;
-        foreach ($pakai as $u) {
-            $batch = $u->batch_id ? HrisSaldoMutasi::query()->find($u->batch_id) : null;
-            $hangus = ($batch && $batch->kedaluwarsa) ? $batch->kedaluwarsa->format('Y-m-d') : null;
-            if ($u->jenis === 'PH' && ($hangus === null || $hangus < $today)) {
-                // The original batch is gone or past: return usable balance.
-                $hangus = self::tambahBulan($today, 3);
-            }
-            $out[] = HrisSaldoMutasi::query()->create([
-                'user_id' => $u->user_id, 'user_ulid' => null, 'jenis' => $u->jenis, 'delta' => -$u->delta,
-                'sumber_tipe' => 'PENGEMBALIAN', 'sumber_id' => $prefix.($n === 0 ? '' : '#k'.$n),
-                'tanggal' => $today, 'kedaluwarsa' => $u->jenis === 'PH' ? $hangus : null,
-                'catatan' => mb_substr(trim($catatan), 0, 255),
-            ]);
-            $out[count($out) - 1]->fill(['batch_id' => $out[count($out) - 1]->id])->save();
-            $out[count($out) - 1] = $out[count($out) - 1]->fresh();
-            $n++;
-        }
+        $u0 = $pakai->first();
 
-        return $out;
+        return self::atomic(function () use ($pakai, $prefix, $catatan, $u0): array {
+            self::lockLedger((string) $u0->user_id, (string) $u0->jenis);
+            $ada = HrisSaldoMutasi::query()->where('sumber_tipe', 'PENGEMBALIAN')
+                ->where('sumber_id', 'like', $prefix.'%')->get();
+            if ($ada->isNotEmpty()) {
+                return $ada->all();
+            }
+            $today = PunchRules::tglWib(PunchRules::ms());
+            $out = [];
+            $n = 0;
+            foreach ($pakai as $u) {
+                $batch = $u->batch_id ? HrisSaldoMutasi::query()->find($u->batch_id) : null;
+                $hangus = ($batch && $batch->kedaluwarsa) ? $batch->kedaluwarsa->format('Y-m-d') : null;
+                if ($u->jenis === 'PH' && ($hangus === null || $hangus < $today)) {
+                    // The original batch is gone or past: return usable balance.
+                    $hangus = self::tambahBulan($today, 3);
+                }
+                $row = HrisSaldoMutasi::query()->create([
+                    'user_id' => $u->user_id, 'user_ulid' => null, 'jenis' => $u->jenis, 'delta' => -$u->delta,
+                    'sumber_tipe' => 'PENGEMBALIAN', 'sumber_id' => $prefix.($n === 0 ? '' : '#k'.$n),
+                    'tanggal' => $today, 'kedaluwarsa' => $u->jenis === 'PH' ? $hangus : null,
+                    'catatan' => mb_substr(trim($catatan), 0, 255),
+                ]);
+                $row->fill(['batch_id' => $row->id])->save();
+                $out[] = $row->fresh();
+                $n++;
+            }
+
+            return $out;
+        });
     }
 
     /**

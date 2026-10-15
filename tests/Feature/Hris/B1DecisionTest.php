@@ -89,3 +89,14 @@ it('keeps crew out of the queue and the decisions', function () {
 
     test()->getJson('/api/v1/hris/queue', $h)->assertStatus(403)->assertJsonPath('error.code', 'forbidden');
 });
+
+it('never lets HR decide their own punch', function () {
+    hrisMakeHr('u-admin');
+    $row = hrisQueued('u-admin');
+    $t = hrisToken('u-admin');
+
+    test()->postJson("/api/v1/hris/punches/{$row->id}/decision",
+        ['status' => 'VALID', 'berubah' => (int) $row->version], ['Authorization' => 'Bearer '.$t])
+        ->assertStatus(403);
+    expect(HrisKetukan::query()->find($row->id)->status)->toBe('MENUNGGU');
+});

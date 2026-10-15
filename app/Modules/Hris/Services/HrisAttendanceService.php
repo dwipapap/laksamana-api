@@ -10,6 +10,7 @@ use App\Modules\Hris\Models\HrisLokasi;
 use App\Modules\Hris\Models\HrisWajah;
 use App\Modules\Jadwal\Services\JadwalService;
 use App\Support\JsonDoc;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -237,10 +238,15 @@ final class HrisAttendanceService
             }
         }
 
+        // The enrolment photo is HR's audit trail (A3): no photo, no face.
+        if (! is_string($in['foto'] ?? null) || trim($in['foto']) === '') {
+            throw new HrisError('validation_failed', 'Foto wajah wajib diambil dari kamera saat daftar.', 422);
+        }
+
         // Re-enrolment after a reset: prune the old DIRESET rows first (the
         // UNIQUE user_id+status allows one AKTIF and one DIRESET row).
         HrisWajah::query()->where('user_id', $uid)->where('status', 'DIRESET')->delete();
-        $fotoPath = self::storePhoto($in['foto'] ?? null);
+        $fotoPath = self::storePhoto($in['foto']);
         $row = HrisWajah::query()->create([
             'user_id' => $uid, 'user_ulid' => null, 'model' => $model,
             'descriptor' => $descriptor, 'foto_path' => $fotoPath,
@@ -413,7 +419,20 @@ final class HrisAttendanceService
                 $row = HrisKetukan::query()->create($data);
             }
         } else {
-            $row = HrisKetukan::query()->create($data);
+            try {
+                $row = HrisKetukan::query()->create($data);
+            } catch (QueryException $e) {
+                // Two MASUK taps landing together: UNIQUE(user, date, arah)
+                // lets one in; the other gets the same answer as any repeat.
+                $ada = HrisKetukan::query()->where('user_id', $uid)
+                    ->where('tanggal_kerja', $tgl)->where('arah', 'MASUK')->first();
+                if (! $ada) {
+                    throw $e;
+                }
+                self::deletePhoto($data['foto_path']);
+
+                return ['duplikat' => true, 'punch' => $this->shape($ada), 'wajahTerdaftar' => $w['terdaftar']];
+            }
         }
 
         return ['duplikat' => false, 'punch' => $this->shape($row->fresh()), 'wajahTerdaftar' => $w['terdaftar']];

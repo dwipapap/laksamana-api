@@ -5,8 +5,11 @@ use App\Modules\Hris\Services\HrisAttendanceService;
 use App\Modules\Hris\Services\HrisCalendar;
 use App\Modules\Jadwal\Services\JadwalService;
 use App\Support\JsonDoc;
+use Illuminate\Support\Facades\Storage;
 
 require_once __DIR__.'/helpers.php';
+
+beforeEach(fn () => Storage::fake('local'));
 
 /*
  * Punches: VALID inside the rules, MENUNGGU with one reason otherwise; a
@@ -142,7 +145,7 @@ it('falls back to the default shift when the roster has no cell', function () {
 it('queues WAJAH on mismatch and WAJAH_KOSONG when wajahWajib', function () {
     hrisSettings(['tanpaShiftBoleh' => true, 'wajahWajib' => false]);
     app(HrisAttendanceService::class)->enrol(hrisMe('u-dwipa'),
-        ['descriptor' => hrisDescriptor(), 'model' => 'mobilefacenet-v1', 'consent' => true, 'foto' => null]);
+        ['descriptor' => hrisDescriptor(), 'model' => 'mobilefacenet-v1', 'consent' => true, 'foto' => hrisFoto()]);
 
     $salah = hrisPunch(hrisMe('u-dwipa'),
         ['arah' => 'MASUK', 'descriptor' => hrisDescriptor(-0.5), 'model' => 'mobilefacenet-v1', 'alasan' => 'kamera buram'],

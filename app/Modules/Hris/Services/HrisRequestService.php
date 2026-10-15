@@ -174,6 +174,12 @@ final class HrisRequestService
      */
     public function cancel(array $me, HrisPengajuan $row): HrisPengajuan
     {
+        return self::atomic(fn () => $this->cancelLocked($me,
+            HrisPengajuan::query()->lockForUpdate()->findOrFail($row->id)));
+    }
+
+    private function cancelLocked(array $me, HrisPengajuan $row): HrisPengajuan
+    {
         $uid = self::s($me['id'] ?? '');
         $nama = self::s($me['name'] ?? '');
         $isHr = $this->lingkup->isHr($me);
@@ -206,6 +212,20 @@ final class HrisRequestService
      */
     public function decide(array $me, HrisPengajuan $row, string $status, string $nota): HrisPengajuan
     {
+        // Locked re-read inside one transaction: two deciders at once queue
+        // here, and the second sees the first one's status.
+        return self::atomic(fn () => $this->decideLocked($me,
+            HrisPengajuan::query()->lockForUpdate()->findOrFail($row->id), $status, $nota));
+    }
+
+    /** @template T @param callable():T $fn @return T */
+    private static function atomic(callable $fn): mixed
+    {
+        return HrisPengajuan::query()->getConnection()->transaction($fn);
+    }
+
+    private function decideLocked(array $me, HrisPengajuan $row, string $status, string $nota): HrisPengajuan
+    {
         $nama = self::s($me['name'] ?? '');
         $status = strtoupper(self::s($status));
         if ($status !== 'DISETUJUI' && $status !== 'DITOLAK') {
@@ -230,6 +250,9 @@ final class HrisRequestService
         if ($row->status === 'MENUNGGU_HRD') {
             if (! $isHr) {
                 throw new HrisError('forbidden', 'Tahap ini menunggu keputusan HRD.', 403);
+            }
+            if (self::s($me['id'] ?? '') === $row->user_id) {
+                throw new HrisError('forbidden', 'Pengajuan sendiri tidak bisa diputus sendiri.', 403);
             }
             if ($status === 'DISETUJUI') {
                 $this->approve($row, $nama);
