@@ -42,7 +42,7 @@ abstract class HrisBaseController
     protected function failure(\Throwable $e): JsonResponse
     {
         if ($e instanceof HrisError) {
-            return ApiResponse::error($e->code, $e->getMessage(), $e->status, $e->details);
+            return ApiResponse::error($e->errorCode, $e->getMessage(), $e->status, $e->details);
         }
         if ($e instanceof \RuntimeException) {
             return ApiResponse::error('rejected', $e->getMessage(), 422);

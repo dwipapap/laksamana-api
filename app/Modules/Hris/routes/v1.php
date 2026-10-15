@@ -55,7 +55,7 @@ Route::middleware(['auth:sanctum', 'module:hris'])->prefix('hris')->group(functi
     Route::delete('calendar/{id}', [K::class, 'destroy'])->where('id', '[A-Za-z0-9-]+');
     Route::post('calendar/import', [K::class, 'import']);
 
-    Route::get('balances/me', [B::class, 'me']);
+    Route::get('balances/me', [B::class, 'mine']);
     Route::get('balances', [B::class, 'index']);
     Route::post('balances/adjust', [B::class, 'adjust']);
 

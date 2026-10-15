@@ -258,7 +258,7 @@ final class HrisRequestService
                 $pakai = $this->saldo->gunakan($row->user_id, $row->jenis, (int) $row->hari,
                     'PENGAJUAN', $row->id, $row->jenis.' '.$row->tgl_mulai.' s.d. '.$row->tgl_selesai);
             } catch (HrisError $e) {
-                if ($e->code === 'saldo_kurang') {
+                if ($e->errorCode === 'saldo_kurang') {
                     throw new HrisError('saldo_kurang',
                         "Saldo {$row->jenis} tidak cukup lagi (dipakai pengajuan lain). Tetap menunggu.", 422, $e->details);
                 }
@@ -446,7 +446,7 @@ final class HrisRequestService
                 $this->saldo->gunakan($uid, 'CUTI', $hari, 'JADWAL_LAMA', $jid, 'Cuti panel Jadwal lama');
                 $dipakai++;
             } catch (HrisError $e) {
-                if ($e->code === 'saldo_kurang') {
+                if ($e->errorCode === 'saldo_kurang') {
                     $terlewat[] = $jid;
                     continue;
                 }

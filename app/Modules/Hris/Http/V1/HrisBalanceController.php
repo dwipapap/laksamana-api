@@ -28,7 +28,7 @@ final class HrisBalanceController extends HrisBaseController
     }
 
     /** Own balances with the nearest PH expiry and the CUTI quota. */
-    public function me(Request $r): JsonResponse
+    public function mine(Request $r): JsonResponse
     {
         $me = $this->me($r);
 

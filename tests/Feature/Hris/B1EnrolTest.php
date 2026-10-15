@@ -59,7 +59,7 @@ it('rejects a face matching someone else and audits it', function () {
             ['descriptor' => hrisDescriptor(), 'model' => 'mobilefacenet-v1', 'consent' => true, 'foto' => null]);
         expect(false)->toBeTrue('expected wajah_milik_orang_lain');
     } catch (HrisError $e) {
-        expect($e->code)->toBe('wajah_milik_orang_lain')->and($e->status)->toBe(409);
+        expect($e->errorCode)->toBe('wajah_milik_orang_lain')->and($e->status)->toBe(409);
     }
     expect(HrisWajah::query()->where('user_id', 'u-andry')->where('status', 'AKTIF')->exists())->toBeFalse();
     expect(HrisAudit::query()->where('aksi', 'wajah_duplikat_ditolak')->exists())->toBeTrue();

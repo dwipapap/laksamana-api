@@ -11,7 +11,7 @@ namespace App\Modules\Hris\Services;
 final class HrisError extends \RuntimeException
 {
     public function __construct(
-        public readonly string $code,
+        public readonly string $errorCode,
         string $message,
         public readonly int $status = 422,
         public readonly array $details = [],
