@@ -28,9 +28,9 @@ Decisions were settled in a grilling session with the owner on 2026-10-15. Items
 | # | Decision | Value |
 |---|---|---|
 | A1 | Source of truth | HRIS punches. Talenta is switched off in March 2027; the legacy `absensi` module and PWA are not used |
-| A2 | Face model | New on-device model (native, e.g. TFLite). Every crew member enrols again. Descriptors store their `model` |
+| A2 | Face model | On-device: **YuNet** (detection + 5 landmarks, MIT) + **SFace int8** (OpenCV Zoo, Apache-2.0, 128-dim, ~19 MB) on ONNX Runtime; model id `sface-2021dec-int8`, cosine metric, threshold calibrated on office phones. DeepFace (Python, server-side) and InsightFace/ArcFace weights (research-only) were rejected. Every crew member enrols again. Descriptors store their `model` |
 | A3 | Enrolment | Self-service at first login, active at once. Photo comes from the live camera only. The new descriptor is compared with **every** enrolled face, and a match with someone else is rejected and reported to HR. Re-enrolment only after an HR reset. HR can see enrolment photos. Biometric consent is shown once |
-| A4 | Liveness | **None.** The defences are face match, the duplicate check, GPS and the audit photo |
+| A4 | Liveness | **None.** The defences are face match, the duplicate check, GPS and the audit photo. If photo spoofing appears, passive MiniFASNet (Apache-2.0) can be added later without changing the flow |
 | A5 | Location | GPS radius per attendance location (haversine, clamped). Legacy `lokasi_absen` may be imported once as a starting point |
 | A6 | Rules copied from `AbsensiService` | Server time only; the subject comes from the token; shift window ±minutes; overnight shift (PULANG ≤ 18 h after MASUK belongs to the MASUK date); queue reasons LUAR_AREA, TANPA_SHIFT, HARI_LIBUR (the person's own day off — a public holiday never queues, it earns PH), LUAR_SHIFT, WAJAH; MENUNGGU needs a human decision; DITOLAK counts as no punch |
 | A7 | Shifts | Read from Jadwal cells, falling back to each person's default shift (`JadwalService`) |
