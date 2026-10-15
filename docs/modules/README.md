@@ -29,7 +29,7 @@ source disagree, the source wins; then correct the spec.
 | menu | [menu.md](menu.md) | n/a (greenfield) | full contract, see docs/api/menu.md | n/a (no legacy) | 2 |
 | news | [news.md](news.md) | n/a (greenfield) | full contract, see docs/api/news.md | n/a (no legacy) | 2 |
 | homepage | [homepage.md](homepage.md) | n/a (greenfield) | event & promo slider, public + office, see docs/api/homepage.md | n/a (no legacy) | 4 |
-| hris | [hris.md](hris.md) | n/a (greenfield) | B1–B6 complete, see docs/api/hris.md | n/a (no legacy) | B1*–B6* |
+| hris | [hris.md](hris.md) | n/a (greenfield) | B1–B6 backend, see docs/api/hris.md (mobile face + punch not working yet) | n/a (no legacy) | B1*–B6* |
 | radar | — (reads marketing, event, reservasi, bd) | n/a (no legacy backend) | read-only board, see docs/api/radar.md | n/a | 8 unit + 6 |
 | automation | — (reads reservasi, event, marketing) | n/a (no legacy backend) | read-only n8n feeds, see docs/api/automation.md | n/a | 15 |
 
