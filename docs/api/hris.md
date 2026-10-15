@@ -127,13 +127,71 @@ Defaults (`PUT /hris/settings` takes a partial map; unknown keys are `422`):
 | 401 | `unauthenticated` | No/bad token |
 | 403 | `module_not_granted` | Token without `hris` |
 | 403 | `forbidden` | Outside Lingkup (foreign rows, crew in queue, non-HR writes) |
-| 404 | `not_found` | Unknown punch/face/photo |
+| 404 | `not_found` | Unknown punch/face/photo/request/attachment |
 | 409 | `already_enrolled` | Enrol while AKTIF (needs HR reset first) |
 | 409 | `wajah_milik_orang_lain` | Face matches another enrolled person (audited for HR) |
 | 409 | `version_conflict` | Stale `berubah` (`details.current`) |
-| 409 | `already_decided` | Deciding a non-MENUNGGU punch |
-| 422 | `validation_failed` | Bad arah, missing alasan, bad descriptor/foto/settings |
+| 409 | `already_decided` | Deciding a non-MENUNGGU punch or a final request |
+| 422 | `validation_failed` | Bad arah, missing alasan, bad descriptor/foto/settings/dates |
 | 422 | `rejected` | Other rule rejections (legacy tone) |
+| 422 | `saldo_kurang` | Request/adjustment exceeds the balance (`details.saldo/butuh`) |
+| 422 | `jadwal_tulis_ditolak` | Approved request whose Jadwal cells the approver may not write (HRD needs jadwal-admin rights or a heading Kepala Divisi) |
+
+## B2 — calendar, balances, requests
+
+Leave, PH and requests (hris.md L1–L9). Tables: `hris_kalender`,
+`hris_saldo_mutasi` (append-only ledger, saldo = SUM), `hris_pengajuan`.
+Scheduler: `php artisan hris:harian` daily 01:10 Asia/Jakarta
+(routes/console.php); the cPanel cron `* * * * * php artisan schedule:run`
+drives it (docs/deploy.md).
+
+| Method | Path | Lingkup | Notes |
+|---|---|---|---|
+| GET | `/hris/calendar?dari&sampai` | all | Holiday list |
+| POST | `/hris/calendar` | HR | `{tanggal, nama, jenis?}` — same date twice is `422`. `201 {id}` |
+| DELETE | `/hris/calendar/{id}` | HR | `{hapus: 1}` |
+| POST | `/hris/calendar/import` | HR | `{libur: [{tanggal, nama, jenis?}]}` or multipart `file` (.json/.csv). Upsert by date: `{dibuat, diperbarui}` |
+| GET | `/hris/balances/me` | self | `{PH: {saldo, hangus_dekat}, CUTI: {saldo, jatah_tahunan}}` |
+| GET | `/hris/balances?user` | scoped | Always a list (HR without a filter sees their own) |
+| POST | `/hris/balances/adjust` | HR | `{user, jenis, delta, catatan}` — reason required; negative beyond balance is `422 saldo_kurang` |
+| GET | `/hris/requests?user&status&jenis` | scoped | Request list (max 500) |
+| POST | `/hris/requests` | self | `{jenis, dari, sampai?, alasan, lampiran?, lampiran_nama?}` — IZIN needs proof; CUTI/PH need balance. `201` |
+| GET | `/hris/requests/{id}` | scoped | One request |
+| GET | `/hris/requests/{id}/lampiran` | scoped | Attachment download |
+| DELETE | `/hris/requests/{id}` | scoped | Cancel: requester while waiting; HR also after approval (refund + cell cleanup) |
+| POST | `/hris/requests/{id}/decision` | head/HRD | `{status: DISETUJUI\|DITOLAK, nota?}` — head step (`MENUNGGU` → `MENUNGGU_HRD`), then HRD step |
+
+### Request item
+
+```json
+{
+  "id": "01j…", "user_id": "u-dwipa", "jenis": "CUTI",
+  "tgl_mulai": "2026-11-02", "tgl_selesai": "2026-11-04", "hari": 3,
+  "alasan": "Keluarga", "ada_lampiran": false,
+  "status": "MENUNGGU_HRD",
+  "head_oleh": "Arif", "head_at": 1760918400000, "head_nota": "ok",
+  "hrd_oleh": "", "hrd_at": 0, "hrd_nota": "",
+  "berubah": 1
+}
+```
+
+- Filing deducts nothing; approval deducts FIFO (oldest PH expiry first)
+  and writes Jadwal cells (`CUTI`→`CUTI`, `IZIN`→`IZIN`, `PH`→`OFF` with a
+  note such as `PH 25 Des`). The old Jadwal screens keep working unchanged.
+- The head step needs the Kepala Divisi of the requester's division (never
+  for their own request). A division with no head — or office staff outside
+  every division — is head-approved by HR instead (two decisions stay two).
+- Approving needs Jadwal write rights: the cells are written with the
+  approving head's authority. An HRD who is neither a jadwal admin nor
+  acting on a headed division gets `422 jadwal_tulis_ditolak`.
+- A `MASUK VALID` on a holiday earns +1 PH (also when a queued punch turns
+  VALID late); expiry is the holiday + 3 months, first-to-expire first.
+  PH is never paid out. Annual leave quota is the `jatahCuti` setting
+  (default 12), granted manually by HR — TODO(mentor) for the per-contract
+  rule.
+- Approved CUTI from the old Jadwal panel is deducted once during the
+  transition (idempotent); requests beyond the balance are skipped and
+  reported for HR to top up.
 
 ## For laksamana-hris
 

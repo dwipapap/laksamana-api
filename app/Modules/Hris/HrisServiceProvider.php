@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Modules\Hris;
 
+use App\Modules\Hris\Services\CutiEntitlement;
+use App\Modules\Hris\Services\DbCalendar;
+use App\Modules\Hris\Services\DefaultCutiEntitlement;
 use App\Modules\Hris\Services\HrisCalendar;
-use App\Modules\Hris\Services\NullCalendar;
 use Illuminate\Support\ServiceProvider;
 
 /**
@@ -15,13 +17,16 @@ use Illuminate\Support\ServiceProvider;
  * is reached in-process through their own services.
  *
  * `ModuleServiceProvider` auto-loads `routes/v1.php`; this provider only
- * binds the swappable interfaces (B2 rebinds the calendar to hris_kalender).
+ * binds the swappable interfaces.
  */
 class HrisServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->app->bind(HrisCalendar::class, NullCalendar::class);
+        // B2: the calendar reads hris_kalender (B1 bound the false stub).
+        $this->app->scoped(HrisCalendar::class, DbCalendar::class);
+        // B2: quota from settings until the contract rules land (TODO mentor).
+        $this->app->scoped(CutiEntitlement::class, DefaultCutiEntitlement::class);
     }
 
     public function boot(): void

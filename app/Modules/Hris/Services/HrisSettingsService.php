@@ -30,6 +30,8 @@ final class HrisSettingsService
         ],
         // Extra HR staff by legacy User id (module admins of hris are always HR).
         'hr' => [],
+        // Annual CUTI quota in days (TODO(mentor): per-contract rule, B7).
+        'jatahCuti' => 12,
     ];
 
     /** The merged settings map (stored rows over defaults). */
@@ -83,6 +85,7 @@ final class HrisSettingsService
             'tanpaShiftBoleh', 'wajahWajib' => $this->cleanBool($v, $k),
             'wajahAmbang' => $this->cleanAmbang($v),
             'hr' => $this->cleanHr($v),
+            'jatahCuti' => $int($v, 0, 30, $k),
         };
     }
 

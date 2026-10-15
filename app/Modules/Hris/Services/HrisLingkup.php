@@ -120,6 +120,15 @@ final class HrisLingkup
         throw new HrisError('forbidden', 'Keputusan antrean hanya oleh HR atau Kepala Divisi yang bersangkutan.', 403);
     }
 
+    /** May $me open the rows of $userId? Throws 403 otherwise. */
+    public function assertCanSee(array $me, string $userId): void
+    {
+        $scope = $this->scopeUsers($me, $userId);
+        if ($scope !== null && ! in_array($userId, $scope, true)) {
+            throw new HrisError('forbidden', 'Tidak berhak melihat data ini.', 403);
+        }
+    }
+
     public function assertHr(array $me, string $apa): void
     {
         if (! $this->isHr($me)) {

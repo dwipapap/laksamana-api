@@ -8,6 +8,7 @@ use App\Auth\OfficeAccess;
 use App\Modules\Hris\Models\HrisKetukan;
 use App\Modules\Hris\Services\HrisAttendanceService;
 use App\Modules\Hris\Services\HrisError;
+use App\Modules\Hris\Services\HrisHarianService;
 use App\Modules\Hris\Services\HrisLingkup;
 use App\Support\Api\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -24,6 +25,7 @@ final class HrisQueueController extends HrisBaseController
         OfficeAccess $access,
         private readonly HrisAttendanceService $hadir,
         private readonly HrisLingkup $lingkup,
+        private readonly HrisHarianService $harian,
     ) {
         parent::__construct($access);
     }
@@ -66,6 +68,14 @@ final class HrisQueueController extends HrisBaseController
             }
             if (! $out['ok']) {
                 throw new HrisError('already_decided', 'Ketukan ini sudah diputus.', 409);
+            }
+            if (strtoupper(self::s($d['status'] ?? '')) === 'VALID') {
+                // A punch that just turned VALID on a holiday earns its PH.
+                // Swallowed on failure: the daily job backfills idempotently.
+                try {
+                    $this->harian->syncPhForKetukan($id);
+                } catch (\Throwable) {
+                }
             }
 
             return ['berubah' => 1];

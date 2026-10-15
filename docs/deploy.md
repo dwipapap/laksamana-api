@@ -105,6 +105,21 @@ It does what the workflow does: uploads the commit without `tests/`, `tools/`, `
 
 Every Modul stays on legacy in production (ADR-0005), so core rarely changes. When a migration must reach a server: run `tools/core-schema.sh` on the new commit, compare with the tables already there, and apply only the new `CREATE TABLE` statements plus the new `migrations` rows in phpMyAdmin.
 
+## Scheduler (HRIS reminders and daily jobs)
+
+Laravel's scheduler drives the HRIS daily jobs (`hris:harian`: PH for
+holiday work, PH expiry, CUTI catch-up) and later the push reminders (B4).
+It needs one cPanel cron entry (the owner installs it — agents never touch
+the server):
+
+```
+* * * * * cd /home/lakk5493/laksamana-api && php artisan schedule:run >> /dev/null 2>&1
+```
+
+Every HRIS job is idempotent, so a missed day backfills on the next run.
+Whether the cPanel cron can run `php artisan schedule:run` is still an open
+technical check (docs/modules/hris.md).
+
 ## Troubleshooting
 
 - **FTP step times out** (curl code 28): Rumahweb's firewall often drops GitHub runner IPs. Re-run the workflow (a new runner gets a new IP); if it keeps happening, ask Rumahweb support to unblock it.
