@@ -158,6 +158,11 @@ final class PunchRules
      * Which queue reason, if any — in legacy precedence order. '' means the
      * punch is VALID. Pure so the precedence is unit-tested on fixed inputs.
      *
+     * HARI_LIBUR means the person's OWN schedule says off that day (the
+     * shift's libur flag). A public holiday in the HRIS calendar is NOT a
+     * queue reason: crew routinely work on holidays, and that work earns PH
+     * (L3) instead of waiting for an HR decision.
+     *
      * @param  array{kode:string,mulai:string,selesai:string,sumber:string,libur:int}|null|false  $shift
      */
     public static function tentukanAlasan(
@@ -167,7 +172,6 @@ final class PunchRules
         bool $wajahHalangi,
         bool $wajahTerdaftar,
         bool $tanpaShiftBoleh,
-        bool $hariLibur,
     ): string {
         if (! $dalamArea) {
             return 'LUAR_AREA';
@@ -182,7 +186,7 @@ final class PunchRules
             if (! $tanpaShiftBoleh) {
                 return 'TANPA_SHIFT';
             }
-        } elseif ($hariLibur || ! empty($shift['libur'])) {
+        } elseif (! empty($shift['libur'])) {
             return 'HARI_LIBUR';
         } elseif (! $dalamShift) {
             return 'LUAR_SHIFT';

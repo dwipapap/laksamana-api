@@ -161,7 +161,10 @@ final class HrisMealService
 
     /**
      * Lock the month: refused while its queue is non-empty (P2) or already
-     * locked. The snapshot rows are written once and never updated.
+     * locked, and only once the month is over (later punches would fall
+     * outside the snapshot). The snapshot rows are written once and never
+     * updated, all in one transaction: a failure half-way leaves no rows,
+     * and two HR staff locking together cannot both write the snapshot.
      */
     public function kunci(string $bulan, string $by): array
     {
@@ -169,28 +172,37 @@ final class HrisMealService
         if ($bulan === '') {
             throw new HrisError('validation_failed', 'Bulan harus YYYY-MM.', 422);
         }
-        if ($this->terkunci($bulan)) {
-            throw new HrisError('sudah_terkunci', 'Periode ini sudah dikunci.', 409);
+        if ($bulan >= substr(PunchRules::tglWib(PunchRules::ms()), 0, 7)) {
+            throw new HrisError('bulan_belum_selesai', 'Periode baru bisa dikunci setelah bulannya selesai.', 422);
         }
-        $antrean = $this->antreanDalamBulan($bulan);
-        if ($antrean > 0) {
-            throw new HrisError('antrean_belum_kosong',
-                "Masih ada {$antrean} ketukan menunggu di bulan ini. Putuskan dulu sebelum mengunci.", 422,
-                ['antrean' => $antrean]);
-        }
-        $periode = HrisPeriode::query()->updateOrCreate(['bulan' => $bulan], ['status' => 'TERBUKA']);
-        $n = 0;
-        foreach ($this->userIdsInMonth($bulan) as $uid) {
-            $b = $this->barisUntuk($uid, $bulan);
-            HrisRekapUangMakan::query()->create([
-                'periode_id' => $periode->id, 'user_id' => $uid, 'divisi' => $b['divisi'],
-                'grade' => $b['grade'], 'hari_hadir' => $b['hari_hadir'], 'nominal' => $b['nominal'],
-                'total' => $b['total'], 'rincian' => $b['rincian'],
-            ]);
-            $n++;
-        }
-        $periode->fill(['status' => 'TERKUNCI', 'dikunci_oleh' => mb_substr($by, 0, 120),
-            'dikunci_at' => PunchRules::ms()])->save();
+
+        $n = HrisPeriode::query()->getConnection()->transaction(function () use ($bulan, $by): int {
+            HrisPeriode::query()->firstOrCreate(['bulan' => $bulan], ['status' => 'TERBUKA']);
+            $periode = HrisPeriode::query()->where('bulan', $bulan)->lockForUpdate()->firstOrFail();
+            if ($periode->status === 'TERKUNCI') {
+                throw new HrisError('sudah_terkunci', 'Periode ini sudah dikunci.', 409);
+            }
+            $antrean = $this->antreanDalamBulan($bulan);
+            if ($antrean > 0) {
+                throw new HrisError('antrean_belum_kosong',
+                    "Masih ada {$antrean} ketukan menunggu di bulan ini. Putuskan dulu sebelum mengunci.", 422,
+                    ['antrean' => $antrean]);
+            }
+            $n = 0;
+            foreach ($this->userIdsInMonth($bulan) as $uid) {
+                $b = $this->barisUntuk($uid, $bulan);
+                HrisRekapUangMakan::query()->create([
+                    'periode_id' => $periode->id, 'user_id' => $uid, 'divisi' => $b['divisi'],
+                    'grade' => $b['grade'], 'hari_hadir' => $b['hari_hadir'], 'nominal' => $b['nominal'],
+                    'total' => $b['total'], 'rincian' => $b['rincian'],
+                ]);
+                $n++;
+            }
+            $periode->fill(['status' => 'TERKUNCI', 'dikunci_oleh' => mb_substr($by, 0, 120),
+                'dikunci_at' => PunchRules::ms()])->save();
+
+            return $n;
+        });
         $this->audit->record($by, 'periode_dikunci', 'hris_periode', $bulan, ['baris' => $n]);
 
         return $this->rekap($bulan);

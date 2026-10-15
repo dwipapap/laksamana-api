@@ -91,6 +91,16 @@ it('refuses to lock with a non-empty queue', function () {
         ->assertStatus(422)->assertJsonPath('error.code', 'antrean_belum_kosong');
 });
 
+it('refuses to lock a month that is not over', function () {
+    hrisMakeHr('u-admin');
+    $bulan = substr(hrisToday(), 0, 7);
+
+    $t = hrisToken('u-admin');
+    test()->postJson('/api/v1/hris/meal/lock', ['bulan' => $bulan],
+        ['Authorization' => 'Bearer '.$t])
+        ->assertStatus(422)->assertJsonPath('error.code', 'bulan_belum_selesai');
+});
+
 it('locks a snapshot and exports CSV', function () {
     hrisSettings(['tanpaShiftBoleh' => true]);
     hrisMakeHr('u-admin');

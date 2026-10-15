@@ -23,9 +23,9 @@ use Illuminate\Support\Str;
  *
  * Differences from Absensi, all locked in docs/modules/hris.md: the face
  * model is new (descriptors carry their `model`, matched per model), shifts
- * fall back to each person's default shift, HARI_LIBUR reads the HRIS
- * calendar (a stub in B1, real in B2), and enrolment rejects a face that
- * matches anyone else's.
+ * fall back to each person's default shift, HARI_LIBUR comes only from the
+ * person's own day off (a public holiday earns PH instead), and enrolment
+ * rejects a face that matches anyone else's.
  */
 final class HrisAttendanceService
 {
@@ -33,7 +33,6 @@ final class HrisAttendanceService
         private readonly JadwalService $jadwal,
         private readonly HrisSettingsService $settings,
         private readonly HrisAuditService $audit,
-        private readonly HrisCalendar $calendar,
         private readonly AbsensiService $absensi,
     ) {}
 
@@ -361,8 +360,7 @@ final class HrisAttendanceService
         $wajahHalangi = $w['terdaftar'] ? ! $w['ok'] : ! empty($set['wajahWajib']);
 
         $alasan = PunchRules::tentukanAlasan($dalamArea, $shift, $dalamShift,
-            $wajahHalangi, $w['terdaftar'], (bool) $set['tanpaShiftBoleh'],
-            $this->calendar->isHoliday($tgl));
+            $wajahHalangi, $w['terdaftar'], (bool) $set['tanpaShiftBoleh']);
         $status = $alasan === '' ? 'VALID' : 'MENUNGGU';
         $alasanKru = mb_substr(trim(self::s($in['alasan'] ?? '')), 0, 255);
         if ($status === 'MENUNGGU' && $alasanKru === '') {

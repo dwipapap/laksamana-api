@@ -90,20 +90,20 @@ it('orders the queue reasons like the legacy module', function () {
     $alasan = fn (...$a) => PunchRules::tentukanAlasan(...$a);
 
     // Outside beats everything, even a face mismatch.
-    expect($alasan(false, $shift, true, true, true, false, false))->toBe('LUAR_AREA');
+    expect($alasan(false, $shift, true, true, true, false))->toBe('LUAR_AREA');
     // An unreadable roster records without queuing.
-    expect($alasan(true, false, false, true, true, false, false))->toBe('');
+    expect($alasan(true, false, false, true, true, false))->toBe('');
     // Genuinely unscheduled queues — unless allowed.
-    expect($alasan(true, null, false, false, false, false, false))->toBe('TANPA_SHIFT');
-    expect($alasan(true, null, false, false, false, true, false))->toBe('');
-    // A holiday worked queues, even inside the shift.
-    expect($alasan(true, $shift, true, false, false, false, true))->toBe('HARI_LIBUR');
+    expect($alasan(true, null, false, false, false, false))->toBe('TANPA_SHIFT');
+    expect($alasan(true, null, false, false, false, true))->toBe('');
+    // The person's own day off queues, even inside the shift hours.
+    expect($alasan(true, ['libur' => 1] + $shift, true, false, false, false))->toBe('HARI_LIBUR');
     // Outside the shift window queues.
-    expect($alasan(true, $shift, false, false, false, false, false))->toBe('LUAR_SHIFT');
+    expect($alasan(true, $shift, false, false, false, false))->toBe('LUAR_SHIFT');
     // Face mismatch queues as suspicion; the unenrolled as admin chore.
-    expect($alasan(true, $shift, true, true, true, false, false))->toBe('WAJAH');
-    expect($alasan(true, $shift, true, true, false, false, false))->toBe('WAJAH_KOSONG');
+    expect($alasan(true, $shift, true, true, true, false))->toBe('WAJAH');
+    expect($alasan(true, $shift, true, true, false, false))->toBe('WAJAH_KOSONG');
     // Clean punches pass.
-    expect($alasan(true, $shift, true, false, true, false, false))->toBe('')
-        ->and($alasan(true, $shift, true, false, false, false, false))->toBe('');
+    expect($alasan(true, $shift, true, false, true, false))->toBe('')
+        ->and($alasan(true, $shift, true, false, false, false))->toBe('');
 });

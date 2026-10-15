@@ -76,6 +76,9 @@ Code: `app/Modules/Hris`.
 - `alasan_antrean`: `[]` when VALID, else one of `LUAR_AREA`, `TANPA_SHIFT`,
   `HARI_LIBUR`, `LUAR_SHIFT`, `WAJAH`, `WAJAH_KOSONG` (precedence in this
   order; a `MENUNGGU` row always carries the crew's `alasan_kru`).
+  `HARI_LIBUR` means the person's own schedule says off that day. A public
+  holiday in the HRIS calendar never queues a punch; a VALID MASUK on it
+  earns PH.
 - `berubah` is the ADR-0007 `version` column (the build prompt's `berubah`
   name maps to it; see the migration note). Send it back on decisions.
 - A night-shift PULANG within 18 h of MASUK belongs to the MASUK date.

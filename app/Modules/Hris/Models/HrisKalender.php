@@ -8,8 +8,8 @@ use App\Core\Models\CoreRecord;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
- * One holiday: national or company. Read by DbCalendar for the HARI_LIBUR
- * queue reason and the PH earn job; written by HR (CRUD + file import).
+ * One holiday: national or company. Read by DbCalendar for the PH earn job
+ * (a holiday never queues a punch); written by HR (CRUD + file import).
  */
 final class HrisKalender extends CoreRecord
 {

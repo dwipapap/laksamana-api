@@ -180,7 +180,6 @@ it('lets a repeated PULANG overwrite and belong to the MASUK date', function () 
     expect($dua['punch']['waktu'])->toBe(hrisMs(2026, 10, 21, 1, 0));
 });
 
-it('keeps HARI_LIBUR unwired until the B2 calendar', function () {
-    // The stub calendar returns false, so the reason path is only unit-tested.
+it('knows no holiday until HR enters one', function () {
     expect(app(HrisCalendar::class)->isHoliday('2026-12-25'))->toBeFalse();
 });

@@ -14,7 +14,7 @@ use Illuminate\Http\Request;
 
 /**
  * /api/v1/hris — the holiday calendar (L8). Reads are open to every HRIS
- * holder (the punch screen explains HARI_LIBUR); writes are HR-only.
+ * holder (the app shows upcoming holidays); writes are HR-only.
  * National holidays come from an HR-uploaded JSON/CSV file — there is no
  * single reliable public API, so none is guessed here.
  */

@@ -7,7 +7,8 @@ use Illuminate\Http\UploadedFile;
 
 /*
  * Holiday calendar (L8): HR CRUD + file/paste import; reads open to crew.
- * Wiring HARI_LIBUR into the punch path ends the file (B1 left a stub).
+ * A public holiday never queues a punch (only the person's own day off
+ * does); the last test pins that.
  */
 
 function hrisHoliday(string $tgl, string $nama = 'Libur uji'): void
@@ -77,15 +78,17 @@ it('imports an uploaded CSV file', function () {
     expect($r)->toMatchArray(['dibuat' => 2, 'diperbarui' => 0]);
 });
 
-it('queues HARI_LIBUR for holiday work', function () {
+it('does not queue scheduled work on a public holiday', function () {
+    // Crew routinely work on holidays: the punch is VALID and earns PH (L3)
+    // instead of waiting for an HR decision.
     hrisSettings(['tanpaShiftBoleh' => false]);
     $tgl = hrisDate(2026, 12, 25);
     hrisHoliday($tgl, 'Natal');
     hrisPlantShift('u-dwipa', $tgl, 'PAGI', '08:00', '17:00');
 
     $out = app(HrisAttendanceService::class)->recordPunch(hrisMe('u-dwipa'),
-        ['arah' => 'MASUK', 'alasan' => 'piket natal'], hrisMs(2026, 12, 25, 9, 0));
+        ['arah' => 'MASUK'], hrisMs(2026, 12, 25, 9, 0));
 
-    expect($out['punch'])->toMatchArray(['status' => 'MENUNGGU', 'alasan_antrean' => ['HARI_LIBUR']]);
+    expect($out['punch'])->toMatchArray(['status' => 'VALID', 'alasan_antrean' => []]);
     hrisClearShift('u-dwipa', $tgl);
 });
