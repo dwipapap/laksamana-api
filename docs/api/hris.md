@@ -249,6 +249,33 @@ Payroll phase a (P1–P2), discipline (S4), team KPI (K1), People Score
   ranked. Achievement per KPI item is clamped 0–120% (`NAIK`: nilai/target,
   `TURUN`: target/nilai) and averaged by weight.
 
+## B4 — push reminders and geofence
+
+Reminders 1–7 (hris.md) via Expo → FCM/APNs. Scheduler: `hris:pengingat
+telat` every 10 minutes 05:00–23:00 + `hris:pengingat harian` daily 07:00
+Asia/Jakarta (routes/console.php; cPanel cron drives it). Every send is
+idempotent per (jenis, ref, user); payloads carry only the recipient's own
+data (their shift, their PH, their request) — no names, no biometrics.
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/hris/devices` | `{token, platform?}` — register (or move) an Expo token. `201` |
+| DELETE | `/hris/devices` | `{token}` — remove your token |
+| POST | `/hris/geofence-events` | `{lokasi_id?, tipe: ENTER\|EXIT}` — the server may remind, never punch (A8) |
+
+1. No MASUK X min after the shift starts (`reminderTelatMenit`, default
+   30) — roster sweep, skips holidays and the already-punched.
+2. EXIT with MASUK but no PULANG → "sudah pulang?" nudge (once per day).
+3. ENTER with no MASUK → "absen sekarang" nudge (once per day).
+4. PH expiring within 14 days.
+5. Waiting requests → heads (`MENUNGGU`), HR (`MENUNGGU_HRD`).
+6. Decisions → the crew member (queue + request outcomes).
+7. Unfinished mandatory Akademi materials → weekly nudge.
+
+Settings: `pushAktif` (master switch), `reminderTelatMenit` (5–240),
+`expoAccessToken` (optional, higher limits — secret: writable, never
+served by GET settings). Dead tokens (`DeviceNotRegistered`) are deleted.
+
 ## For laksamana-hris
 
 `packages/api` generates types from `openapi.json` (tag `hris`). Mobile:

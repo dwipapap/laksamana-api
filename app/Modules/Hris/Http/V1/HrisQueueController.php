@@ -10,6 +10,7 @@ use App\Modules\Hris\Services\HrisAttendanceService;
 use App\Modules\Hris\Services\HrisError;
 use App\Modules\Hris\Services\HrisHarianService;
 use App\Modules\Hris\Services\HrisLingkup;
+use App\Modules\Hris\Services\HrisReminderService;
 use App\Support\Api\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -26,6 +27,7 @@ final class HrisQueueController extends HrisBaseController
         private readonly HrisAttendanceService $hadir,
         private readonly HrisLingkup $lingkup,
         private readonly HrisHarianService $harian,
+        private readonly HrisReminderService $pengingat,
     ) {
         parent::__construct($access);
     }
@@ -69,13 +71,15 @@ final class HrisQueueController extends HrisBaseController
             if (! $out['ok']) {
                 throw new HrisError('already_decided', 'Ketukan ini sudah diputus.', 409);
             }
-            if (strtoupper(self::s($d['status'] ?? '')) === 'VALID') {
-                // A punch that just turned VALID on a holiday earns its PH.
-                // Swallowed on failure: the daily job backfills idempotently.
-                try {
+            // Post-decision hooks, swallowed on failure: the decision itself
+            // already stands, PH backfills in the daily job, and a missed
+            // push retries on the next relevant run (same idempotent ref).
+            try {
+                if (strtoupper(self::s($d['status'] ?? '')) === 'VALID') {
                     $this->harian->syncPhForKetukan($id);
-                } catch (\Throwable) {
                 }
+                $this->pengingat->putusanKetukan($row->user_id, $id, $d['status'] ?? '');
+            } catch (\Throwable) {
             }
 
             return ['berubah' => 1];

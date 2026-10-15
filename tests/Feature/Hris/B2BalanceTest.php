@@ -4,6 +4,7 @@ use App\Modules\Hris\Models\HrisKetukan;
 use App\Modules\Hris\Services\HrisAttendanceService;
 use App\Modules\Hris\Services\HrisBalanceService;
 use App\Modules\Hris\Services\HrisHarianService;
+use Illuminate\Support\Facades\Http;
 
 /*
  * The balance ledger (L2–L6): earn/use/expiry with FIFO, PH for holiday
@@ -110,6 +111,7 @@ it('earns +1 PH for a VALID holiday punch', function () {
 });
 
 it('earns PH when a holiday punch is decided VALID late', function () {
+    Http::fake();
     hrisSettings(['tanpaShiftBoleh' => false]);
     $tgl = hrisToday();
     hrisHoliday($tgl, 'Libur hari ini');

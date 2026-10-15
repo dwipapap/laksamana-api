@@ -2,6 +2,7 @@
 
 use App\Modules\Hris\Models\HrisKetukan;
 use App\Modules\Hris\Services\HrisAttendanceService;
+use Illuminate\Support\Facades\Http;
 
 /*
  * The decision queue: HR decides with the `berubah` version they saw; a
@@ -37,6 +38,7 @@ it('lists the queue longest-waiting first as HR', function () {
 });
 
 it('decides a queued punch as HR', function () {
+    Http::fake();
     hrisMakeHr('u-admin');
     $row = hrisQueued('u-dwipa');
     $t = hrisToken('u-admin');
@@ -50,6 +52,7 @@ it('decides a queued punch as HR', function () {
 });
 
 it('answers 409 on a stale berubah and on deciding twice', function () {
+    Http::fake();
     hrisMakeHr('u-admin');
     $row = hrisQueued('u-dwipa');
     $t = hrisToken('u-admin');
@@ -65,6 +68,7 @@ it('answers 409 on a stale berubah and on deciding twice', function () {
 });
 
 it('refuses unknown decisions and unknown punches', function () {
+    Http::fake();
     hrisMakeHr('u-admin');
     $row = hrisQueued('u-dwipa');
     $t = hrisToken('u-admin');

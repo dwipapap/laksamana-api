@@ -4,6 +4,7 @@ use App\Modules\Hris\Models\HrisPengajuan;
 use App\Modules\Hris\Services\HrisBalanceService;
 use App\Modules\Hris\Services\HrisRequestService;
 use App\Modules\Jadwal\Services\JadwalService;
+use Illuminate\Support\Facades\Http;
 
 /*
  * CUTI/PH/IZIN requests (L1): crew file, Kepala Divisi first, HRD second;
@@ -55,6 +56,7 @@ it('refuses requests without balance or without IZIN proof', function () {
 });
 
 it('walks CUTI from filing to Jadwal cells', function () {
+    Http::fake();
     $crew = hrisBarCrew();
     if ($crew === null) {
         $this->markTestSkipped('no bar crew in the restored roster');
@@ -77,6 +79,7 @@ it('walks CUTI from filing to Jadwal cells', function () {
 });
 
 it('finishes HRD approval with deduction and cells', function () {
+    Http::fake();
     $crew = hrisBarCrew();
     if ($crew === null) {
         $this->markTestSkipped('no bar crew in the restored roster');
@@ -101,6 +104,7 @@ it('finishes HRD approval with deduction and cells', function () {
 });
 
 it('writes OFF cells with a PH note for approved PH', function () {
+    Http::fake();
     $crew = hrisBarCrew();
     if ($crew === null) {
         $this->markTestSkipped('no bar crew in the restored roster');
@@ -122,6 +126,7 @@ it('writes OFF cells with a PH note for approved PH', function () {
 });
 
 it('lets HR take the head step when the division has none', function () {
+    Http::fake();
     hrisSettings();
     hrisMakeHr('u-admin');
     // u-andry has an empty Tim (nonshift): no head will ever own the request.
@@ -136,6 +141,7 @@ it('lets HR take the head step when the division has none', function () {
 });
 
 it('refuses the HRD cell write without Jadwal rights', function () {
+    Http::fake();
     hrisSettings(['hr' => ['u-mella']]);
     app(HrisBalanceService::class)->adjust('test', 'u-andry', 'CUTI', 12, 'Saldo awal Talenta');
     $req = hrisRequest(hrisMe('u-andry'),
