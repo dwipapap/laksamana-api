@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Hris\Services;
 
+use App\Auth\AccountRepository;
 use App\Modules\Hris\Models\HrisPelanggaran;
 
 /**
@@ -15,7 +16,10 @@ final class HrisDisiplinService
 {
     public const TINGKAT = ['RINGAN' => 10, 'SEDANG' => 25, 'BERAT' => 50];
 
-    public function __construct(private readonly HrisAuditService $audit) {}
+    public function __construct(
+        private readonly HrisAuditService $audit,
+        private readonly AccountRepository $users,
+    ) {}
 
     private static function s(mixed $v): string
     {
@@ -92,8 +96,16 @@ final class HrisDisiplinService
 
     public function shape(HrisPelanggaran $r): array
     {
+        try {
+            $u = $this->users->userById($r->user_id);
+            $nama = $u ? (string) ($u['name'] ?? $r->user_id) : $r->user_id;
+        } catch (\Throwable) {
+            $nama = $r->user_id;
+        }
+
         return [
-            'id' => $r->id, 'user_id' => $r->user_id, 'tanggal' => $r->tanggal->format('Y-m-d'),
+            'id' => $r->id, 'user_id' => $r->user_id, 'nama' => $nama,
+            'tanggal' => $r->tanggal->format('Y-m-d'),
             'jenis' => $r->jenis, 'tingkat' => $r->tingkat, 'sp_ke' => (int) $r->sp_ke,
             'keterangan' => $r->keterangan, 'status' => $r->status,
             'dibuat_oleh' => $r->dibuat_oleh, 'berubah' => (int) $r->version,

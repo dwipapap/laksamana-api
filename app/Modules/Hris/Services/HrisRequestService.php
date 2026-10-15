@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Hris\Services;
 
+use App\Auth\AccountRepository;
 use App\Modules\Hris\Models\HrisPengajuan;
 use App\Modules\Hris\Models\HrisSaldoMutasi;
 use App\Modules\Jadwal\Services\JadwalService;
@@ -34,7 +35,25 @@ final class HrisRequestService
         private readonly HrisLingkup $lingkup,
         private readonly JadwalService $jadwal,
         private readonly Divisi $divisi,
+        private readonly AccountRepository $users,
     ) {}
+
+    /** @var array<string,string> user_id → display name (best-effort, per request) */
+    private array $namaCache = [];
+
+    private function namaUser(string $userId): string
+    {
+        if (! isset($this->namaCache[$userId])) {
+            try {
+                $u = $this->users->userById($userId);
+                $this->namaCache[$userId] = $u ? (string) ($u['name'] ?? $userId) : $userId;
+            } catch (\Throwable) {
+                $this->namaCache[$userId] = $userId;
+            }
+        }
+
+        return $this->namaCache[$userId];
+    }
 
     private static function s(mixed $v): string
     {
@@ -137,7 +156,8 @@ final class HrisRequestService
     public function shape(HrisPengajuan $r): array
     {
         return [
-            'id' => $r->id, 'user_id' => $r->user_id, 'jenis' => $r->jenis,
+            'id' => $r->id, 'user_id' => $r->user_id, 'nama' => $this->namaUser($r->user_id),
+            'jenis' => $r->jenis,
             'tgl_mulai' => $r->tgl_mulai->format('Y-m-d'), 'tgl_selesai' => $r->tgl_selesai->format('Y-m-d'),
             'hari' => (int) $r->hari, 'alasan' => $r->alasan,
             'ada_lampiran' => $r->lampiran_path ? true : false,

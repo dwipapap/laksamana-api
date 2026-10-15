@@ -57,6 +57,7 @@ Route::middleware(['auth:sanctum', 'module:hris'])->prefix('hris')->group(functi
 
     Route::get('balances/me', [B::class, 'mine']);
     Route::get('balances', [B::class, 'index']);
+    Route::get('balances/mutations', [B::class, 'mutations']);
     Route::post('balances/adjust', [B::class, 'adjust']);
 
     Route::get('requests', [R::class, 'index']);

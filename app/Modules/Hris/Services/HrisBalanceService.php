@@ -339,6 +339,27 @@ final class HrisBalanceService
         ];
     }
 
+    /**
+     * Ledger history, newest first — the console "riwayat mutasi" (C2).
+     * Scoping happens in the controller; this only reads one person's rows.
+     *
+     * @return array<int,array{id:string,tanggal:string,jenis:string,delta:int,sumber:string,catatan:string,kedaluwarsa:string|null}>
+     */
+    public function riwayat(string $userId, int $batas = 50): array
+    {
+        $out = [];
+        foreach (HrisSaldoMutasi::query()->where('user_id', self::s($userId))
+            ->orderByDesc('tanggal')->orderByDesc('id')->limit(max(1, min(200, $batas)))->get() as $m) {
+            $out[] = ['id' => $m->id, 'tanggal' => $m->tanggal->format('Y-m-d'),
+                'jenis' => $m->jenis, 'delta' => (int) $m->delta,
+                'sumber' => trim($m->sumber_tipe.' '.$m->sumber_id),
+                'catatan' => (string) $m->catatan,
+                'kedaluwarsa' => $m->kedaluwarsa?->format('Y-m-d')];
+        }
+
+        return $out;
+    }
+
     public static function tambahBulan(string $ymd, int $n): string
     {
         return Carbon::parse($ymd, 'Asia/Jakarta')->addMonthsNoOverflow($n)->format('Y-m-d');

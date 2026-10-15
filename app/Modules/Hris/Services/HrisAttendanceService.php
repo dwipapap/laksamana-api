@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Hris\Services;
 
+use App\Auth\AccountRepository;
 use App\Modules\Absensi\Services\AbsensiService;
 use App\Modules\Hris\Models\HrisKetukan;
 use App\Modules\Hris\Models\HrisLokasi;
@@ -35,7 +36,41 @@ final class HrisAttendanceService
         private readonly HrisSettingsService $settings,
         private readonly HrisAuditService $audit,
         private readonly AbsensiService $absensi,
+        private readonly AccountRepository $users,
     ) {}
+
+    /** @var array<string,string> user_id → display name (best-effort, per request) */
+    private array $namaCache = [];
+
+    /** @var array<string,string> user_id → division (best-effort, per request) */
+    private array $divisiCache = [];
+
+    private function namaUser(string $userId): string
+    {
+        if (! isset($this->namaCache[$userId])) {
+            try {
+                $u = $this->users->userById($userId);
+                $this->namaCache[$userId] = $u ? (string) ($u['name'] ?? $userId) : $userId;
+            } catch (\Throwable) {
+                $this->namaCache[$userId] = $userId;
+            }
+        }
+
+        return $this->namaCache[$userId];
+    }
+
+    private function divisiUser(string $userId): string
+    {
+        if (! isset($this->divisiCache[$userId])) {
+            try {
+                $this->divisiCache[$userId] = $this->jadwal->divisiUser($userId);
+            } catch (\Throwable) {
+                $this->divisiCache[$userId] = '';
+            }
+        }
+
+        return $this->divisiCache[$userId];
+    }
 
     private static function s(mixed $v): string
     {
@@ -279,7 +314,8 @@ final class HrisAttendanceService
     {
         $out = [];
         foreach (HrisWajah::query()->where('status', 'AKTIF')->orderBy('user_id')->get() as $r) {
-            $out[] = ['user_id' => $r->user_id, 'model' => $r->model,
+            $out[] = ['user_id' => $r->user_id, 'nama' => $this->namaUser($r->user_id),
+                'model' => $r->model,
                 'consent_at' => $r->consent_at?->toIso8601String(),
                 'dibuat_oleh' => $r->dibuat_oleh, 'ada_foto' => $r->foto_path ? true : false,
                 'version' => (int) $r->version];
@@ -551,7 +587,9 @@ final class HrisAttendanceService
     public function shape(HrisKetukan $r): array
     {
         return [
-            'id' => $r->id, 'user_id' => $r->user_id, 'tanggal_kerja' => $r->tanggal_kerja,
+            'id' => $r->id, 'user_id' => $r->user_id, 'nama' => $this->namaUser($r->user_id),
+            'divisi' => $this->divisiUser($r->user_id),
+            'tanggal_kerja' => $r->tanggal_kerja,
             'arah' => $r->arah, 'waktu' => (int) $r->waktu,
             'jam' => PunchRules::jamWib((int) $r->waktu),
             'lat' => (float) $r->lat, 'lng' => (float) $r->lng, 'akurasi_m' => (int) $r->akurasi_m,

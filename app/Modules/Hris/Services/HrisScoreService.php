@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Hris\Services;
 
+use App\Auth\AccountRepository;
 use App\Modules\Hris\Models\HrisPenilaianAtasan;
 use App\Modules\Hris\Models\HrisSkor;
 use App\Modules\Hris\Models\HrisSkorFormula;
@@ -36,6 +37,7 @@ final class HrisScoreService
         private readonly HrisAuditService $audit,
         private readonly HrisLingkup $lingkup,
         private readonly JadwalService $jadwal,
+        private readonly AccountRepository $users,
     ) {
         $this->komponen = [
             'kehadiran' => $kehadiran, 'ketepatan' => $ketepatan, 'kpi_tim' => $kpiTim,
@@ -186,8 +188,15 @@ final class HrisScoreService
 
     public function shape(HrisSkor $r): array
     {
+        try {
+            $u = $this->users->userById($r->user_id);
+            $nama = $u ? (string) ($u['name'] ?? $r->user_id) : $r->user_id;
+        } catch (\Throwable) {
+            $nama = $r->user_id;
+        }
+
         return [
-            'user_id' => $r->user_id, 'bulan' => $r->bulan,
+            'user_id' => $r->user_id, 'nama' => $nama, 'bulan' => $r->bulan,
             'formula_versi' => (int) $r->formula_versi, 'komponen' => $r->komponen ?? [],
             'skor' => (float) $r->skor, 'kelengkapan' => (float) $r->kelengkapan,
             'terkunci' => (bool) $r->terkunci, 'berubah' => (int) $r->version,

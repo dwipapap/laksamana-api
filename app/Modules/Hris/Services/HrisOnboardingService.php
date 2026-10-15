@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Hris\Services;
 
+use App\Auth\AccountRepository;
 use App\Modules\Akademi\Services\AkademiRecords;
 use App\Modules\Hris\Models\HrisOnboarding;
 use App\Modules\Hris\Models\HrisOnboardingLangkah;
@@ -40,6 +41,7 @@ final class HrisOnboardingService
         private readonly JadwalService $jadwal,
         private readonly AkademiRecords $akademi,
         private readonly HrisAuditService $audit,
+        private readonly AccountRepository $users,
     ) {}
 
     private static function s(mixed $v): string
@@ -176,9 +178,15 @@ final class HrisOnboardingService
                 'catatan' => $l->catatan];
         }
         $selesai = count(array_filter($langkah, fn ($l) => $l['selesai']));
+        try {
+            $u = $this->users->userById($r->user_id);
+            $nama = $u ? (string) ($u['name'] ?? $r->user_id) : $r->user_id;
+        } catch (\Throwable) {
+            $nama = $r->user_id;
+        }
 
         return [
-            'id' => $r->id, 'user_id' => $r->user_id, 'divisi' => $r->divisi,
+            'id' => $r->id, 'user_id' => $r->user_id, 'nama' => $nama, 'divisi' => $r->divisi,
             'mulai' => $r->mulai->format('Y-m-d'), 'status' => $r->status,
             'program' => $this->program($r->program_akademi_id),
             'langkah' => $langkah, 'maju' => [$selesai, count($langkah)],
