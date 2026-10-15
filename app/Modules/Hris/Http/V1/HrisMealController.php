@@ -41,6 +41,8 @@ final class HrisMealController extends HrisBaseController
 
     public function saveTarif(Request $r): JsonResponse
     {
+        $me = $this->me($r);
+        $this->lingkup->assertHr($me, 'Menyimpan tarif');
         $d = $r->validate([
             'id' => ['nullable', 'string', 'max:32'],
             'divisi' => ['nullable', 'string', 'max:64'],
@@ -48,10 +50,8 @@ final class HrisMealController extends HrisBaseController
             'nominal' => ['required', 'integer', 'min:0', 'max:1000000000'],
             'berlaku_dari' => ['required', 'date_format:Y-m-d'],
         ]);
-        $me = $this->me($r);
 
         return $this->run(function () use ($me, $d) {
-            $this->lingkup->assertHr($me, 'Menyimpan tarif');
             $row = $this->meal->saveTarif($d, self::s($me['name']));
 
             return ['id' => $row->id];
@@ -84,12 +84,11 @@ final class HrisMealController extends HrisBaseController
 
     public function lock(Request $r): JsonResponse
     {
-        $d = $r->validate(['bulan' => ['required', 'date_format:Y-m']]);
         $me = $this->me($r);
+        $this->lingkup->assertHr($me, 'Mengunci periode');
+        $d = $r->validate(['bulan' => ['required', 'date_format:Y-m']]);
 
         return $this->run(function () use ($me, $d) {
-            $this->lingkup->assertHr($me, 'Mengunci periode');
-
             return $this->meal->kunci($d['bulan'], self::s($me['name']));
         });
     }

@@ -62,13 +62,17 @@ final class HrisKpiController extends HrisBaseController
 
     public function saveTemplate(Request $r): JsonResponse
     {
+        // HR gate first (division-level check still runs inside, it needs the body).
+        $me = $this->me($r);
+        if (! $this->lingkup->isHr($me) && ! $this->lingkup->isHead($me)) {
+            throw new HrisError('forbidden', 'Mengatur KPI hanya bisa dilakukan HR/admin modul HRIS.', 403);
+        }
         $d = $r->validate([
             'id' => ['nullable', 'string', 'max:32'],
             'divisi' => ['required', 'string', 'max:64'],
             'berlaku_dari' => ['required', 'date_format:Y-m-d'],
             'item' => ['required', 'array', 'min:1', 'max:12'],
         ]);
-        $me = $this->me($r);
 
         return $this->run(function () use ($me, $d) {
             $this->assertTulis($me, self::s($d['divisi']));
@@ -80,12 +84,15 @@ final class HrisKpiController extends HrisBaseController
 
     public function saveRealisasi(Request $r): JsonResponse
     {
+        $me = $this->me($r);
+        if (! $this->lingkup->isHr($me) && ! $this->lingkup->isHead($me)) {
+            throw new HrisError('forbidden', 'Mengatur KPI hanya bisa dilakukan HR/admin modul HRIS.', 403);
+        }
         $d = $r->validate([
             'item_id' => ['required', 'string', 'max:32'],
             'bulan' => ['required', 'date_format:Y-m'],
             'nilai' => ['required', 'numeric'],
         ]);
-        $me = $this->me($r);
 
         return $this->run(function () use ($me, $d) {
             $item = HrisKpiItem::query()->find(self::s($d['item_id']));

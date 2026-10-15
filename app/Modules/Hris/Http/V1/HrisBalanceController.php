@@ -57,16 +57,16 @@ final class HrisBalanceController extends HrisBaseController
     /** HR manual adjustment (positive or negative, reason required). */
     public function adjust(Request $r): JsonResponse
     {
+        $me = $this->me($r);
+        $this->lingkup->assertHr($me, 'Menyesuaikan saldo');
         $d = $r->validate([
             'user' => ['required', 'string', 'max:64'],
             'jenis' => ['required', 'string', 'max:8'],
             'delta' => ['required', 'integer', 'min:-365', 'max:365'],
             'catatan' => ['required', 'string', 'max:255'],
         ]);
-        $me = $this->me($r);
 
         return $this->run(function () use ($me, $d) {
-            $this->lingkup->assertHr($me, 'Menyesuaikan saldo');
             $this->saldo->adjust(self::s($me['name']), self::s($d['user']),
                 self::s($d['jenis']), (int) $d['delta'], self::s($d['catatan']));
 

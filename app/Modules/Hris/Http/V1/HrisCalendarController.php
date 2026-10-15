@@ -40,16 +40,16 @@ final class HrisCalendarController extends HrisBaseController
 
     public function store(Request $r): JsonResponse
     {
+        $me = $this->me($r);
+        $this->lingkup->assertHr($me, 'Mengatur kalender libur');
         $d = $r->validate([
             'id' => ['nullable', 'string', 'max:32'],
             'tanggal' => ['required', 'date_format:Y-m-d'],
             'nama' => ['required', 'string', 'max:120'],
             'jenis' => ['nullable', 'string', 'max:16'],
         ]);
-        $me = $this->me($r);
 
         return $this->run(function () use ($me, $d) {
-            $this->lingkup->assertHr($me, 'Mengatur kalender libur');
             $row = $this->kalender->save($d, self::s($me['name']));
 
             return ['id' => $row->id, 'tanggal' => $row->tanggal->format('Y-m-d')];
@@ -73,6 +73,8 @@ final class HrisCalendarController extends HrisBaseController
     /** Import from pasted rows or an uploaded .json/.csv file. HR only. */
     public function import(Request $r): JsonResponse
     {
+        $me = $this->me($r);
+        $this->lingkup->assertHr($me, 'Mengimpor libur');
         $d = $r->validate([
             'libur' => ['nullable', 'array', 'max:500'],
             'libur.*.tanggal' => ['nullable', 'string', 'max:32'], // bad dates are skipped by the service
@@ -80,10 +82,8 @@ final class HrisCalendarController extends HrisBaseController
             'libur.*.jenis' => ['nullable', 'string', 'max:16'],
             'file' => ['nullable', 'file', 'max:2048', 'mimetypes:text/csv,application/json,text/plain'],
         ]);
-        $me = $this->me($r);
 
         return $this->run(function () use ($me, $d, $r) {
-            $this->lingkup->assertHr($me, 'Mengimpor libur');
             $rows = $d['libur'] ?? [];
             if ($r->hasFile('file')) {
                 $f = $r->file('file');

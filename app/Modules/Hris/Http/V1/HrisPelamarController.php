@@ -63,15 +63,14 @@ final class HrisPelamarController extends HrisBaseController
 
     public function index(Request $r): JsonResponse
     {
+        $me = $this->me($r);
+        $this->hr($me, 'Melihat pelamar');
         $d = $r->validate([
             'lowongan' => ['nullable', 'string', 'max:32'],
             'tahap' => ['nullable', 'string', 'max:16'],
         ]);
-        $me = $this->me($r);
 
-        return $this->run(function () use ($me, $d) {
-            $this->hr($me, 'Melihat pelamar');
-
+        return $this->run(function () use ($d) {
             return $this->rekrutmen->daftarPelamar(self::s($d['lowongan'] ?? ''), $d['tahap'] ?? null);
         });
     }
@@ -89,6 +88,8 @@ final class HrisPelamarController extends HrisBaseController
 
     public function store(Request $r): JsonResponse
     {
+        $me = $this->me($r);
+        $this->hr($me, 'Mengunggah CV');
         $d = $r->validate([
             'lowongan_id' => ['required', 'string', 'max:32'],
             'nama' => ['required', 'string', 'max:120'],
@@ -96,26 +97,22 @@ final class HrisPelamarController extends HrisBaseController
             'cv_nama' => ['nullable', 'string', 'max:180'],
             'kontak' => ['nullable', 'array'],
         ]);
-        $me = $this->me($r);
 
         return $this->run(function () use ($me, $d) {
-            $this->hr($me, 'Mengunggah CV');
-
             return $this->rekrutmen->bentukPelamar($this->rekrutmen->unggahPelamar($me, $d), true);
         }, 201);
     }
 
     public function tahap(Request $r, string $id): JsonResponse
     {
+        $me = $this->me($r);
+        $this->hr($me, 'Memindah tahap');
         $d = $r->validate([
             'tahap' => ['required', 'string', 'max:16'],
             'catatan' => ['nullable', 'string', 'max:500'],
         ]);
-        $me = $this->me($r);
 
         return $this->run(function () use ($me, $id, $d) {
-            $this->hr($me, 'Memindah tahap');
-
             return $this->rekrutmen->bentukPelamar(
                 $this->rekrutmen->pindahTahap($me, $this->find($id), $d['tahap'], $d['catatan'] ?? ''), true);
         });
@@ -124,11 +121,11 @@ final class HrisPelamarController extends HrisBaseController
     /** Screen (advice with reasons); ?async=1 queues it on `database`. */
     public function screen(Request $r, string $id): JsonResponse
     {
-        $d = $r->validate(['async' => ['nullable', 'boolean']]);
         $me = $this->me($r);
+        $this->hr($me, 'Menapis pelamar');
+        $d = $r->validate(['async' => ['nullable', 'boolean']]);
 
         return $this->run(function () use ($me, $id, $d) {
-            $this->hr($me, 'Menapis pelamar');
             $row = $this->find($id);
             if (! empty($d['async'])) {
                 ScreeningJob::dispatch($row->id, self::s($me['name']));

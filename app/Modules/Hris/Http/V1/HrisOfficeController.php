@@ -38,6 +38,9 @@ final class HrisOfficeController extends HrisBaseController
 
     public function saveLocation(Request $r): JsonResponse
     {
+        // Auth first: crew without HR rights get 403, not 422.
+        $me = $this->me($r);
+        $this->lingkup->assertHr($me, 'Menyimpan lokasi');
         $d = $r->validate([
             'id' => ['nullable', 'string', 'max:32'],
             'nama' => ['required', 'string', 'max:120'],
@@ -46,10 +49,8 @@ final class HrisOfficeController extends HrisBaseController
             'radius' => ['nullable', 'integer'],
             'aktif' => ['nullable', 'boolean'],
         ]);
-        $me = $this->me($r);
 
         return $this->run(function () use ($me, $d) {
-            $this->lingkup->assertHr($me, 'Menyimpan lokasi');
             $lok = $this->hadir->saveLocation($d);
             $this->audit->record(self::s($me['name']), 'lokasi_disimpan', 'hris_lokasi', $lok->id, []);
 
@@ -97,11 +98,11 @@ final class HrisOfficeController extends HrisBaseController
 
     public function saveSettings(Request $r): JsonResponse
     {
-        $d = $r->validate(['data' => ['required', 'array']]);
         $me = $this->me($r);
+        $this->lingkup->assertHr($me, 'Menyimpan pengaturan');
+        $d = $r->validate(['data' => ['required', 'array']]);
 
         return $this->run(function () use ($me, $d) {
-            $this->lingkup->assertHr($me, 'Menyimpan pengaturan');
             $out = $this->settings->save($d['data']);
             $this->audit->record(self::s($me['name']), 'pengaturan_disimpan', 'hris_pengaturan', '',
                 ['kunci' => array_keys($d['data'])]);

@@ -16,7 +16,7 @@ declare(strict_types=1);
  */
 $root = dirname(__DIR__);
 $docPath = $root.'/docs/api/openapi.json';
-$prefixes = ['api/v1/account', 'api/v1/jadwal', 'api/v1/marketing'];
+$prefixes = ['api/v1/account', 'api/v1/jadwal', 'api/v1/marketing', 'api/v1/hris'];
 
 /** `api/v1/x/{id}` and `/api/v1/x/{user}` both normalise to `api/v1/x/{}`. */
 function normalize(string $path): string

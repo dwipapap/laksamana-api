@@ -42,15 +42,15 @@ final class HrisOnboardingController extends HrisBaseController
 
     public function saveTemplate(Request $r): JsonResponse
     {
+        $me = $this->me($r);
+        $this->lingkup->assertHr($me, 'Menyimpan template onboarding');
         $d = $r->validate([
             'divisi' => ['required', 'string', 'max:64'],
             'langkah' => ['required', 'array', 'min:1', 'max:20'],
             'program_akademi_id' => ['nullable', 'string', 'max:64'],
         ]);
-        $me = $this->me($r);
 
         return $this->run(function () use ($me, $d) {
-            $this->lingkup->assertHr($me, 'Menyimpan template onboarding');
             $t = $this->onboarding->simpanTemplate($d, self::s($me['name']));
 
             return ['id' => $t->id, 'divisi' => $t->divisi];
@@ -75,16 +75,15 @@ final class HrisOnboardingController extends HrisBaseController
     /** Start onboarding for one user (HR). */
     public function start(Request $r): JsonResponse
     {
+        $me = $this->me($r);
+        $this->lingkup->assertHr($me, 'Memulai onboarding');
         $d = $r->validate([
             'user' => ['required', 'string', 'max:64'],
             'mulai' => ['required', 'date_format:Y-m-d'],
             'divisi' => ['nullable', 'string', 'max:64'],
         ]);
-        $me = $this->me($r);
 
         return $this->run(function () use ($me, $d) {
-            $this->lingkup->assertHr($me, 'Memulai onboarding');
-
             return $this->onboarding->bentuk($this->onboarding->mulai(
                 $me, self::s($d['user']), $d['mulai'], self::s($d['divisi'] ?? '')));
         }, 201);
