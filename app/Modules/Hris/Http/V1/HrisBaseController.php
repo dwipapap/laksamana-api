@@ -44,9 +44,12 @@ abstract class HrisBaseController
         if ($e instanceof HrisError) {
             return ApiResponse::error($e->errorCode, $e->getMessage(), $e->status, $e->details);
         }
-        if ($e instanceof \RuntimeException) {
+        // Database errors are RuntimeExceptions too, but their message names
+        // hosts, databases and SQL: log it, never send it to the client.
+        if ($e instanceof \RuntimeException && ! $e instanceof \PDOException) {
             return ApiResponse::error('rejected', $e->getMessage(), 422);
         }
+        report($e);
 
         return ApiResponse::error('server_error', 'Internal server error.', 500);
     }

@@ -2,6 +2,8 @@
 
 use App\Modules\Hris\Services\FaceMatcher;
 
+require_once __DIR__.'/helpers.php';
+
 /*
  * FaceMatcher is pure: distances on fixed vectors, thresholds per model.
  */

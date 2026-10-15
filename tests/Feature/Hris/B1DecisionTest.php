@@ -4,6 +4,8 @@ use App\Modules\Hris\Models\HrisKetukan;
 use App\Modules\Hris\Services\HrisAttendanceService;
 use Illuminate\Support\Facades\Http;
 
+require_once __DIR__.'/helpers.php';
+
 /*
  * The decision queue: HR decides with the `berubah` version they saw; a
  * stale version is a 409, and deciding twice is a 409. One HTTP identity

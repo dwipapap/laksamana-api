@@ -2,6 +2,9 @@
 
 use App\Modules\Hris\Models\HrisLokasi;
 use App\Modules\Hris\Services\HrisSettingsService;
+use Illuminate\Support\Facades\Schema;
+
+require_once __DIR__.'/helpers.php';
 
 /*
  * HR office surface: locations CRUD, settings GET/PUT, and the one-time
@@ -67,6 +70,9 @@ it('keeps crew out of settings writes', function () {
 });
 
 it('imports legacy absensi locations once, idempotently', function () {
+    if (! Schema::connection('legacy_absensi')->hasTable('abs_lokasi')) {
+        $this->markTestSkipped('no absensi dump restored in this environment');
+    }
     hrisMakeHr('u-admin');
     $t = hrisToken('u-admin');
     $h = ['Authorization' => 'Bearer '.$t];

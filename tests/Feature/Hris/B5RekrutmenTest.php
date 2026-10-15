@@ -11,6 +11,8 @@ use App\Modules\Hris\Services\RedaksiPii;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 
+require_once __DIR__.'/helpers.php';
+
 /*
  * Recruitment (R1–R5): requests head→HR→owner, vacancies, applicants with
  * encrypted contacts, pure-PHP CV extraction, PII redaction, AI screening
@@ -93,9 +95,11 @@ it('files manpower requests as head, never as crew', function () {
     $t = hrisToken('u-arif');
     $r = test()->postJson('/api/v1/hris/permintaan',
         ['divisi' => 'bar', 'posisi' => 'Bartender', 'jumlah' => 2, 'jenis' => 'TAMBAHAN',
-            'alasan' => 'Outlet baru', 'kualifikasi' => 'Pengalaman 1 tahun'], ['Authorization' => 'Bearer '.$t])
+            'alasan' => 'Outlet baru', 'kualifikasi' => 'Pengalaman 1 tahun', 'dibutuhkan_tgl' => '2026-11-01'],
+        ['Authorization' => 'Bearer '.$t])
         ->assertCreated()->json('data');
-    expect($r)->toMatchArray(['divisi' => 'bar', 'status' => 'MENUNGGU_HR', 'pemohon_id' => 'u-arif']);
+    expect($r)->toMatchArray(['divisi' => 'bar', 'status' => 'MENUNGGU_HR', 'pemohon_id' => 'u-arif',
+        'dibutuhkan_tgl' => '2026-11-01']);
 });
 
 it('refuses crew requests', function () {

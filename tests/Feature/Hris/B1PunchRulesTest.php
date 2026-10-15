@@ -3,6 +3,8 @@
 use App\Modules\Hris\Services\PunchRules;
 use Carbon\CarbonImmutable;
 
+require_once __DIR__.'/helpers.php';
+
 /*
  * PunchRules is pure (no DB, no clock): every case runs on fixed inputs.
  */

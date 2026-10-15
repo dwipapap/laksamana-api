@@ -17,6 +17,6 @@ final class HrisPelamar extends CoreRecord
 
     protected function casts(): array
     {
-        return parent::casts() + [];
+        return parent::casts() + ['hapus_setelah' => 'immutable_date'];
     }
 }

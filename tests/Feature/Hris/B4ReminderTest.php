@@ -10,6 +10,8 @@ use App\Modules\Hris\Services\HrisRequestService;
 use App\Modules\Hris\Services\HrisSettingsService;
 use Illuminate\Support\Facades\Http;
 
+require_once __DIR__.'/helpers.php';
+
 /*
  * Push reminders (B4): devices, geofence nudges, lateness sweeps, PH
  * expiry, waiting approvals, decision notices. Expo HTTP is faked; every

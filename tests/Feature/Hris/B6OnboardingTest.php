@@ -8,6 +8,8 @@ use App\Modules\Hris\Services\HrisOnboardingService;
 use App\Modules\Hris\Services\HrisReminderService;
 use Illuminate\Support\Facades\Http;
 
+require_once __DIR__.'/helpers.php';
+
 /*
  * Onboarding (O1): HR templates and starts, the newcomer ticks their own
  * non-review steps, reviews take HR or the head. Learning stays in
@@ -32,10 +34,12 @@ it('manages templates as HR', function () {
     test()->postJson('/api/v1/hris/onboarding/templates',
         ['divisi' => 'bar', 'langkah' => [['kunci' => 'x', 'judul' => 'X'], ['kunci' => 'x', 'judul' => 'Y']]], $h)
         ->assertStatus(422);
+});
 
-    $t2 = hrisToken('u-dwipa');
-    test()->postJson('/api/v1/hris/onboarding/templates', ['divisi' => 'x', 'langkah' => []],
-        ['Authorization' => 'Bearer '.$t2])->assertStatus(403);
+it('keeps template writes from crew', function () {
+    $t = hrisToken('u-dwipa');
+    test()->postJson('/api/v1/hris/onboarding/templates', ['divisi' => 'x', 'langkah' => [['kunci' => 'x', 'judul' => 'X']]],
+        ['Authorization' => 'Bearer '.$t])->assertStatus(403);
 });
 
 it('starts onboarding with fallback steps and deadlines', function () {

@@ -6,6 +6,8 @@ use App\Modules\Hris\Services\HrisRequestService;
 use App\Modules\Jadwal\Services\JadwalService;
 use Illuminate\Support\Facades\Http;
 
+require_once __DIR__.'/helpers.php';
+
 /*
  * CUTI/PH/IZIN requests (L1): crew file, Kepala Divisi first, HRD second;
  * approval deducts FIFO and writes Jadwal cells; cancelling an approved

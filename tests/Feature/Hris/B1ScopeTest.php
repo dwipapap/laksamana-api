@@ -3,6 +3,8 @@
 use App\Modules\Hris\Services\HrisAttendanceService;
 use App\Modules\Jadwal\Services\JadwalService;
 
+require_once __DIR__.'/helpers.php';
+
 /*
  * Lingkup (sendiri/divisi/semua): crew see only their own rows, a Kepala
  * Divisi sees their divisions, HR sees everyone. One HTTP identity per test.

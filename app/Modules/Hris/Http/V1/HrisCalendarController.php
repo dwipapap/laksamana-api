@@ -75,7 +75,7 @@ final class HrisCalendarController extends HrisBaseController
     {
         $d = $r->validate([
             'libur' => ['nullable', 'array', 'max:500'],
-            'libur.*.tanggal' => ['nullable', 'date_format:Y-m-d'],
+            'libur.*.tanggal' => ['nullable', 'string', 'max:32'], // bad dates are skipped by the service
             'libur.*.nama' => ['nullable', 'string', 'max:120'],
             'libur.*.jenis' => ['nullable', 'string', 'max:16'],
             'file' => ['nullable', 'file', 'max:2048', 'mimetypes:text/csv,application/json,text/plain'],

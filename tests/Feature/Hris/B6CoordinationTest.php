@@ -1,7 +1,10 @@
 <?php
 
 use App\Auth\OfficeAccess;
+use App\Modules\Hris\Services\HrisCoordinationService;
 use App\Support\Divisi;
+
+require_once __DIR__.'/helpers.php';
 
 /*
  * Inter-division tickets (R6): HRIS screens, BD stores. Every write goes
@@ -40,20 +43,27 @@ it('scopes tickets to involved divisions', function () {
     expect(array_column($diminta, 'id'))->toContain($r['id']);
 });
 
-it('assigns and advances with the BD version guard', function () {
-    $t = hrisToken('u-dwipa');
-    $id = test()->postJson('/api/v1/hris/coordination',
-        ['judul' => 'Minta piring', 'keDivisi' => 'bar'],
-        ['Authorization' => 'Bearer '.$t])->assertCreated()->json('data.id');
+/** A ticket to bar opened by u-dwipa, through the service (no HTTP identity used). */
+function hrisTiketKeBar(): string
+{
+    return app(HrisCoordinationService::class)->buat(hrisMe('u-dwipa'),
+        ['judul' => 'Minta piring', 'keDivisi' => 'bar'])['id'];
+}
 
-    // Crew cannot assign (target head or HR only).
+it('keeps crew from assigning a ticket', function () {
+    $id = hrisTiketKeBar();
     $viewer = app(OfficeAccess::class)->isSuperadmin('u-andry') ? 'u-yuzaalfarel' : 'u-andry';
     if (app(Divisi::class)->isHead($viewer)) {
         $viewer = 'u-yuzaalfarel';
     }
+
     $tv = hrisToken($viewer);
     test()->patchJson("/api/v1/hris/coordination/{$id}",
         ['pelaksana' => 'u-dwipa', 'berubah' => 1], ['Authorization' => 'Bearer '.$tv])->assertStatus(403);
+});
+
+it('assigns and advances with the BD version guard', function () {
+    $id = hrisTiketKeBar();
 
     // The target head assigns + advances forward.
     $t2 = hrisToken('u-arif');

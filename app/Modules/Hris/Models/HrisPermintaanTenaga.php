@@ -17,6 +17,6 @@ final class HrisPermintaanTenaga extends CoreRecord
 
     protected function casts(): array
     {
-        return parent::casts() + [];
+        return parent::casts() + ['dibutuhkan_tgl' => 'immutable_date'];
     }
 }

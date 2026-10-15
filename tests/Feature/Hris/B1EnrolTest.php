@@ -6,6 +6,8 @@ use App\Modules\Hris\Services\HrisAttendanceService;
 use App\Modules\Hris\Services\HrisError;
 use Illuminate\Support\Facades\Storage;
 
+require_once __DIR__.'/helpers.php';
+
 /*
  * Face enrolment (A3): self-service, active at once, consent required; a face
  * matching someone else's is rejected and reported to HR; re-enrolment only

@@ -3,6 +3,8 @@
 use App\Modules\Hris\Services\HrisDisiplinService;
 use App\Modules\Hris\Services\HrisKpiService;
 
+require_once __DIR__.'/helpers.php';
+
 /*
  * Discipline (S4) and team KPI (K1): writes HR-gated, reads scoped; KPI
  * input stays behind kpiInputAktif until the mentor confirms the items.
@@ -41,10 +43,10 @@ it('scopes violations to the crew member', function () {
 
 it('shows empty KPI without a template', function () {
     hrisSettings();
-    $t = hrisToken('u-dwipa');
+    $t = hrisToken('u-arif');
     $h = ['Authorization' => 'Bearer '.$t];
 
-    // Crew without a division filter see their own division (possibly none).
+    // The bar head sees bar (crew only their own division: a 403 otherwise).
     $r = test()->getJson('/api/v1/hris/kpi?bulan=2026-09&divisi=bar', $h)->assertOk()->json('data');
     expect($r)->toMatchArray(['divisi' => 'bar', 'bulan' => '2026-09', 'skor' => null, 'item' => []]);
 });
@@ -90,6 +92,6 @@ it('writes templates and realisation when input opens', function () {
     }
     $r = test()->getJson('/api/v1/hris/kpi?bulan=2026-09&divisi=bar', $h)->assertOk()->json('data');
     // (110 + 120) / 2.
-    expect($r['skor'])->toBe(115.0)->and($r['kelengkapan'])->toBe(100.0);
+    expect($r['skor'])->toEqual(115)->and($r['kelengkapan'])->toEqual(100);
     expect($id)->not->toBe('');
 });

@@ -3,6 +3,8 @@
 use App\Modules\Hris\Services\HrisAttendanceService;
 use App\Modules\Hris\Services\HrisMealService;
 
+require_once __DIR__.'/helpers.php';
+
 /*
  * Meal allowance (P1–P2): rates, preview, lock, export. Fixed September 2026
  * instants keep the recap deterministic. One HTTP identity per test.

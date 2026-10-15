@@ -5,6 +5,8 @@ use App\Modules\Hris\Services\HrisAttendanceService;
 use App\Modules\Hris\Services\HrisCalendarService;
 use Illuminate\Http\UploadedFile;
 
+require_once __DIR__.'/helpers.php';
+
 /*
  * Holiday calendar (L8): HR CRUD + file/paste import; reads open to crew.
  * A public holiday never queues a punch (only the person's own day off

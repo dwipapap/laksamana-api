@@ -4,6 +4,8 @@ use App\Modules\Hris\Models\HrisSkor;
 use App\Modules\Hris\Services\HrisAttendanceService;
 use App\Modules\Hris\Services\HrisScoreService;
 
+require_once __DIR__.'/helpers.php';
+
 /*
  * People Score (S1–S3, S5): versioned formula, monthly snapshots with
  * completeness ranking, locked months keep their formula. September 2026
@@ -15,7 +17,7 @@ function hrisSkorHadir(string $uid, int $day): void
 {
     hrisPlantShift($uid, hrisDate(2026, 9, $day), 'PAGI', '08:00', '17:00');
     app(HrisAttendanceService::class)->recordPunch(['id' => $uid, 'name' => $uid],
-        ['arah' => 'MASUK'], hrisMs(2026, 9, $day, 9, 0));
+        ['arah' => 'MASUK'], hrisMs(2026, 9, $day, 7, 55));
 }
 
 it('starts on the default formula and validates new versions', function () {
@@ -59,9 +61,11 @@ it('computes a deterministic score on three components', function () {
         ->assertOk()->json('data');
 
     // 4/4 hadir, all on time, no violations.
-    expect($r[0])->toMatchArray(['skor' => 100.0, 'kelengkapan' => 100.0, 'formula_versi' => 1]);
+    expect($r[0]['skor'])->toEqual(100)->and($r[0]['kelengkapan'])->toEqual(100)
+        ->and($r[0]['formula_versi'])->toBe(1);
     expect($r[0]['diranking'])->toBeTrue();
-    expect(array_keys($r[0]['komponen']))->toBe(['kehadiran', 'ketepatan', 'disiplin']);
+    // Order is not part of the contract (MySQL's JSON type re-sorts keys).
+    expect(array_keys($r[0]['komponen']))->toEqualCanonicalizing(['kehadiran', 'ketepatan', 'disiplin']);
 });
 
 it('keeps locked snapshots on their formula version', function () {

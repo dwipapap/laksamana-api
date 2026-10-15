@@ -6,6 +6,8 @@ use App\Modules\Hris\Services\HrisBalanceService;
 use App\Modules\Hris\Services\HrisHarianService;
 use Illuminate\Support\Facades\Http;
 
+require_once __DIR__.'/helpers.php';
+
 /*
  * The balance ledger (L2–L6): earn/use/expiry with FIFO, PH for holiday
  * work, HR adjustments. Idempotent earns and expiries throughout.
@@ -22,7 +24,9 @@ it('starts at zero with the default quota', function () {
 
     $r = test()->getJson('/api/v1/hris/balances/me', ['Authorization' => 'Bearer '.$t])->assertOk()->json('data');
 
-    expect($r)->toMatchArray(['PH' => ['saldo' => 0], 'CUTI' => ['saldo' => 0, 'jatah_tahunan' => 12]]);
+    expect($r['PH']['saldo'])->toBe(0)
+        ->and($r['CUTI']['saldo'])->toBe(0)
+        ->and($r['CUTI']['jatah_tahunan'])->toBe(12);
 });
 
 it('adjusts balances as HR with a reason', function () {

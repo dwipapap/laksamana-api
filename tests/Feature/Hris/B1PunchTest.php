@@ -6,6 +6,8 @@ use App\Modules\Hris\Services\HrisCalendar;
 use App\Modules\Jadwal\Services\JadwalService;
 use App\Support\JsonDoc;
 
+require_once __DIR__.'/helpers.php';
+
 /*
  * Punches: VALID inside the rules, MENUNGGU with one reason otherwise; a
  * repeated MASUK answers duplikat, a repeated PULANG overwrites. Time
