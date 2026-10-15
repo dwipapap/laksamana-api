@@ -100,6 +100,17 @@ Contract-expiry reminders follow once contracts exist (⏳).
 - **Team bonus formula:** pool, KPI factor and threshold, how it is split, and the period.
 - **KPI items per Divisi** and validation of the People Score weights.
 
+## Phase b plan (P3 payslip — planned, not built)
+
+Full payslip stays out of HRIS until the owner confirms the components.
+When it is built, the shape is: `hris_gaji_komponen` (person, kind
+fixed/allowance/deduction, amount encrypted at rest, effective-from),
+`hris_slip` (month, person, line snapshot JSON, immutable once locked),
+crew read their own slip, HR reads all, PDF export per slip, and a locked
+month is never reopened. Fixed salary is never derived from attendance;
+attendance only feeds the variable parts (meal allowance now, team bonus
+once ⏳ lands).
+
 ## Schedule (all streams start now)
 
 | By | Must be live |

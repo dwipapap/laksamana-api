@@ -79,6 +79,29 @@ function hrisClearShift(string $uid, string $date): void
     );
 }
 
+/** A crew member in u-arif's bar division (or null when the dump has none). */
+function hrisBarCrew(): ?string
+{
+    foreach (app(App\Modules\Jadwal\Services\JadwalService::class)->rosterWithDivisi() as $x) {
+        $x = (array) $x;
+        if (($x['divisi'] ?? '') === 'bar' && ($x['id'] ?? '') !== '' && $x['id'] !== 'u-arif') {
+            return (string) $x['id'];
+        }
+    }
+
+    return null;
+}
+
+/** Clear every roster cell of the user in the month, so tests own the denominator. */
+function hrisClearMonth(string $uid, string $bulan): void
+{
+    $rows = app(App\Modules\Jadwal\Services\JadwalService::class)
+        ->shiftRange($uid, $bulan.'-01', date('Y-m-t', strtotime($bulan.'-01')))['rows'] ?? [];
+    foreach ($rows as $r) {
+        hrisClearShift($uid, (string) ($r['d'] ?? ''));
+    }
+}
+
 /** Where the punch of the token holder lands, for service-level calls. */
 function hrisMe(string $uid): array
 {

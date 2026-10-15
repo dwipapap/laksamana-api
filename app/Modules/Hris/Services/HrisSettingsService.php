@@ -32,6 +32,9 @@ final class HrisSettingsService
         'hr' => [],
         // Annual CUTI quota in days (TODO(mentor): per-contract rule, B7).
         'jatahCuti' => 12,
+        // Team KPI input (templates + realisation) stays off until the mentor
+        // confirms the items per Divisi (K1); reads always work.
+        'kpiInputAktif' => false,
     ];
 
     /** The merged settings map (stored rows over defaults). */
@@ -82,7 +85,7 @@ final class HrisSettingsService
             'awalMenit' => $int($v, 0, 720, $k),
             'akhirMenit' => $int($v, 0, 720, $k),
             'toleransiTelat' => $int($v, 0, 120, $k),
-            'tanpaShiftBoleh', 'wajahWajib' => $this->cleanBool($v, $k),
+            'tanpaShiftBoleh', 'wajahWajib', 'kpiInputAktif' => $this->cleanBool($v, $k),
             'wajahAmbang' => $this->cleanAmbang($v),
             'hr' => $this->cleanHr($v),
             'jatahCuti' => $int($v, 0, 30, $k),

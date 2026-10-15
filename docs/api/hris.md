@@ -193,6 +193,62 @@ drives it (docs/deploy.md).
   transition (idempotent); requests beyond the balance are skipped and
   reported for HR to top up.
 
+## B3 — meal allowance, discipline, team KPI, People Score
+
+Payroll phase a (P1–P2), discipline (S4), team KPI (K1), People Score
+(S1–S3, S5). Money is whole rupiah; fixed salary is NOT stored here.
+
+| Method | Path | Lingkup | Notes |
+|---|---|---|---|
+| GET | `/hris/meal/tarifs` | HR | Rates per (divisi, grade), effective-from |
+| POST | `/hris/meal/tarifs` | HR | `{divisi?, grade?, nominal, berlaku_dari}`. `201 {id}` |
+| DELETE | `/hris/meal/tarifs/{id}` | HR | `{hapus: 1}` |
+| GET | `/hris/meal/preview?bulan` | scoped | Live recap, nothing stored |
+| POST | `/hris/meal/lock` | HR | `{bulan}` — refused on a non-empty queue (`422 antrean_belum_kosong`) or a locked month (`409 sudah_terkunci`) |
+| GET | `/hris/meal?bulan` | scoped | Locked snapshot, or live recap while open |
+| GET | `/hris/meal/export?bulan` | scoped | CSV download (`-draft` suffix while open; XLSX follows when PhpSpreadsheet is added) |
+| GET | `/hris/pelanggaran?user&dari&sampai` | scoped | Violation list |
+| POST | `/hris/pelanggaran` | HR | `{user, tanggal, jenis?, tingkat?, sp_ke?, keterangan?}`. `201` |
+| POST | `/hris/pelanggaran/{id}/batal` | HR | Void (never hard-deleted) |
+| GET | `/hris/kpi?divisi&bulan` | scoped | Division score 0–120 with per-item capaian (crew: own division) |
+| POST | `/hris/kpi/templates` | head/HR | Template + items; behind `kpiInputAktif` (`403 fitur_nonaktif`) |
+| POST | `/hris/kpi/realisasi` | head/HR | `{item_id, bulan, nilai}`; behind `kpiInputAktif` |
+| GET | `/hris/skor?bulan&user` | scoped | Score list with the active formula |
+| POST | `/hris/skor/hitung` | scoped | Compute `{bulan, user?}` (crew: own only); locked months are `409 terkunci` |
+| POST | `/hris/skor/kunci` | HR | `{bulan}` — immutable after |
+| GET | `/hris/skor/formula` | all | Active formula + version history |
+| POST | `/hris/skor/formula` | HR | `{komponen: {key: bobot}, berlaku_dari}` — new version, old snapshots keep theirs |
+| POST | `/hris/penilaian` | head/HR | `{user, bulan, aspek: {name: 1..5}}` — never self |
+
+### Meal recap item
+
+```json
+{"user_id": "u-dwipa", "divisi": "bar", "grade": "", "hari_hadir": 20,
+ "nominal": 25000, "total": 500000, "rincian": ["2026-09-01", "…"]}
+```
+
+- A day counts on MASUK VALID (late counts, holidays count, MENUNGGU only
+  once decided). Sick/IZIN/CUTI/OFF/ALFA never punch, so they never count.
+  DW are excluded by construction (Pihak, never Users).
+- Rate resolution per person: exact (divisi, grade) → (divisi) → (grade) →
+  global default, latest `berlaku_dari` at work.
+
+### Score item
+
+```json
+{"user_id": "u-dwipa", "bulan": "2026-09", "formula_versi": 1,
+ "komponen": {"kehadiran": {"bobot": 50, "skor": 100, "kelengkapan": 100, "detail": {"terjadwal": 4, "hadir": 4}}},
+ "skor": 100, "kelengkapan": 100, "terkunci": false, "diranking": true}
+```
+
+- Components (one class each, same interface): Kehadiran (VALID days over
+  roster cells), Ketepatan (on-time over punches with a shift snapshot),
+  KPI tim (division achievement capped at 100), Pelatihan (Akademi materials
+  done, all-time), Disiplin (100 − penalties), Penilaian atasan (1–5 avg ×20).
+- Missing data scores 0 with 0 completeness; `kelengkapan < 60` is not
+  ranked. Achievement per KPI item is clamped 0–120% (`NAIK`: nilai/target,
+  `TURUN`: target/nilai) and averaged by weight.
+
 ## For laksamana-hris
 
 `packages/api` generates types from `openapi.json` (tag `hris`). Mobile:

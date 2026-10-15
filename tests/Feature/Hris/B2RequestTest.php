@@ -11,19 +11,6 @@ use App\Modules\Jadwal\Services\JadwalService;
  * request refunds. One HTTP identity per test.
  */
 
-/** A crew member in u-arif's bar division (or null when the dump has none). */
-function hrisBarCrew(): ?string
-{
-    foreach (app(JadwalService::class)->rosterWithDivisi() as $x) {
-        $x = (array) $x;
-        if (($x['divisi'] ?? '') === 'bar' && ($x['id'] ?? '') !== '' && $x['id'] !== 'u-arif') {
-            return (string) $x['id'];
-        }
-    }
-
-    return null;
-}
-
 function hrisRequest(array $me, array $in): HrisPengajuan
 {
     return app(HrisRequestService::class)->create($me, $in);

@@ -2,11 +2,15 @@
 
 use App\Modules\Hris\Http\V1\HrisBalanceController as B;
 use App\Modules\Hris\Http\V1\HrisCalendarController as K;
+use App\Modules\Hris\Http\V1\HrisDisiplinController as D;
 use App\Modules\Hris\Http\V1\HrisFaceController as F;
+use App\Modules\Hris\Http\V1\HrisKpiController as P;
+use App\Modules\Hris\Http\V1\HrisMealController as E;
 use App\Modules\Hris\Http\V1\HrisMeController as M;
 use App\Modules\Hris\Http\V1\HrisOfficeController as O;
 use App\Modules\Hris\Http\V1\HrisQueueController as Q;
 use App\Modules\Hris\Http\V1\HrisRequestController as R;
+use App\Modules\Hris\Http\V1\HrisScoreController as S;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -55,4 +59,28 @@ Route::middleware(['auth:sanctum', 'module:hris'])->prefix('hris')->group(functi
     Route::get('requests/{id}/lampiran', [R::class, 'lampiran'])->where('id', '[A-Za-z0-9-]+');
     Route::delete('requests/{id}', [R::class, 'destroy'])->where('id', '[A-Za-z0-9-]+');
     Route::post('requests/{id}/decision', [R::class, 'decide'])->where('id', '[A-Za-z0-9-]+');
+
+    // Meal allowance, discipline, team KPI, People Score (B3: P1–P2, S1–S5, K1).
+    Route::get('meal/tarifs', [E::class, 'tarifs']);
+    Route::post('meal/tarifs', [E::class, 'saveTarif']);
+    Route::delete('meal/tarifs/{id}', [E::class, 'deleteTarif'])->where('id', '[A-Za-z0-9-]+');
+    Route::get('meal/preview', [E::class, 'preview']);
+    Route::post('meal/lock', [E::class, 'lock']);
+    Route::get('meal', [E::class, 'rekap']);
+    Route::get('meal/export', [E::class, 'ekspor']);
+
+    Route::get('pelanggaran', [D::class, 'index']);
+    Route::post('pelanggaran', [D::class, 'store']);
+    Route::post('pelanggaran/{id}/batal', [D::class, 'batal'])->where('id', '[A-Za-z0-9-]+');
+
+    Route::get('kpi', [P::class, 'show']);
+    Route::post('kpi/templates', [P::class, 'saveTemplate']);
+    Route::post('kpi/realisasi', [P::class, 'saveRealisasi']);
+
+    Route::get('skor', [S::class, 'index']);
+    Route::post('skor/hitung', [S::class, 'hitung']);
+    Route::post('skor/kunci', [S::class, 'kunci']);
+    Route::get('skor/formula', [S::class, 'formula']);
+    Route::post('skor/formula', [S::class, 'saveFormula']);
+    Route::post('penilaian', [S::class, 'nilai']);
 });
