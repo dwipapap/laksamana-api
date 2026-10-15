@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\Hris\Services;
 
 use App\Modules\Hris\Models\HrisPushToken;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -83,6 +84,7 @@ final class ExpoPushService
             $t = $tiket[$i] ?? null;
             if (! is_array($t)) {
                 $out['gagal']++;
+
                 continue;
             }
             if (($t['status'] ?? '') === 'ok') {
@@ -91,6 +93,7 @@ final class ExpoPushService
                 if (isset($t['id'])) {
                     $tanda[] = (string) $t['id'];
                 }
+
                 continue;
             }
             $out['gagal']++;
@@ -129,7 +132,7 @@ final class ExpoPushService
         }
     }
 
-    private function client(): \Illuminate\Http\Client\PendingRequest
+    private function client(): PendingRequest
     {
         $c = Http::timeout(15)->acceptJson();
         $token = self::s($this->settings->get('expoAccessToken', ''));

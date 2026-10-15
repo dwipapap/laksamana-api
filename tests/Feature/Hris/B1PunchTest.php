@@ -2,6 +2,7 @@
 
 use App\Modules\Hris\Models\HrisKetukan;
 use App\Modules\Hris\Services\HrisAttendanceService;
+use App\Modules\Hris\Services\HrisCalendar;
 use App\Modules\Jadwal\Services\JadwalService;
 use App\Support\JsonDoc;
 
@@ -181,5 +182,5 @@ it('lets a repeated PULANG overwrite and belong to the MASUK date', function () 
 
 it('keeps HARI_LIBUR unwired until the B2 calendar', function () {
     // The stub calendar returns false, so the reason path is only unit-tested.
-    expect(app(App\Modules\Hris\Services\HrisCalendar::class)->isHoliday('2026-12-25'))->toBeFalse();
+    expect(app(HrisCalendar::class)->isHoliday('2026-12-25'))->toBeFalse();
 });

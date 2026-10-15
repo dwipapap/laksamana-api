@@ -1,6 +1,7 @@
 <?php
 
 use App\Modules\Hris\Services\PunchRules;
+use Carbon\CarbonImmutable;
 
 /*
  * PunchRules is pure (no DB, no clock): every case runs on fixed inputs.
@@ -10,7 +11,7 @@ use App\Modules\Hris\Services\PunchRules;
 
 it('renders server time as WIB', function () {
     // 2026-10-20 00:30 UTC = 07:30 WIB.
-    $ms = (int) (Carbon\CarbonImmutable::create(2026, 10, 20, 0, 30, 0, 'UTC')->timestamp * 1000);
+    $ms = (int) (CarbonImmutable::create(2026, 10, 20, 0, 30, 0, 'UTC')->timestamp * 1000);
     expect(PunchRules::jamWib($ms))->toBe('07:30')
         ->and(PunchRules::tglWib($ms))->toBe('2026-10-20')
         ->and(PunchRules::menitWib($ms))->toBe(7 * 60 + 30);

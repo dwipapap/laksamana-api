@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Modules\Hris\Services;
 
 use App\Modules\Hris\Models\HrisKalender;
-use App\Modules\Hris\Models\HrisKetukan;
 
 /**
  * The real holiday calendar (B2): hris_kalender rows, memoised per request.

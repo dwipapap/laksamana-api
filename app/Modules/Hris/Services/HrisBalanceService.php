@@ -7,6 +7,7 @@ namespace App\Modules\Hris\Services;
 use App\Modules\Hris\Models\HrisSaldoMutasi;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 
 /**
  * The leave/PH balance ledger (L2): one append-only row per movement,
@@ -171,7 +172,8 @@ final class HrisBalanceService
         return $out;
     }
 
-    /** HR manual adjustment (positive = earn batch, negative = FIFO consume). */    public function adjust(string $by, string $userId, string $jenis, int $delta, string $catatan): array
+    /** HR manual adjustment (positive = earn batch, negative = FIFO consume). */
+    public function adjust(string $by, string $userId, string $jenis, int $delta, string $catatan): array
     {
         $jenis = self::assertJenis($jenis);
         $userId = self::s($userId);
@@ -183,7 +185,7 @@ final class HrisBalanceService
             throw new HrisError('validation_failed', 'Penyesuaian saldo wajib disertai alasan.', 422);
         }
         $today = PunchRules::tglWib(PunchRules::ms());
-        $key = 'ADJ-'.strtolower((string) \Illuminate\Support\Str::ulid());
+        $key = 'ADJ-'.strtolower((string) Str::ulid());
         if ($delta > 0) {
             $rows = $this->earn($userId, $jenis, $delta, 'PENYESUAIAN', $key, $today,
                 $jenis === 'PH' ? self::tambahBulan($today, 3) : null, $catatan);

@@ -105,7 +105,7 @@ it('reminds overdue onboarding steps', function () {
 it('links the division Akademi program when one exists', function () {
     try {
         $rows = app(AkademiRecords::class)->list('programs', [], 1, 1)['rows'] ?? [];
-    } catch (\Throwable) {
+    } catch (Throwable) {
         $rows = [];
     }
     if ($rows === []) {

@@ -1,9 +1,11 @@
 <?php
 
 use App\Auth\AccountRepository;
+use App\Auth\OfficeAccess;
 use App\Modules\Hris\Models\HrisLowongan;
 use App\Modules\Hris\Models\HrisPelamar;
 use App\Modules\Hris\Services\EkstraksiCv;
+use App\Modules\Hris\Services\HrisError;
 use App\Modules\Hris\Services\HrisRekrutmenService;
 use App\Modules\Hris\Services\RedaksiPii;
 use Illuminate\Support\Facades\Http;
@@ -56,7 +58,7 @@ function hrisCvBase64(): string
 function hrisSuperadmin(string $uid): void
 {
     app(AccountRepository::class)->grantAdmin($uid, '*');
-    app(App\Auth\OfficeAccess::class)->forgetUser($uid);
+    app(OfficeAccess::class)->forgetUser($uid);
 }
 
 it('extracts text from PDF, flate PDF and DOCX in pure PHP', function () {
@@ -72,7 +74,7 @@ it('extracts text from PDF, flate PDF and DOCX in pure PHP', function () {
     try {
         EkstraksiCv::dariBerkas('cv.png', 'bytes');
         expect(false)->toBeTrue('expected 422');
-    } catch (App\Modules\Hris\Services\HrisError $e) {
+    } catch (HrisError $e) {
         expect($e->status)->toBe(422);
     }
     $scan = EkstraksiCv::dariBerkas('cv.pdf', "%PDF-1.4\n1 0 obj\n<< /Length 5 >>\nstream\nabcde\nendstream\nendobj\ntrailer\n<<>>\n");
@@ -80,7 +82,7 @@ it('extracts text from PDF, flate PDF and DOCX in pure PHP', function () {
 });
 
 it('redacts NIK, phones, emails and addresses server-side', function () {
-    $r = RedaksiPii::redact("NIK 3201010101900001, HP 0812-3456-7890 atau +62 812 3456 7890, budi@example.com, Jl. Mawar No. 10 Bandung.");
+    $r = RedaksiPii::redact('NIK 3201010101900001, HP 0812-3456-7890 atau +62 812 3456 7890, budi@example.com, Jl. Mawar No. 10 Bandung.');
     expect($r['teks'])->toContain('[NIK]')->toContain('[TELEPON]')->toContain('[EMAIL]')->toContain('[ALAMAT]');
     expect($r['teks'])->not->toContain('3201010101900001')->not->toContain('budi@example.com');
     expect($r['temuan'])->toMatchArray(['nik' => 1, 'email' => 1, 'alamat' => 1]);

@@ -100,6 +100,7 @@ final class HrisSettingsService
     private function clean(string $k, mixed $v): mixed
     {
         $int = fn (mixed $x, int $min, int $max, string $nama): int => $this->cleanInt($x, $min, $max, $nama);
+
         return match ($k) {
             'awalMenit' => $int($v, 0, 720, $k),
             'akhirMenit' => $int($v, 0, 720, $k),

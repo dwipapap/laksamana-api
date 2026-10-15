@@ -37,7 +37,8 @@ final class HrisOfficeController extends HrisBaseController
     }
 
     public function saveLocation(Request $r): JsonResponse
-    {        $d = $r->validate([
+    {
+        $d = $r->validate([
             'id' => ['nullable', 'string', 'max:32'],
             'nama' => ['required', 'string', 'max:120'],
             'lat' => ['nullable', 'numeric'],

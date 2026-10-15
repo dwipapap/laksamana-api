@@ -448,6 +448,7 @@ final class HrisRequestService
             } catch (HrisError $e) {
                 if ($e->errorCode === 'saldo_kurang') {
                     $terlewat[] = $jid;
+
                     continue;
                 }
                 throw $e;

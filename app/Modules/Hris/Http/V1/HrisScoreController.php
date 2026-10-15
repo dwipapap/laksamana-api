@@ -95,7 +95,7 @@ final class HrisScoreController extends HrisBaseController
         $d = $r->validate(['bulan' => ['nullable', 'date_format:Y-m']]);
         $me = $this->me($r);
 
-        return $this->run(function () use ($me, $d) {
+        return $this->run(function () use ($d) {
             $bulan = self::s($d['bulan'] ?? '');
             if ($bulan === '') {
                 $bulan = substr(PunchRules::tglWib(PunchRules::ms()), 0, 7);

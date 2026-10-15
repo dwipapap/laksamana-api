@@ -11,7 +11,6 @@ use App\Modules\Hris\Services\HrisError;
 use App\Modules\Hris\Services\HrisHarianService;
 use App\Modules\Hris\Services\HrisLingkup;
 use App\Modules\Hris\Services\HrisReminderService;
-use App\Support\Api\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 

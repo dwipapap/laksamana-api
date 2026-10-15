@@ -3,8 +3,11 @@
 use App\Modules\Hris\Models\HrisPushToken;
 use App\Modules\Hris\Models\HrisReminderLog;
 use App\Modules\Hris\Services\ExpoPushService;
+use App\Modules\Hris\Services\HrisAttendanceService;
 use App\Modules\Hris\Services\HrisBalanceService;
 use App\Modules\Hris\Services\HrisReminderService;
+use App\Modules\Hris\Services\HrisRequestService;
+use App\Modules\Hris\Services\HrisSettingsService;
 use Illuminate\Support\Facades\Http;
 
 /*
@@ -70,12 +73,12 @@ it('nudges EXIT only with an open MASUK', function () {
     $r = app(HrisReminderService::class)->geofence('u-dwipa', '', 'EXIT', hrisMs(2026, 10, 20, 18, 0));
     expect($r['terkirim'])->toBeFalse();
 
-    app(App\Modules\Hris\Services\HrisAttendanceService::class)->recordPunch(['id' => 'u-dwipa', 'name' => 'Dwipa'],
+    app(HrisAttendanceService::class)->recordPunch(['id' => 'u-dwipa', 'name' => 'Dwipa'],
         ['arah' => 'MASUK'], hrisMs(2026, 10, 20, 9, 0));
     $r = app(HrisReminderService::class)->geofence('u-dwipa', '', 'EXIT', hrisMs(2026, 10, 20, 18, 0));
     expect($r['terkirim'])->toBeTrue();
 
-    app(App\Modules\Hris\Services\HrisAttendanceService::class)->recordPunch(['id' => 'u-dwipa', 'name' => 'Dwipa'],
+    app(HrisAttendanceService::class)->recordPunch(['id' => 'u-dwipa', 'name' => 'Dwipa'],
         ['arah' => 'PULANG'], hrisMs(2026, 10, 20, 18, 5));
     // A new day without MASUK: EXIT stays silent again (PULANG exists, MASUK does not).
     $r = app(HrisReminderService::class)->geofence('u-dwipa', '', 'EXIT', hrisMs(2026, 10, 21, 18, 0));
@@ -105,7 +108,7 @@ it('sweeps late arrivals after the shift starts', function () {
     hrisPlantShift('u-dwipa', $tgl, 'PAGI', '08:00', '17:00');
     hrisPlantShift('u-andry', $tgl, 'PAGI', '08:00', '17:00');
     // u-andry already punched in; u-dwipa did not.
-    app(App\Modules\Hris\Services\HrisAttendanceService::class)->recordPunch(['id' => 'u-andry', 'name' => 'Andry'],
+    app(HrisAttendanceService::class)->recordPunch(['id' => 'u-andry', 'name' => 'Andry'],
         ['arah' => 'MASUK'], hrisMs(2026, 10, 20, 8, 5));
 
     // Too early: nobody is late yet.
@@ -142,7 +145,7 @@ it('notifies heads of waiting requests', function () {
         $this->markTestSkipped('no bar crew in the restored roster');
     }
     app(HrisBalanceService::class)->adjust('test', $crew, 'CUTI', 12, 'uji');
-    $req = app(App\Modules\Hris\Services\HrisRequestService::class)->create(hrisMe($crew),
+    $req = app(HrisRequestService::class)->create(hrisMe($crew),
         ['jenis' => 'CUTI', 'dari' => '2026-11-02', 'sampai' => '2026-11-02', 'alasan' => 'uji']);
 
     $r = app(HrisReminderService::class)->pengajuanMenunggu();
@@ -179,7 +182,7 @@ it('keeps the Expo token out of client reads', function () {
         ['data' => ['expoAccessToken' => 'rahasiasekali']], $h)->assertOk();
     $r = test()->getJson('/api/v1/hris/settings', $h)->assertOk()->json('data');
     expect($r)->not->toHaveKey('expoAccessToken');
-    expect(app(App\Modules\Hris\Services\HrisSettingsService::class)->get('expoAccessToken'))->toBe('rahasiasekali');
+    expect(app(HrisSettingsService::class)->get('expoAccessToken'))->toBe('rahasiasekali');
 });
 
 it('survives an unreadable Akademi', function () {

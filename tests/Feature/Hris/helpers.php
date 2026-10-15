@@ -6,6 +6,7 @@ use App\Modules\Account\Services\AccountService;
 use App\Modules\Hris\Services\HrisSettingsService;
 use App\Modules\Hris\Services\PunchRules;
 use App\Modules\Jadwal\Services\JadwalService;
+use Carbon\CarbonImmutable;
 
 /*
  * Shared fixtures for the HRIS B1 tests. HRIS is greenfield on `core`;
@@ -48,7 +49,7 @@ function hrisDescriptor(float $v = 0.5, int $n = 128): array
 /** Epoch ms of a WIB wall-clock time (deterministic punch times). */
 function hrisMs(int $y, int $mo, int $d, int $h, int $mi): int
 {
-    return (int) (Carbon\CarbonImmutable::create($y, $mo, $d, $h, $mi, 0, 'Asia/Jakarta')->timestamp * 1000);
+    return (int) (CarbonImmutable::create($y, $mo, $d, $h, $mi, 0, 'Asia/Jakarta')->timestamp * 1000);
 }
 
 /** Y-m-d of a WIB wall-clock time. */
@@ -82,7 +83,7 @@ function hrisClearShift(string $uid, string $date): void
 /** A crew member in u-arif's bar division (or null when the dump has none). */
 function hrisBarCrew(): ?string
 {
-    foreach (app(App\Modules\Jadwal\Services\JadwalService::class)->rosterWithDivisi() as $x) {
+    foreach (app(JadwalService::class)->rosterWithDivisi() as $x) {
         $x = (array) $x;
         if (($x['divisi'] ?? '') === 'bar' && ($x['id'] ?? '') !== '' && $x['id'] !== 'u-arif') {
             return (string) $x['id'];
@@ -95,7 +96,7 @@ function hrisBarCrew(): ?string
 /** Clear every roster cell of the user in the month, so tests own the denominator. */
 function hrisClearMonth(string $uid, string $bulan): void
 {
-    $rows = app(App\Modules\Jadwal\Services\JadwalService::class)
+    $rows = app(JadwalService::class)
         ->shiftRange($uid, $bulan.'-01', date('Y-m-t', strtotime($bulan.'-01')))['rows'] ?? [];
     foreach ($rows as $r) {
         hrisClearShift($uid, (string) ($r['d'] ?? ''));

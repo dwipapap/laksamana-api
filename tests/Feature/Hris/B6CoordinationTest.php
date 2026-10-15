@@ -1,5 +1,8 @@
 <?php
 
+use App\Auth\OfficeAccess;
+use App\Support\Divisi;
+
 /*
  * Inter-division tickets (R6): HRIS screens, BD stores. Every write goes
  * through BdRecords with its version guard; HRIS adds origin/division
@@ -44,8 +47,8 @@ it('assigns and advances with the BD version guard', function () {
         ['Authorization' => 'Bearer '.$t])->assertCreated()->json('data.id');
 
     // Crew cannot assign (target head or HR only).
-    $viewer = app(App\Auth\OfficeAccess::class)->isSuperadmin('u-andry') ? 'u-yuzaalfarel' : 'u-andry';
-    if (app(App\Support\Divisi::class)->isHead($viewer)) {
+    $viewer = app(OfficeAccess::class)->isSuperadmin('u-andry') ? 'u-yuzaalfarel' : 'u-andry';
+    if (app(Divisi::class)->isHead($viewer)) {
         $viewer = 'u-yuzaalfarel';
     }
     $tv = hrisToken($viewer);

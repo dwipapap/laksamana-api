@@ -3,6 +3,7 @@
 use App\Modules\Hris\Models\HrisKalender;
 use App\Modules\Hris\Services\HrisAttendanceService;
 use App\Modules\Hris\Services\HrisCalendarService;
+use Illuminate\Http\UploadedFile;
 
 /*
  * Holiday calendar (L8): HR CRUD + file/paste import; reads open to crew.
@@ -69,7 +70,7 @@ it('imports an uploaded CSV file', function () {
     hrisMakeHr('u-admin');
     $t = hrisToken('u-admin');
     $csv = "tanggal,nama,jenis\n2027-01-01,Tahun Baru,NASIONAL\n2027-03-17,Hari Raya,\n";
-    $file = Illuminate\Http\UploadedFile::fake()->createWithContent('libur.csv', $csv);
+    $file = UploadedFile::fake()->createWithContent('libur.csv', $csv);
 
     $r = test()->post('/api/v1/hris/calendar/import', ['file' => $file],
         ['Authorization' => 'Bearer '.$t])->assertOk()->json('data');
