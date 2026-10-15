@@ -1,6 +1,7 @@
 <?php
 
 use App\Modules\Homepage\HomepageServiceProvider;
+use App\Modules\Hris\HrisServiceProvider;
 use App\Modules\Menu\MenuServiceProvider;
 use App\Modules\News\NewsServiceProvider;
 use App\Providers\AppServiceProvider;
@@ -14,4 +15,5 @@ return [
     MenuServiceProvider::class,
     NewsServiceProvider::class,
     HomepageServiceProvider::class,
+    HrisServiceProvider::class,
 ];

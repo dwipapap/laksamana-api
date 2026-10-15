@@ -1,0 +1,38 @@
+<?php
+
+use App\Modules\Hris\Http\V1\HrisFaceController as F;
+use App\Modules\Hris\Http\V1\HrisMeController as M;
+use App\Modules\Hris\Http\V1\HrisOfficeController as O;
+use App\Modules\Hris\Http\V1\HrisQueueController as Q;
+use Illuminate\Support\Facades\Route;
+
+/*
+ * HRIS (Talenta replacement, greenfield on `core`). Sanctum + module:hris;
+ * Lingkup (sendiri/divisi/semua) is enforced per endpoint in the services.
+ */
+Route::middleware(['auth:sanctum', 'module:hris'])->prefix('hris')->group(function () {
+    // Crew surface.
+    Route::get('me/today', [M::class, 'today']);
+    Route::post('punches', [M::class, 'punch']);
+    Route::get('punches', [M::class, 'punches']);
+    Route::get('punches/{id}/photo', [M::class, 'punchPhoto'])->where('id', '[A-Za-z0-9-]+');
+
+    // Decision queue (HR + Kepala Divisi).
+    Route::get('queue', [Q::class, 'queue']);
+    Route::post('punches/{id}/decision', [Q::class, 'decide'])->where('id', '[A-Za-z0-9-]+');
+
+    // Faces (A3).
+    Route::post('faces/me', [F::class, 'enrolMe']);
+    Route::get('faces', [F::class, 'index']);
+    Route::get('faces/{userId}/photo', [F::class, 'photo'])->where('userId', '[A-Za-z0-9._-]+');
+    Route::delete('faces/{userId}', [F::class, 'reset'])->where('userId', '[A-Za-z0-9._-]+');
+
+    // HR office: locations, settings, one-time import.
+    Route::get('locations', [O::class, 'locations']);
+    Route::post('locations', [O::class, 'saveLocation']);
+    Route::patch('locations/{id}', [O::class, 'patchLocation'])->where('id', '[A-Za-z0-9-]+');
+    Route::delete('locations/{id}', [O::class, 'deleteLocation'])->where('id', '[A-Za-z0-9-]+');
+    Route::get('settings', [O::class, 'settings']);
+    Route::put('settings', [O::class, 'saveSettings']);
+    Route::post('admin/import-locations', [O::class, 'importLocations']);
+});
