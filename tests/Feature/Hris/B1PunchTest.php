@@ -110,6 +110,22 @@ it('queues TANPA_SHIFT when genuinely unscheduled', function () {
     expect($out['punch'])->toMatchArray(['status' => 'MENUNGGU', 'alasan_antrean' => ['TANPA_SHIFT']]);
 });
 
+it('surfaces WAJAH ahead of TANPA_SHIFT on a mismatch', function () {
+    hrisSettings(['tanpaShiftBoleh' => false]);
+    app(HrisAttendanceService::class)->enrol(hrisMe('u-dwipa'),
+        ['descriptor' => hrisDescriptor(), 'model' => 'sface-2021dec-int8', 'consent' => true, 'foto' => hrisFoto()]);
+    $tgl = hrisDate(2026, 10, 20);
+    hrisClearShift('u-dwipa', $tgl);
+    hrisClearDefaultShift('u-dwipa');
+
+    // Same unscheduled setup as the TANPA_SHIFT case, but the face belongs
+    // to someone else: HR must see suspicion, not a scheduling issue.
+    $out = hrisPunch(hrisMe('u-dwipa'),
+        ['arah' => 'MASUK', 'descriptor' => hrisDescriptor(-0.5), 'model' => 'sface-2021dec-int8', 'alasan' => 'wajah orang lain'],
+        hrisMs(2026, 10, 20, 9, 0));
+    expect($out['punch'])->toMatchArray(['status' => 'MENUNGGU', 'alasan_antrean' => ['WAJAH']]);
+});
+
 it('reads the shift from Jadwal and queues LUAR_SHIFT outside it', function () {
     hrisSettings(['tanpaShiftBoleh' => false]);
     $tgl = hrisDate(2026, 10, 20);

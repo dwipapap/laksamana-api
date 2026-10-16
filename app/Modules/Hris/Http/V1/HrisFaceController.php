@@ -90,6 +90,6 @@ final class HrisFaceController extends HrisBaseController
             return ApiResponse::error('not_found', 'Foto tidak ada.', 404);
         }
 
-        return response()->file($file, ['Content-Type' => 'image/jpeg', 'Cache-Control' => 'private, max-age=3600']);
+        return response()->file($file, ['Content-Type' => 'image/jpeg', 'Cache-Control' => 'private, no-store']);
     }
 }

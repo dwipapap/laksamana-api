@@ -75,8 +75,10 @@ Code: `app/Modules/Hris`.
   `NONE` (genuinely unscheduled), `TAK_TERBACA` (roster unreadable — recorded,
   never queued).
 - `alasan_antrean`: `[]` when VALID, else one of `LUAR_AREA`, `TANPA_SHIFT`,
-  `HARI_LIBUR`, `LUAR_SHIFT`, `WAJAH`, `WAJAH_KOSONG` (precedence in this
-  order; a `MENUNGGU` row always carries the crew's `alasan_kru`).
+  `HARI_LIBUR`, `LUAR_SHIFT`, `WAJAH`, `WAJAH_KOSONG` (`WAJAH` on an enrolled
+  face always wins over rostering reasons so a stranger's punch never hides
+  behind a scheduling issue; otherwise precedence in this order; a `MENUNGGU`
+  row always carries the crew's `alasan_kru`).
   `HARI_LIBUR` means the person's own schedule says off that day. A public
   holiday in the HRIS calendar never queues a punch; a VALID MASUK on it
   earns PH.

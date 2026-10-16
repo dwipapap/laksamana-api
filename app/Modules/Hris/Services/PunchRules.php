@@ -182,6 +182,12 @@ final class PunchRules
             // whole company to HR approval with no reason given).
             return '';
         }
+        // An enrolled face that does NOT match is fraud suspicion: surface it
+        // ahead of rostering reasons, or HR approves a stranger's punch as a
+        // mere scheduling issue.
+        if ($wajahHalangi && $wajahTerdaftar) {
+            return 'WAJAH';
+        }
         if ($shift === null) {
             if (! $tanpaShiftBoleh) {
                 return 'TANPA_SHIFT';
