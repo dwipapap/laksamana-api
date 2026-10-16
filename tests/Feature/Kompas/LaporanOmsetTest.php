@@ -43,5 +43,15 @@ it('laporan-omset math matches the dashboard (net/tagihan/self)', function () {
         ->and($r['self'])->toBe(200000)
         ->and($r['kasir'])->toBe(1200000)
         ->and($r['comp'])->toBe(50000)
+        ->and($r['svcOnly'])->toBe(75000)
+        ->and($r['taxOnly'])->toBe(150000)
         ->and($r['upt'])->toBe(2.25);
+});
+
+it('laporan-omset build menandai AI Agent dan waktu cetak', function () {
+    $lap = App\Modules\Kompas\Services\LaporanOmset::build(
+        ['daily' => [['date' => '2026-10-15', 'food' => 1]], 'compliments' => []], null);
+    expect($lap['tanggal'])->toBe('2026-10-15')
+        ->and($lap['oleh'])->toBe('AI Agent')
+        ->and($lap['dicetakPada'])->toMatch('/pukul \d{2}\.\d{2}$/');
 });

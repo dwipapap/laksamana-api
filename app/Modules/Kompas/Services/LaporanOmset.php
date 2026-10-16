@@ -2,6 +2,9 @@
 
 namespace App\Modules\Kompas\Services;
 
+use DateTime;
+use DateTimeZone;
+
 /**
  * Laporan Omset Harian (PDF) — the same figures as Dashboard Omset
  * (laksamana-office-vue `finance/kas` → bulanan.vue), computed server-side:
@@ -83,7 +86,16 @@ class LaporanOmset
             'hari' => self::ringkas($hari, $compliments),
             'bulan' => self::ringkas($bulan, []),
             'bulanHari' => count($bulan),
+            'oleh' => 'AI Agent',
+            'dicetakPada' => self::labelSekarang(),
         ];
+    }
+
+    public static function labelSekarang(): string
+    {
+        $dt = new DateTime('now', new DateTimeZone('Asia/Jakarta'));
+
+        return ((int) $dt->format('j')).' '.self::BULAN_PANJANG[(int) $dt->format('n')].' '.$dt->format('Y').' pukul '.$dt->format('H.i');
     }
 
     /** Aggregate one or more day rows into dashboard figures. */
@@ -122,6 +134,7 @@ class LaporanOmset
         return [
             'food' => $t['food'], 'bev' => $t['bev'], 'lainnya' => $t['lainnya'],
             'discount' => $t['discount'], 'service' => $t['service'], 'tax' => $t['tax'],
+            'svcOnly' => $t['service'], 'taxOnly' => $t['tax'],
             'traffic' => $t['traffic'], 'bill' => $t['bill'],
             'qfood' => $t['qfood'], 'qbev' => $t['qbev'], 'qothers' => $t['qothers'],
             'gross' => $gross, 'net' => $net, 'taxSvc' => $taxSvc, 'tagihan' => $tagihan,
