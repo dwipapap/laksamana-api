@@ -3,10 +3,11 @@
 **Greenfield on `core` — no legacy PHP, no legacy database, no parity cases.** Why it is a v1 module and not v2: [ADR-0009](../adr/0009-hris-greenfield-module-reading-v1.md).
 
 - **Hard deadline:** the Talenta subscription ends **March 2027**. Attendance, leave/PH and the meal-allowance recap must run in parallel with Talenta for one full pay period before that.
-- **Clients** (repo `laksamana-hris`):
-  - `apps/mobile`: Expo, as a dev build with EAS Build and EAS Update, for Android and iOS. iOS goes out through TestFlight for beta and as an Unlisted App for production, from a company Apple Developer account.
-  - `apps/console`: Nuxt + Nuxt UI for HR and Kepala Divisi, at `hris.laksamanamuda.id`.
-  - `packages/api`: TS types generated from `openapi.json`.
+- **Clients** (repo `laksamana-hris`): one PWA, `apps/web` (Vite + React SPA
+  at `hris.laksamanamuda.id`), plus `packages/api` (TS types generated from
+  `openapi.json`). The Expo crew app and the Nuxt console are deleted; their
+  code stays readable at commit `68686fc` as a logic reference only.
+  See [ADR-0010](../adr/0010-hris-pwa-replaces-expo-and-nuxt.md).
 - **Git:** this repo uses branches `feat/hris-*` with a PR to `main`, because `main` deploys to dev.
 
 Decisions were settled in a grilling session with the owner on 2026-10-15. Items marked **⏳** wait for the HR mentor.
@@ -19,7 +20,7 @@ Decisions were settled in a grilling session with the owner on 2026-10-15. Items
 | Holiday calendar, leave/PH balance ledger, all requests (CUTI, PH, IZIN; later OFF, TUKAR) | Jadwal cells and shifts (`JadwalService`): read for punches, written when a request is approved |
 | Meal-allowance recap and locked periods, People Score, team KPI, discipline (pelanggaran/SP) | Akademi materials and progress (onboarding, training) |
 | Contracts ⏳, onboarding checklist, manpower requests, vacancies, applicants/CVs | BD Permintaan Koordinasi (inter-division requests) |
-| Push tokens, reminders | Marketing → Konten design requests (shown read-only) |
+| — | Marketing → Konten design requests (shown read-only) |
 
 ## Locked decisions
 
@@ -28,14 +29,14 @@ Decisions were settled in a grilling session with the owner on 2026-10-15. Items
 | # | Decision | Value |
 |---|---|---|
 | A1 | Source of truth | HRIS punches. Talenta is switched off in March 2027; the legacy `absensi` module and PWA are not used |
-| A2 | Face model | On-device: **YuNet** (detection + 5 landmarks, MIT) + **SFace int8** (OpenCV Zoo, Apache-2.0, 128-dim, ~19 MB) on ONNX Runtime; model id `sface-2021dec-int8`, cosine metric, threshold calibrated on office phones. DeepFace (Python, server-side) and InsightFace/ArcFace weights (research-only) were rejected. Every crew member enrols again. Descriptors store their `model` |
+| A2 | Face model | On-device in the web PWA: **YuNet** (detection + 5 landmarks, MIT) + **SFace int8** (OpenCV Zoo, Apache-2.0, 128-dim) on `onnxruntime-web` WASM (`numThreads = 1`, no WebGPU, self-hosted wasm cached with the models); model id `sface-2021dec-int8`, cosine metric, threshold calibrated on web (`/dev/kalibrasi`). DeepFace (Python, server-side) and InsightFace/ArcFace weights (research-only) were rejected. Every crew member enrols again. Descriptors store their `model` |
 | A3 | Enrolment | Self-service at first login, active at once. Photo comes from the live camera only. The new descriptor is compared with **every** enrolled face, and a match with someone else is rejected and reported to HR. Re-enrolment only after an HR reset. HR can see enrolment photos. Biometric consent is shown once |
 | A4 | Liveness | **None.** The defences are face match, the duplicate check, GPS and the audit photo. If photo spoofing appears, passive MiniFASNet (Apache-2.0) can be added later without changing the flow |
 | A5 | Location | GPS radius per attendance location (haversine, clamped). Legacy `lokasi_absen` may be imported once as a starting point |
 | A6 | Rules copied from `AbsensiService` | Server time only; the subject comes from the token; shift window ±minutes; overnight shift (PULANG ≤ 18 h after MASUK belongs to the MASUK date); queue reasons LUAR_AREA, TANPA_SHIFT, HARI_LIBUR (the person's own day off — a public holiday never queues, it earns PH), LUAR_SHIFT, WAJAH; MENUNGGU needs a human decision; DITOLAK counts as no punch |
 | A7 | Shifts | Read from Jadwal cells, falling back to each person's default shift (`JadwalService`) |
-| A8 | Geofence | Background geofence is used **only for reminders**. There is no automatic punch |
-| A9 | Login | Existing `POST /api/v1/auth/login {login, pin}`. No device binding, no app biometric lock |
+| A8 | Geofence | **None.** No background geofence, no ENTER/EXIT events, no automatic punch. Location is a per-punch GPS fix only |
+| A9 | Login | Existing `POST /api/v1/auth/login {login, pin}`. No device binding, no app biometric lock. The PWA keeps the Bearer token in `localStorage` (`hris_token`) |
 
 ### Leave, PH and requests
 
@@ -96,16 +97,22 @@ results cite it.
 | R6 | Inter-division requests | HRIS screens for every Divisi, with data stored in **BD Permintaan Koordinasi** (Diminta → Diproses → Review → Selesai) through the BD service. Anyone may create one, and the Kepala Divisi of the target Divisi assigns it. Marketing → Konten design requests are shown read-only |
 | O1 | Onboarding | Akademi program(s) per Divisi (company knowledge + technical skills), auto-assigned, plus an HRIS checklist for non-learning steps (contract, uniform, accounts, buddy, 30/60/90-day review) |
 
-### Reminders (push via Expo → FCM/APNs; Laravel scheduler from a cPanel cron)
-1. No MASUK X minutes after the shift starts.
-2. Left the area without a PULANG (geofence).
-3. Entered the area without a MASUK (geofence).
-4. PH expires in 14 days.
-5. A request is waiting for approval (Kepala Divisi/HR).
-6. A request or queue decision was made (crew).
-7. An Akademi or onboarding deadline is near.
+### Perhatian (computed on request, no push, no scheduler)
 
-Contract-expiry reminders follow once contracts exist (⏳).
+`GET /hris/me/today` returns `perhatian[]`: `{kode, judul, pesan, layar,
+tingkat: 'info'|'penting'}`, computed by the server when asked. Beranda
+renders it as a "Perlu perhatian" box. The kinds:
+
+1. No MASUK X minutes after the shift starts (`perhatianTelatMenit`,
+   default 15).
+2. MASUK without PULANG X minutes after the shift ends
+   (`perhatianPulangMenit`, default 60).
+3. PH expiring within 14 days.
+4. Requests waiting for your approval (Kepala Divisi or HR only).
+5. Your request or queue decisions from the last 3 days.
+6. A near Akademi or onboarding deadline.
+
+Contract-expiry notices follow once contracts exist (⏳).
 
 ## Jadwal write-back risk (accepted, reconciled daily)
 
@@ -140,7 +147,7 @@ once ⏳ lands).
 | By | Must be live |
 |---|---|
 | Nov 2026 | Module + migrations; mobile app: login, home, face enrolment, punch with camera + GPS; HR queue; holiday calendar |
-| Dec 2026 | Balances (leave/PH), requests CUTI/PH/IZIN → Jadwal, push reminders 1–7, geofence |
+| Dec 2026 | Balances (leave/PH), requests CUTI/PH/IZIN → Jadwal, `perhatian[]` in `me/today` + PWA crew screens |
 | Jan 2027 | Meal-allowance recap + period lock + export; People Score snapshot |
 | Jan–Feb 2027 | One full pay period in parallel with Talenta; compare the recaps |
 | Mar 2027 | Talenta off |
@@ -149,7 +156,8 @@ Running in parallel from the start: team KPI (read), onboarding, manpower reques
 
 ## Open technical checks
 
-- Whether the cPanel cron can run `php artisan schedule:run` (reminders depend on it).
+- Whether the cPanel cron can run `php artisan schedule:run` (`hris:harian`
+  reconciliation depends on it; reminders need no cron).
 - Muse Spark API details (endpoint, limits, data handling) before R3 is built.
-- An Apple Developer organisation account (D-U-N-S number), and the share of crew on iPhone.
-- CORS must allow the console origin (ADR-0005).
+- CORS must allow the PWA origins `https://hris.laksamanamuda.id` and
+  `http://localhost:5173` (ADR-0005).
