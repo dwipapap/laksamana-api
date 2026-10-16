@@ -187,9 +187,10 @@ class LaporanOmset
         $e = fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 
         $logo = '';
-        foreach ([public_path('img/logo-laksamana-emas.png')] as $f) {
+        foreach (['img/logo-laksamana.jpg' => 'image/jpeg', 'img/logo-laksamana.png' => 'image/png'] as $rel => $mime) {
+            $f = public_path($rel);
             if (is_file($f)) {
-                $logo = 'data:image/png;base64,'.base64_encode((string) file_get_contents($f));
+                $logo = 'data:'.$mime.';base64,'.base64_encode((string) file_get_contents($f));
                 break;
             }
         }
