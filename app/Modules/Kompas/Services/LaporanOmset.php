@@ -54,9 +54,18 @@ class LaporanOmset
         0 => 'Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu',
     ];
 
+    private const HARI_PENDEK = [
+        0 => 'Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab',
+    ];
+
     private const BULAN = [
         1 => 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
         'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+    ];
+
+    private const BULAN_PENDEK = [
+        1 => 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
+        'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des',
     ];
 
     // ── format ──
@@ -84,7 +93,7 @@ class LaporanOmset
         return number_format((float) $n, 0, ',', '.');
     }
 
-    /** Tanggal gaya id-ID: Kamis, 15 Oktober 2026. */
+    /** Tanggal gaya id-ID: Kamis, 15 Okt 2026 (bulan pendek, ikut gambar acuan). */
     public static function labelTanggal(string $ymd): string
     {
         $p = explode('-', $ymd);
@@ -93,7 +102,7 @@ class LaporanOmset
         }
         $ts = mktime(0, 0, 0, (int) $p[1], (int) $p[2], (int) $p[0]);
 
-        return self::HARI[(int) date('w', $ts)].', '.((int) $p[2]).' '.self::BULAN[(int) $p[1]].' '.$p[0];
+        return self::HARI[(int) date('w', $ts)].', '.((int) $p[2]).' '.self::BULAN_PENDEK[(int) $p[1]].' '.$p[0];
     }
 
     public static function labelBulan(string $ym): string
@@ -178,7 +187,7 @@ class LaporanOmset
         $e = fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 
         $logo = '';
-        foreach ([public_path('img/logo-laksamana.png'), base_path('../laksamana-office/deploy/assets/logo.png')] as $f) {
+        foreach ([public_path('img/logo-laksamana-emas.png')] as $f) {
             if (is_file($f)) {
                 $logo = 'data:image/png;base64,'.base64_encode((string) file_get_contents($f));
                 break;
@@ -203,6 +212,9 @@ class LaporanOmset
         $opt = new Options;
         $opt->set('defaultFont', 'DejaVu Sans');
         $opt->set('isRemoteEnabled', false);
+        $opt->set('isFontSubsettingEnabled', true);
+        $opt->set('dpi', 96);
+        $opt->set('defaultMediaType', 'print');
         $dompdf = new Dompdf($opt);
         $dompdf->setPaper('A4', 'portrait');
         $dompdf->loadHtml($html, 'UTF-8');
