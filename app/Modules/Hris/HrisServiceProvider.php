@@ -14,8 +14,8 @@ use Illuminate\Support\ServiceProvider;
 
 /**
  * The HRIS module (greenfield on `core`, ADR-0009): attendance, and later
- * leave/PH, meal allowance, People Score, reminders, recruitment and
- * onboarding. There is no legacy route and no importer — other modules' data
+ * leave/PH, meal allowance, People Score, the perhatian box, recruitment
+ * and onboarding. There is no legacy route and no importer — other modules' data
  * is reached in-process through their own services.
  *
  * `ModuleServiceProvider` auto-loads `routes/v1.php`; this provider only

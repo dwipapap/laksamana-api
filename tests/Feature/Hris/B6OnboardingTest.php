@@ -2,11 +2,7 @@
 
 use App\Modules\Akademi\Services\AkademiRecords;
 use App\Modules\Hris\Models\HrisOnboarding;
-use App\Modules\Hris\Models\HrisPushToken;
-use App\Modules\Hris\Services\ExpoPushService;
 use App\Modules\Hris\Services\HrisOnboardingService;
-use App\Modules\Hris\Services\HrisReminderService;
-use Illuminate\Support\Facades\Http;
 
 require_once __DIR__.'/helpers.php';
 
@@ -89,21 +85,6 @@ it('lets HR complete reviews', function () {
     test()->postJson("/api/v1/hris/onboarding/{$ob->id}/langkah/eval-30",
         ['selesai' => true, 'catatan' => 'bagus'],
         ['Authorization' => 'Bearer '.$t])->assertOk()->assertJsonPath('data.selesai', true);
-});
-
-it('reminds overdue onboarding steps', function () {
-    Http::fake([
-        ExpoPushService::TIKET_URL => Http::response(['data' => [['status' => 'ok', 'id' => 't1']]], 200),
-        ExpoPushService::TANDA_URL => Http::response(['data' => ['t1' => ['status' => 'ok']]], 200),
-    ]);
-    hrisSettings();
-    HrisPushToken::query()->create(['user_id' => 'u-dwipa',
-        'token' => 'ExponentPushToken[dwipa]', 'platform' => 'android']);
-    app(HrisOnboardingService::class)->mulai(hrisMe('u-admin'), 'u-dwipa', '2026-09-01', 'bar');
-
-    $r = app(HrisReminderService::class)->onboardingJatuhTempo('2026-10-15');
-    expect($r['diingatkan'])->toBeGreaterThanOrEqual(1);
-    expect(app(HrisReminderService::class)->onboardingJatuhTempo('2026-10-15')['diingatkan'])->toBe(0);
 });
 
 it('links the division Akademi program when one exists', function () {

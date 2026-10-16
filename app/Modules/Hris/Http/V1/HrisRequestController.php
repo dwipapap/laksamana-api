@@ -8,7 +8,6 @@ use App\Auth\OfficeAccess;
 use App\Modules\Hris\Models\HrisPengajuan;
 use App\Modules\Hris\Services\HrisError;
 use App\Modules\Hris\Services\HrisLingkup;
-use App\Modules\Hris\Services\HrisReminderService;
 use App\Modules\Hris\Services\HrisRequestService;
 use App\Support\Api\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -25,7 +24,6 @@ final class HrisRequestController extends HrisBaseController
         OfficeAccess $access,
         private readonly HrisRequestService $pengajuan,
         private readonly HrisLingkup $lingkup,
-        private readonly HrisReminderService $pengingat,
     ) {
         parent::__construct($access);
     }
@@ -122,11 +120,6 @@ final class HrisRequestController extends HrisBaseController
             $row = $this->find($id);
             $hasil = $this->pengajuan->shape(
                 $this->pengajuan->decide($me, $row, $d['status'], $d['nota'] ?? ''));
-            // Tell the requester (swallowed on failure; the decision stands).
-            try {
-                $this->pengingat->putusanPengajuan($row->user_id, $id, $hasil['status']);
-            } catch (\Throwable) {
-            }
 
             return $hasil;
         });
