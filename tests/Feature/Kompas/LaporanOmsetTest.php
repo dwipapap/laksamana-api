@@ -49,7 +49,7 @@ it('laporan-omset math matches the dashboard (net/tagihan/self)', function () {
 });
 
 it('laporan-omset build menandai AI Agent dan waktu cetak', function () {
-    $lap = App\Modules\Kompas\Services\LaporanOmset::build(
+    $lap = LaporanOmset::build(
         ['daily' => [['date' => '2026-10-15', 'food' => 1]], 'compliments' => []], null);
     expect($lap['tanggal'])->toBe('2026-10-15')
         ->and($lap['oleh'])->toBe('AI Agent')
