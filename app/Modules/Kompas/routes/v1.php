@@ -17,6 +17,7 @@ Route::middleware('auth:sanctum')->prefix('kompas')->group(function () {
     }
     Route::put('rekap', [C::class, 'putRekap']);
     Route::get('daily', [C::class, 'daily']);
+    Route::get('laporan-pdf', [C::class, 'laporanPdf']);
     Route::get('omset-pic', [C::class, 'omsetPic']);
     Route::get('performa/{divisi}', [C::class, 'performa'])->whereIn('divisi', ['marketing', 'event']);
 

@@ -5,9 +5,12 @@ namespace App\Modules\Kompas\Http\V1;
 use App\Auth\OfficeAccess;
 use App\Modules\Kompas\Services\KompasConflict;
 use App\Modules\Kompas\Services\KompasState;
+use App\Modules\Kompas\Services\LaporanOmset;
 use App\Support\Api\ApiResponse;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use RuntimeException;
 
 /**
@@ -159,6 +162,26 @@ class KompasController
             : KompasState::tgl($key) !== null;
 
         return $ok ? null : ApiResponse::error('validation_failed', 'Unknown section or date (YYYY-MM-DD).', 422);
+    }
+
+    /**
+     * GET /kompas/laporan-pdf?tanggal= — the Dashboard Omset daily figures as
+     * PDF. `tanggal` empty = the latest date present in `daily` (a nightly run
+     * still reports a back-filled day). 404 when there is no daily data at all.
+     */
+    public function laporanPdf(Request $r): Response|JsonResponse
+    {
+        if ($denied = $this->anyOf($r, self::OMSET)) {
+            return $denied;
+        }
+        $f = $r->validate(['tanggal' => ['nullable', 'date_format:Y-m-d']]);
+        $lap = LaporanOmset::build($this->kompas->assoc(), $f['tanggal'] ?? null);
+        if ($lap === null) {
+            return ApiResponse::error('empty', 'Belum ada data omset harian.', 404);
+        }
+
+        return Pdf::loadView('kompas.laporan-omset', $lap + ['rp' => [LaporanOmset::class, 'rp']])
+            ->download('Laporan-Omset-'.$lap['tanggal'].'.pdf');
     }
 
     /** Daily revenue from THE daily map, with the three conventions (net / tagihan / netSales). */
