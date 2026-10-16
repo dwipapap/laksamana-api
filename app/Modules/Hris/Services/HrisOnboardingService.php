@@ -268,7 +268,7 @@ final class HrisOnboardingService
         return $l->fresh();
     }
 
-    /** Overdue steps for the reminder run (eval + dated steps past due). */
+    /** Overdue steps for the perhatian box (eval + dated steps past due). */
     public function langkahJatuhTempo(string $today): array
     {
         $out = [];

@@ -35,23 +35,17 @@ final class HrisSettingsService
         // Team KPI input (templates + realisation) stays off until the mentor
         // confirms the items per Divisi (K1); reads always work.
         'kpiInputAktif' => false,
-        // Push reminders (B4): master switch, lateness threshold, and the
-        // optional Expo access token (higher limits).
-        'pushAktif' => true,
-        'reminderTelatMenit' => 30,
-        'expoAccessToken' => '',
+        // Perhatian thresholds (PWA "Perlu perhatian" box, computed on
+        // GET /hris/me/today): minutes after shift start without MASUK,
+        // and minutes after shift end with MASUK but no PULANG.
+        'perhatianTelatMenit' => 15,
+        'perhatianPulangMenit' => 60,
     ];
 
-    /** Settings never served to clients (GET /hris/settings skips these). */
-    public const RAHASIA = ['expoAccessToken'];
-
-    /** The merged settings map (stored rows over defaults, secrets excluded). */
+    /** The merged settings map (stored rows over defaults). */
     public function all(): array
     {
         $out = self::DEFAULTS;
-        foreach (self::RAHASIA as $rahasia) {
-            unset($out[$rahasia]);
-        }
         foreach (HrisPengaturan::query()->get(['kunci', 'nilai']) as $row) {
             if (array_key_exists($row->kunci, $out)) {
                 $out[$row->kunci] = $row->nilai ?? $out[$row->kunci];
@@ -63,14 +57,6 @@ final class HrisSettingsService
 
     public function get(string $key, mixed $fallback = null): mixed
     {
-        if (in_array($key, self::RAHASIA, true)) {
-            $row = HrisPengaturan::query()->where('kunci', $key)->first();
-            if ($row) {
-                return $row->nilai ?? $fallback;
-            }
-
-            return self::DEFAULTS[$key] ?? $fallback;
-        }
         $all = $this->all();
 
         return $all[$key] ?? $fallback;
@@ -109,18 +95,9 @@ final class HrisSettingsService
             'wajahAmbang' => $this->cleanAmbang($v),
             'hr' => $this->cleanHr($v),
             'jatahCuti' => $int($v, 0, 30, $k),
-            'reminderTelatMenit' => $int($v, 5, 240, $k),
-            'expoAccessToken' => $this->cleanTeks($v, $k, 200),
+            'perhatianTelatMenit' => $int($v, 5, 240, $k),
+            'perhatianPulangMenit' => $int($v, 5, 720, $k),
         };
-    }
-
-    private function cleanTeks(mixed $v, string $nama, int $max): string
-    {
-        if (! is_string($v) || mb_strlen($v) > $max) {
-            throw new HrisError('validation_failed', "Pengaturan {$nama} maksimal {$max} karakter.", 422);
-        }
-
-        return trim($v);
     }
 
     private function cleanInt(mixed $v, int $min, int $max, string $nama): int
