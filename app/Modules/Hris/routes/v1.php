@@ -4,7 +4,6 @@ use App\Modules\Hris\Http\V1\HrisBalanceController as B;
 use App\Modules\Hris\Http\V1\HrisCalendarController as K;
 use App\Modules\Hris\Http\V1\HrisCoordinationController as T;
 use App\Modules\Hris\Http\V1\HrisDesignRequestController as G;
-use App\Modules\Hris\Http\V1\HrisDeviceController as V;
 use App\Modules\Hris\Http\V1\HrisDisiplinController as D;
 use App\Modules\Hris\Http\V1\HrisFaceController as F;
 use App\Modules\Hris\Http\V1\HrisKpiController as P;
@@ -90,11 +89,6 @@ Route::middleware(['auth:sanctum', 'module:hris'])->prefix('hris')->group(functi
     Route::get('skor/formula', [S::class, 'formula']);
     Route::post('skor/formula', [S::class, 'saveFormula']);
     Route::post('penilaian', [S::class, 'nilai']);
-
-    // Push devices + geofence (B4: reminders 1–7, no automatic punch).
-    Route::post('devices', [V::class, 'register']);
-    Route::delete('devices', [V::class, 'remove']);
-    Route::post('geofence-events', [V::class, 'geofence']);
 
     // Recruitment (B5: R1–R5).
     Route::get('permintaan', [N::class, 'index']);

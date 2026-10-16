@@ -20,7 +20,7 @@ Code: `app/Modules/Hris`.
 
 | Method | Path | Lingkup | Notes |
 |---|---|---|---|
-| GET | `/hris/me/today` | all | Punch-screen bootstrap: shift today, MASUK/PULANG rows, nearest locations, server time, enrolment flag |
+| GET | `/hris/me/today` | all | Punch-screen bootstrap: shift today, MASUK/PULANG rows, nearest locations, server time, enrolment flag, `perhatian[]` |
 | POST | `/hris/punches` | self | Punch in/out. Repeated MASUK → `200 {duplikat:true}`; repeated PULANG overwrites. `201` otherwise |
 | GET | `/hris/punches?from&to&user` | scoped | History. Crew are forced to their own rows; heads to their divisions |
 | GET | `/hris/punches/{id}/photo` | scoped | Audit photo (self, HR, head of division) |
@@ -95,11 +95,24 @@ Code: `app/Modules/Hris`.
   "masuk": {…}|null, "pulang": {…}|null,
   "wajahTerdaftar": true,
   "lokasi": [{"id": "01j…", "nama": "Outlet", "lat": -6.2, "lng": 106.8, "radius": 120, "aktif": true}],
-  "lingkup": "sendiri"
+  "lingkup": "sendiri",
+  "perhatian": [{"kode": "belum_masuk", "judul": "Belum absen masuk", "pesan": "Shift PAGI mulai 08:00.", "layar": "/absen", "tingkat": "penting"}]
 }
 ```
 
 `shift` is `null` when unscheduled, `false` when the roster is unreadable.
+
+`perhatian[]` is computed on request (no push, no scheduler). Each item
+carries `{kode, judul, pesan, layar, tingkat: 'info'|'penting'}`:
+
+1. No MASUK X minutes after the shift starts (`perhatianTelatMenit`,
+   default 15).
+2. MASUK without PULANG X minutes after the shift ends
+   (`perhatianPulangMenit`, default 60).
+3. PH expiring within 14 days.
+4. Requests waiting for your approval (Kepala Divisi or HR only).
+5. Your request or queue decisions from the last 3 days.
+6. A near Akademi or onboarding deadline.
 
 ### Settings
 
@@ -254,32 +267,12 @@ Payroll phase a (P1–P2), discipline (S4), team KPI (K1), People Score
   ranked. Achievement per KPI item is clamped 0–120% (`NAIK`: nilai/target,
   `TURUN`: target/nilai) and averaged by weight.
 
-## B4 — push reminders and geofence
+## B4 — perhatian (replaces push reminders and geofence)
 
-Reminders 1–7 (hris.md) via Expo → FCM/APNs. Scheduler: `hris:pengingat
-telat` every 10 minutes 05:00–23:00 + `hris:pengingat harian` daily 07:00
-Asia/Jakarta (routes/console.php; cPanel cron drives it). Every send is
-idempotent per (jenis, ref, user); payloads carry only the recipient's own
-data (their shift, their PH, their request) — no names, no biometrics.
-
-| Method | Path | Notes |
-|---|---|---|
-| POST | `/hris/devices` | `{token, platform?}` — register (or move) an Expo token. `201` |
-| DELETE | `/hris/devices` | `{token}` — remove your token |
-| POST | `/hris/geofence-events` | `{lokasi_id?, tipe: ENTER\|EXIT}` — the server may remind, never punch (A8) |
-
-1. No MASUK X min after the shift starts (`reminderTelatMenit`, default
-   30) — roster sweep, skips holidays and the already-punched.
-2. EXIT with MASUK but no PULANG → "sudah pulang?" nudge (once per day).
-3. ENTER with no MASUK → "absen sekarang" nudge (once per day).
-4. PH expiring within 14 days.
-5. Waiting requests → heads (`MENUNGGU`), HR (`MENUNGGU_HRD`).
-6. Decisions → the crew member (queue + request outcomes).
-7. Unfinished mandatory Akademi materials → weekly nudge.
-
-Settings: `pushAktif` (master switch), `reminderTelatMenit` (5–240),
-`expoAccessToken` (optional, higher limits — secret: writable, never
-served by GET settings). Dead tokens (`DeviceNotRegistered`) are deleted.
+No push devices, no geofence events, no scheduler. `GET /hris/me/today`
+returns `perhatian[]` (see above); the PWA renders it as a "Perlu perhatian"
+box. The punch body carries no `mock` field: the client sends only `lat`,
+`lng`, `akurasi`, and the server treats a missing location as-is.
 
 ## B5 — manpower requests and CV screening
 
@@ -333,9 +326,9 @@ after 12 months (`hris:harian`); HR can delete manually.
 
 ## For laksamana-hris
 
-`packages/api` generates types from `openapi.json` (tag `hris`). Mobile:
-login (name + PIN) → Beranda (`me/today`) → enrol (`faces/me` with consent)
-→ punch (`punches` with camera + GPS). Console: queue + decisions (send
-`berubah`, handle `409` by reloading), faces, locations, settings. Face
-photos and descriptors never leave the server except through the two HR
-photo streams.
+`packages/api` generates types from `openapi.json` (tag `hris`). Web PWA:
+login (name + PIN) → Beranda (`me/today` with `perhatian[]`) → enrol
+(`faces/me` with consent) → punch (`punches` with camera + GPS). Kelola:
+queue + decisions (send `berubah`, handle `409` by reloading), faces,
+locations, settings. Face photos and descriptors never leave the server
+except through the two HR photo streams.
