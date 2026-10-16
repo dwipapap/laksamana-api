@@ -7,7 +7,6 @@ use App\Modules\Kompas\Services\KompasConflict;
 use App\Modules\Kompas\Services\KompasState;
 use App\Modules\Kompas\Services\LaporanOmset;
 use App\Support\Api\ApiResponse;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -179,9 +178,24 @@ class KompasController
         if ($lap === null) {
             return ApiResponse::error('empty', 'Belum ada data omset harian.', 404);
         }
+        $h = $lap['hari'];
+        $b = $lap['bulan'];
+        $bin = LaporanOmset::buatPdfOmsetHarian([
+            'food' => $h['food'], 'bev' => $h['bev'], 'lainnya' => $h['lainnya'],
+            'discount' => $h['discount'], 'tax' => $h['taxOnly'], 'service_charge' => $h['svcOnly'],
+            'traffic' => $h['traffic'], 'bill' => $h['bill'],
+            'qty_food' => $h['qfood'], 'qty_bev' => $h['qbev'], 'qty_others' => $h['qothers'],
+            'self_amount' => $h['selfAmount'], 'self_disc' => $h['selfDisc'],
+            'compliment_total' => $h['comp'],
+            'tanggal' => $lap['tanggal'], 'nama_pencetak' => 'AI Agent',
+            'waktu_cetak' => $lap['dicetakPada'],
+            'bulan' => ['tagihan' => $b['tagihan'], 'net' => $b['net'], 'hari_terinput' => $lap['bulanHari']],
+        ]);
 
-        return Pdf::loadView('kompas.laporan-omset', $lap + ['rp' => [LaporanOmset::class, 'rp']])
-            ->download('Laporan-Omset-'.$lap['tanggal'].'.pdf');
+        return response($bin, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="Dashboard-Omset-'.$lap['tanggal'].'.pdf"',
+        ]);
     }
 
     /** Daily revenue from THE daily map, with the three conventions (net / tagihan / netSales). */

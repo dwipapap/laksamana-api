@@ -55,3 +55,39 @@ it('laporan-omset build menandai AI Agent dan waktu cetak', function () {
         ->and($lap['oleh'])->toBe('AI Agent')
         ->and($lap['dicetakPada'])->toMatch('/pukul \d{2}\.\d{2}$/');
 });
+
+it('buatPdfOmsetHarian memulangkan biner PDF sesuai spesifikasi', function () {
+    $bin = LaporanOmset::buatPdfOmsetHarian([
+        'food' => 11405800, 'bev' => 9952014, 'lainnya' => 345000,
+        'discount' => 315200, 'tax' => 2070781, 'service_charge' => 1035391,
+        'traffic' => 284, 'bill' => 141,
+        'qty_food' => 288, 'qty_bev' => 517, 'qty_others' => 9,
+        'self_amount' => 3656000, 'self_disc' => 0,
+        'compliment_total' => 1051100,
+        'tanggal' => '2026-10-15', 'nama_pencetak' => 'AI Agent',
+        'waktu_cetak' => '16 Oktober 2026 pukul 22.50',
+        'bulan' => ['tagihan' => 459184816, 'net' => 405042035, 'hari_terinput' => 15],
+    ]);
+    expect(substr($bin, 0, 5))->toBe('%PDF-')->and(strlen($bin))->toBeGreaterThan(10000);
+});
+
+it('hitungHarian menampilkan strip saat pembagi nol', function () {
+    $h = LaporanOmset::hitungHarian([]);
+    expect($h['upt'])->toBe('—')->and($h['atv'])->toBe('—')->and($h['aps'])->toBe('—')
+        ->and($h['selfPct'])->toBe('—')->and($h['rFood'])->toBe('—');
+});
+
+it('hitungHarian memformat angka gaya Indonesia', function () {
+    $h = LaporanOmset::hitungHarian([
+        'food' => 11405800, 'bev' => 9952014, 'lainnya' => 345000,
+        'discount' => 315200, 'tax' => 2070781, 'service_charge' => 1035391,
+        'traffic' => 284, 'bill' => 141,
+        'qty_food' => 288, 'qty_bev' => 517, 'qty_others' => 9,
+        'self_amount' => 3656000, 'self_disc' => 0, 'compliment_total' => 1051100,
+    ]);
+    expect($h['tagihan'])->toBe('Rp24.493.786')
+        ->and($h['net'])->toBe('Rp21.387.614')
+        ->and($h['rFood'])->toBe('52,6%')
+        ->and($h['upt'])->toBe('5,77')
+        ->and($h['atv'])->toBe('Rp151.685');
+});
