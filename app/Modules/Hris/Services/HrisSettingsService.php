@@ -21,12 +21,12 @@ final class HrisSettingsService
         'toleransiTelat' => 5,
         'tanpaShiftBoleh' => false,
         'wajahWajib' => false,
-        // Per-model face thresholds. The mobilefacenet-v1 numbers are
+        // Per-model face thresholds. The sface-2021dec-int8 numbers are
         // placeholders until the M1 calibration measures same-vs-different
         // distances on 5–10 people (TODO(mentor): confirm or replace).
         'wajahAmbang' => [
             'default' => ['metric' => 'cosine', 'ambang' => 0.4],
-            'mobilefacenet-v1' => ['metric' => 'cosine', 'ambang' => 0.4],
+            'sface-2021dec-int8' => ['metric' => 'cosine', 'ambang' => 0.4],
         ],
         // Extra HR staff by legacy User id (module admins of hris are always HR).
         'hr' => [],

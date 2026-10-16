@@ -145,10 +145,10 @@ it('falls back to the default shift when the roster has no cell', function () {
 it('queues WAJAH on mismatch and WAJAH_KOSONG when wajahWajib', function () {
     hrisSettings(['tanpaShiftBoleh' => true, 'wajahWajib' => false]);
     app(HrisAttendanceService::class)->enrol(hrisMe('u-dwipa'),
-        ['descriptor' => hrisDescriptor(), 'model' => 'mobilefacenet-v1', 'consent' => true, 'foto' => hrisFoto()]);
+        ['descriptor' => hrisDescriptor(), 'model' => 'sface-2021dec-int8', 'consent' => true, 'foto' => hrisFoto()]);
 
     $salah = hrisPunch(hrisMe('u-dwipa'),
-        ['arah' => 'MASUK', 'descriptor' => hrisDescriptor(-0.5), 'model' => 'mobilefacenet-v1', 'alasan' => 'kamera buram'],
+        ['arah' => 'MASUK', 'descriptor' => hrisDescriptor(-0.5), 'model' => 'sface-2021dec-int8', 'alasan' => 'kamera buram'],
         hrisMs(2026, 10, 20, 9, 0));
     expect($salah['punch'])->toMatchArray(['status' => 'MENUNGGU', 'alasan_antrean' => ['WAJAH']]);
 

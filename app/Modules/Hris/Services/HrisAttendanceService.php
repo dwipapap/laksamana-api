@@ -251,7 +251,7 @@ final class HrisAttendanceService
         $descriptor = self::cleanDescriptor($in['descriptor'] ?? null);
         $model = mb_substr(self::s($in['model'] ?? ''), 0, 64);
         if ($model === '') {
-            throw new HrisError('validation_failed', 'Model wajah wajib diisi (mis. mobilefacenet-v1).', 422);
+            throw new HrisError('validation_failed', 'Model wajah wajib diisi (mis. sface-2021dec-int8).', 422);
         }
         if ($this->faceEnrolled($uid)) {
             throw new HrisError('already_enrolled', 'Wajah sudah terdaftar dan langsung aktif. Minta HR mereset untuk daftar ulang.', 409);

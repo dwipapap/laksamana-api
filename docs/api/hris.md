@@ -45,7 +45,7 @@ Code: `app/Modules/Hris`.
   "arah": "MASUK",
   "lat": -6.2, "lng": 106.8, "akurasi": 12,
   "descriptor": [0.12, -0.03, "..."],
-  "model": "mobilefacenet-v1",
+  "model": "sface-2021dec-int8",
   "foto": "<base64, EXIF GPS stripped on device>",
   "alasan": "dinas luar (wajib bila di luar ketentuan)"
 }
@@ -124,7 +124,7 @@ Defaults (`PUT /hris/settings` takes a partial map; unknown keys are `422`):
   "tanpaShiftBoleh": false, "wajahWajib": false,
   "wajahAmbang": {
     "default": {"metric": "cosine", "ambang": 0.4},
-    "mobilefacenet-v1": {"metric": "cosine", "ambang": 0.4}
+    "sface-2021dec-int8": {"metric": "cosine", "ambang": 0.4}
   },
   "hr": ["u-admin"]
 }

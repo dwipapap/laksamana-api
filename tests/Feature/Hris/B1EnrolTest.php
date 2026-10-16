@@ -22,7 +22,7 @@ it('enrols your own face, active at once', function () {
     $t = hrisToken('u-dwipa');
 
     $r = test()->postJson('/api/v1/hris/faces/me',
-        ['descriptor' => hrisDescriptor(), 'model' => 'mobilefacenet-v1', 'consent' => true, 'foto' => hrisFoto()],
+        ['descriptor' => hrisDescriptor(), 'model' => 'sface-2021dec-int8', 'consent' => true, 'foto' => hrisFoto()],
         ['Authorization' => 'Bearer '.$t])->assertCreated()->json();
 
     expect($r['data'])->toMatchArray(['user_id' => 'u-dwipa', 'status' => 'AKTIF']);
@@ -34,7 +34,7 @@ it('refuses enrolment without consent', function () {
     $t = hrisToken('u-dwipa');
 
     test()->postJson('/api/v1/hris/faces/me',
-        ['descriptor' => hrisDescriptor(), 'model' => 'mobilefacenet-v1'],
+        ['descriptor' => hrisDescriptor(), 'model' => 'sface-2021dec-int8'],
         ['Authorization' => 'Bearer '.$t])->assertStatus(422)->assertJsonPath('error.code', 'validation_failed');
 });
 
@@ -43,10 +43,10 @@ it('refuses a second enrolment while AKTIF', function () {
     $t = hrisToken('u-dwipa');
     $h = ['Authorization' => 'Bearer '.$t];
     test()->postJson('/api/v1/hris/faces/me',
-        ['descriptor' => hrisDescriptor(), 'model' => 'mobilefacenet-v1', 'consent' => true, 'foto' => hrisFoto()], $h)->assertCreated();
+        ['descriptor' => hrisDescriptor(), 'model' => 'sface-2021dec-int8', 'consent' => true, 'foto' => hrisFoto()], $h)->assertCreated();
 
     test()->postJson('/api/v1/hris/faces/me',
-        ['descriptor' => hrisDescriptor(-0.5), 'model' => 'mobilefacenet-v1', 'consent' => true, 'foto' => hrisFoto()], $h)
+        ['descriptor' => hrisDescriptor(-0.5), 'model' => 'sface-2021dec-int8', 'consent' => true, 'foto' => hrisFoto()], $h)
         ->assertStatus(409)->assertJsonPath('error.code', 'already_enrolled');
 });
 
@@ -54,13 +54,13 @@ it('rejects a face matching someone else and audits it', function () {
     hrisSettings();
     $t = hrisToken('u-dwipa');
     test()->postJson('/api/v1/hris/faces/me',
-        ['descriptor' => hrisDescriptor(), 'model' => 'mobilefacenet-v1', 'consent' => true, 'foto' => hrisFoto()],
+        ['descriptor' => hrisDescriptor(), 'model' => 'sface-2021dec-int8', 'consent' => true, 'foto' => hrisFoto()],
         ['Authorization' => 'Bearer '.$t])->assertCreated();
 
     // The second person enrols through the service (one HTTP identity per test).
     try {
         app(HrisAttendanceService::class)->enrol(hrisMe('u-andry'),
-            ['descriptor' => hrisDescriptor(), 'model' => 'mobilefacenet-v1', 'consent' => true, 'foto' => hrisFoto()]);
+            ['descriptor' => hrisDescriptor(), 'model' => 'sface-2021dec-int8', 'consent' => true, 'foto' => hrisFoto()]);
         expect(false)->toBeTrue('expected wajah_milik_orang_lain');
     } catch (HrisError $e) {
         expect($e->errorCode)->toBe('wajah_milik_orang_lain')->and($e->status)->toBe(409);
@@ -70,7 +70,7 @@ it('rejects a face matching someone else and audits it', function () {
 
     // A genuinely different face enrols fine.
     $row = app(HrisAttendanceService::class)->enrol(hrisMe('u-andry'),
-        ['descriptor' => hrisDescriptor(-0.5), 'model' => 'mobilefacenet-v1', 'consent' => true, 'foto' => hrisFoto()]);
+        ['descriptor' => hrisDescriptor(-0.5), 'model' => 'sface-2021dec-int8', 'consent' => true, 'foto' => hrisFoto()]);
     expect($row->status)->toBe('AKTIF');
 });
 
@@ -80,7 +80,7 @@ it('lets HR reset a face so the person may enrol again', function () {
     $t = hrisToken('u-dwipa');
     $h = ['Authorization' => 'Bearer '.$t];
     test()->postJson('/api/v1/hris/faces/me',
-        ['descriptor' => hrisDescriptor(), 'model' => 'mobilefacenet-v1', 'consent' => true, 'foto' => hrisFoto()], $h)->assertCreated();
+        ['descriptor' => hrisDescriptor(), 'model' => 'sface-2021dec-int8', 'consent' => true, 'foto' => hrisFoto()], $h)->assertCreated();
 
     // Crew cannot reset (HR only) — through the service would bypass auth, so
     // the reset below runs as the HR user.
@@ -89,7 +89,7 @@ it('lets HR reset a face so the person may enrol again', function () {
 
     // Re-enrolment works after the reset.
     test()->postJson('/api/v1/hris/faces/me',
-        ['descriptor' => hrisDescriptor(-0.5), 'model' => 'mobilefacenet-v1', 'consent' => true, 'foto' => hrisFoto()], $h)->assertCreated();
+        ['descriptor' => hrisDescriptor(-0.5), 'model' => 'sface-2021dec-int8', 'consent' => true, 'foto' => hrisFoto()], $h)->assertCreated();
 });
 
 it('resets faces over HTTP as HR, 404 when none', function () {
@@ -101,7 +101,7 @@ it('resets faces over HTTP as HR, 404 when none', function () {
     test()->deleteJson('/api/v1/hris/faces/u-dwipa', [], $h)->assertStatus(404);
 
     app(HrisAttendanceService::class)->enrol(hrisMe('u-dwipa'),
-        ['descriptor' => hrisDescriptor(), 'model' => 'mobilefacenet-v1', 'consent' => true, 'foto' => hrisFoto()]);
+        ['descriptor' => hrisDescriptor(), 'model' => 'sface-2021dec-int8', 'consent' => true, 'foto' => hrisFoto()]);
     test()->deleteJson('/api/v1/hris/faces/u-dwipa', [], $h)->assertOk()->assertJsonPath('data.direset', true);
 });
 
@@ -113,7 +113,7 @@ it('hides descriptors from the HR face list but streams the photo', function () 
     $h = ['Authorization' => 'Bearer '.$t];
 
     test()->postJson('/api/v1/hris/faces/me',
-        ['descriptor' => hrisDescriptor(), 'model' => 'mobilefacenet-v1',
+        ['descriptor' => hrisDescriptor(), 'model' => 'sface-2021dec-int8',
             'foto' => base64_encode('FOTOUJI'), 'consent' => true, 'foto' => hrisFoto()], $h)->assertCreated();
 
     $r = test()->getJson('/api/v1/hris/faces', $h)->assertOk()->json('data');
@@ -139,7 +139,7 @@ it('keeps the face list and photos from crew', function () {
 it('refuses an enrolment without the audit photo', function () {
     $t = hrisToken('u-dwipa');
     test()->postJson('/api/v1/hris/faces/me',
-        ['descriptor' => hrisDescriptor(), 'model' => 'mobilefacenet-v1', 'consent' => true],
+        ['descriptor' => hrisDescriptor(), 'model' => 'sface-2021dec-int8', 'consent' => true],
         ['Authorization' => 'Bearer '.$t])->assertStatus(422);
     expect(app(HrisAttendanceService::class)->faceEnrolled('u-dwipa'))->toBeFalse();
 });
