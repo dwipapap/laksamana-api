@@ -202,9 +202,7 @@ class LaporanOmset
             'labelBulan' => self::labelBulan($mk),
             'bulanTagihan' => self::rupiah($bTagihan),
             'bulanNet' => self::rupiah($bNet),
-            'bulanHari' => $bHari > 0 ? self::int($bHari).' hari' : 'belum ada data',
             'bulanRata' => $bHari > 0 ? self::rupiah($bTagihan / $bHari) : '—',
-            'hariTerinput' => self::semuaNol($data) ? 'belum ada data' : '1 hari',
             'oleh' => $e($data['nama_pencetak'] ?? 'AI Agent'),
             'waktuCetak' => $e($data['waktu_cetak'] ?? self::labelSekarang()),
             'logo' => $logo,
@@ -222,18 +220,6 @@ class LaporanOmset
         $dompdf->render();
 
         return (string) $dompdf->output();
-    }
-
-    private static function semuaNol(array $data): bool
-    {
-        foreach (['food', 'bev', 'lainnya', 'discount', 'tax', 'service_charge', 'traffic', 'bill',
-            'qty_food', 'qty_bev', 'qty_others', 'self_amount', 'self_disc', 'compliment_total'] as $k) {
-            if (KompasState::num($data[$k] ?? 0) !== 0) {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     // ── blob → endpoint ──

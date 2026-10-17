@@ -66,10 +66,9 @@
     <td class="strip" width="100%">
       <table width="100%" class="flat">
         <tr>
-          <td width="25%"><span class="lab">Periode:</span> {{ $labelTanggal }}</td>
-          <td width="25%"><span class="lab">Mode:</span> Laporan harian</td>
-          <td width="25%"><span class="lab">Hari Terinput:</span> {{ $hariTerinput }}</td>
-          <td width="25%"><span class="lab">Dicetak Oleh:</span> {{ $oleh }}</td>
+          <td width="34%"><span class="lab">Periode:</span> {{ $labelTanggal }}</td>
+          <td width="33%"><span class="lab">Mode:</span> Laporan harian</td>
+          <td width="33%"><span class="lab">Dicetak Oleh:</span> {{ $oleh }}</td>
         </tr>
       </table>
     </td>
@@ -78,20 +77,16 @@
 
 <table width="100%" class="gap">
   <tr>
-    <td class="card" width="25%">
+    <td class="card" width="34%">
       <div class="lab">REALISASI (TAGIHAN)</div>
       <div class="val">{{ $h['tagihan'] }}</div>
       <div class="sub">net {{ $h['net'] }} + tax &amp; service {{ $h['taxSvc'] }}</div>
     </td>
-    <td class="card" width="25%">
-      <div class="lab">RATA-RATA PER HARI</div>
-      <div class="val">{{ $h['tagihan'] }}</div>
-    </td>
-    <td class="card" width="25%">
+    <td class="card" width="33%">
       <div class="lab">TOTAL BILL</div>
       <div class="val">{{ $h['bill'] }}</div>
     </td>
-    <td class="card hl" width="25%">
+    <td class="card hl" width="33%">
       <div class="lab">TOTAL TRAFFIC</div>
       <div class="val">{{ $h['traffic'] }}</div>
     </td>
@@ -100,16 +95,12 @@
 
 <table width="100%" class="gap">
   <tr>
-    <td class="card" width="34%">
+    <td class="card" width="50%">
       <div class="lab">REALISASI BULAN INI</div>
       <div class="val">{{ $bulanTagihan }}</div>
       <div class="sub">{{ $labelBulan }} · net {{ $bulanNet }}</div>
     </td>
-    <td class="card" width="33%">
-      <div class="lab">HARI TERINPUT</div>
-      <div class="val">{{ $bulanHari }}</div>
-    </td>
-    <td class="card hl" width="33%">
+    <td class="card hl" width="50%">
       <div class="lab">RATA-RATA PER HARI</div>
       <div class="val">{{ $bulanRata }}</div>
     </td>
