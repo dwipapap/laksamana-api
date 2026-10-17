@@ -9,10 +9,11 @@ require_once __DIR__.'/helpers.php';
 beforeEach(fn () => Storage::fake('local'));
 
 /*
- * Pre-send face check (A19): POST /hris/faces/me/cek answers {terdaftar,
- * cocok} with no score, no write and no audit row, so a mismatch only warns
- * on the punch screen. Rate-limited per user: 10 per 5 minutes. One HTTP
- * identity per test.
+ * Pre-send face check (A19, W5): POST /hris/faces/me/cek answers {terdaftar,
+ * cocok} with no score served. Every check writes a `wajah_dicek` audit row
+ * {skor, cocok, model} (no photo, no descriptor); 429 answers write nothing.
+ * Rate-limited per user — shared with faces/me/tambah: 10 per 5 minutes.
+ * One HTTP identity per test.
  */
 
 it('checks your own face before sending', function () {
@@ -86,7 +87,7 @@ it('rate-limits to 10 checks per 5 minutes', function () {
         ->assertStatus(429)->assertJsonPath('error.code', 'terlalu_sering');
 });
 
-it('writes and audits nothing', function () {
+it('writes no faces but audits every check', function () {
     hrisSettings();
     hrisEnrolOnce('u-dwipa');
     $t = hrisToken('u-dwipa');
@@ -100,5 +101,6 @@ it('writes and audits nothing', function () {
         ['descriptor' => hrisWajahSeed('u-andry'), 'model' => 'sface-2021dec-int8'], $h)->assertOk();
 
     expect(HrisWajah::query()->count())->toBe($wajah)
-        ->and(HrisAudit::query()->count())->toBe($audit);
+        ->and(HrisAudit::query()->count())->toBe($audit + 2)
+        ->and(HrisAudit::query()->where('aksi', 'wajah_dicek')->count())->toBe(2);
 });

@@ -31,12 +31,13 @@ final class HrisSettingsService
         // wajahWajib was removed (A18: the unenrolled always queue
         // WAJAH_KOSONG). PUT still accepts it and ignores it, because the
         // old PWA sends it — see save().
-        // Per-model face thresholds. The sface-2021dec-int8 numbers are
-        // placeholders until the M1 calibration measures same-vs-different
-        // distances on 5–10 people (TODO(mentor): confirm or replace).
+        // Per-model face thresholds (W4). The sface-2021dec-int8 default
+        // follows the OpenCV SFace reference (similarity >= 0.363, distance
+        // <= 0.637); HR may still override it in Kelola → Pengaturan, and
+        // stored values always win over these defaults.
         'wajahAmbang' => [
-            'default' => ['metric' => 'cosine', 'ambang' => 0.4],
-            'sface-2021dec-int8' => ['metric' => 'cosine', 'ambang' => 0.4],
+            'default' => ['metric' => 'cosine', 'ambang' => 0.637],
+            'sface-2021dec-int8' => ['metric' => 'cosine', 'ambang' => 0.637],
         ],
         // Extra HR staff by legacy User id (module admins of hris are always HR).
         'hr' => [],

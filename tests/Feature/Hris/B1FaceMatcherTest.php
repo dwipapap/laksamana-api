@@ -44,6 +44,6 @@ it('tells never-enrolled apart from a bad probe', function () {
 it('reads the per-model threshold with a safe default', function () {
     $peta = ['sface-2021dec-int8' => ['metric' => 'cosine', 'ambang' => 0.35]];
     expect(FaceMatcher::ambangUntuk('sface-2021dec-int8', $peta))->toBe(['metric' => 'cosine', 'ambang' => 0.35])
-        ->and(FaceMatcher::ambangUntuk('model-baru', $peta))->toBe(['metric' => 'cosine', 'ambang' => 0.4])
-        ->and(FaceMatcher::ambangUntuk('model-baru', []))->toBe(['metric' => 'cosine', 'ambang' => 0.4]);
+        ->and(FaceMatcher::ambangUntuk('model-baru', $peta))->toBe(['metric' => 'cosine', 'ambang' => 0.637])
+        ->and(FaceMatcher::ambangUntuk('model-baru', []))->toBe(['metric' => 'cosine', 'ambang' => 0.637]);
 });

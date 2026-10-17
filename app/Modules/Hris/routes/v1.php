@@ -33,10 +33,13 @@ Route::middleware(['auth:sanctum', 'module:hris'])->prefix('hris')->group(functi
     Route::get('queue', [Q::class, 'queue']);
     Route::post('punches/{id}/decision', [Q::class, 'decide'])->where('id', '[A-Za-z0-9-]+');
 
-    // Faces (A3).
+    // Faces (A3, W2–W6).
     Route::post('faces/me', [F::class, 'enrolMe']);
     Route::post('faces/me/cek', [F::class, 'cekMe']);
+    Route::post('faces/me/tambah', [F::class, 'tambahMe']);
     Route::get('faces', [F::class, 'index']);
+    Route::get('faces/kalibrasi', [F::class, 'kalibrasi']);
+    Route::get('faces/{userId}/cek', [F::class, 'cekLog'])->where('userId', '[A-Za-z0-9._-]+');
     Route::get('faces/{userId}/photo', [F::class, 'photo'])->where('userId', '[A-Za-z0-9._-]+');
     Route::delete('faces/{userId}', [F::class, 'reset'])->where('userId', '[A-Za-z0-9._-]+');
 

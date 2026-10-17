@@ -6,6 +6,7 @@ namespace App\Modules\Hris\Services;
 
 use App\Auth\AccountRepository;
 use App\Modules\Absensi\Services\AbsensiService;
+use App\Modules\Hris\Models\HrisAudit;
 use App\Modules\Hris\Models\HrisKetukan;
 use App\Modules\Hris\Models\HrisLokasi;
 use App\Modules\Hris\Models\HrisWajah;
@@ -235,9 +236,24 @@ final class HrisAttendanceService
         return HrisWajah::query()->where('user_id', $userId)->where('status', 'AKTIF')->exists();
     }
 
+    /** Stored descriptor count for one user (W2): 0 when not enrolled. */
+    public function faceCount(string $userId): int
+    {
+        $row = HrisWajah::query()->where('user_id', $userId)->where('status', 'AKTIF')->first();
+        if (! $row || ! is_array($row->descriptor)) {
+            return 0;
+        }
+
+        return count(FaceMatcher::storedSet(array_values($row->descriptor)) ?? []);
+    }
+
     /**
-     * Self-service enrolment (A3): only for yourself, only when not already
-     * AKTIF, and the new face must not match anyone else's AKTIF face.
+     * Self-service enrolment (A3, W2): only for yourself, only when not
+     * already AKTIF, and the new face must not match anyone else's AKTIF
+     * face. Accepts `descriptors` (1–3, guided poses) or the old single
+     * `descriptor` (old PWA). `foto` stays the one straight photo. Within
+     * the set, two descriptors farther apart than the threshold mean a
+     * different person in one enrolment → 422.
      */
     public function enrol(array $me, array $in): HrisWajah
     {
@@ -249,7 +265,6 @@ final class HrisAttendanceService
         if (empty($in['consent'])) {
             throw new HrisError('validation_failed', 'Persetujuan biometrik wajib dicentang sekali sebelum daftar wajah.', 422);
         }
-        $descriptor = self::cleanDescriptor($in['descriptor'] ?? null);
         $model = mb_substr(self::s($in['model'] ?? ''), 0, 64);
         if ($model === '') {
             throw new HrisError('validation_failed', 'Model wajah wajib diisi (mis. sface-2021dec-int8).', 422);
@@ -257,20 +272,35 @@ final class HrisAttendanceService
         if ($this->faceEnrolled($uid)) {
             throw new HrisError('already_enrolled', 'Wajah sudah terdaftar dan langsung aktif. Minta HR mereset untuk daftar ulang.', 409);
         }
-
-        // Duplicate check against EVERY enrolled face of the same model.
         $set = $this->settings->all();
         $ambang = FaceMatcher::ambangUntuk($model, is_array($set['wajahAmbang'] ?? null) ? $set['wajahAmbang'] : []);
+        $baru = self::cleanDescriptorSet($in['descriptors'] ?? null, $in['descriptor'] ?? null);
+        foreach ($baru as $i => $satu) {
+            foreach (array_slice($baru, $i + 1) as $lain) {
+                $jarak = ($ambang['metric'] === 'euclidean'
+                    ? FaceMatcher::euclidean($satu, $lain)
+                    : FaceMatcher::cosineDistance($satu, $lain));
+                if ($jarak > (float) $ambang['ambang']) {
+                    throw new HrisError('validation_failed',
+                        'Sidik wajah dalam satu pendaftaran tidak saling cocok. Ulangi dengan wajah yang sama.', 422);
+                }
+            }
+        }
+
+        // Duplicate check: EVERY new descriptor against EVERY other
+        // enrolled person's set of the same model.
         foreach (HrisWajah::query()->where('status', 'AKTIF')->where('user_id', '!=', $uid)->get() as $other) {
             if ((string) $other->model !== $model || ! is_array($other->descriptor)) {
                 continue;
             }
-            $m = FaceMatcher::match(array_values($other->descriptor), $descriptor, $ambang);
-            if ($m['ok']) {
-                $this->audit->record($nama, 'wajah_duplikat_ditolak', 'hris_wajah', $uid,
-                    ['model' => $model, 'skor' => $m['skor'], 'cocok_dengan' => (string) $other->user_id]);
-                throw new HrisError('wajah_milik_orang_lain',
-                    'Wajah ini cocok dengan data orang lain. Pendaftaran ditolak dan HR akan menindaklanjuti.', 409);
+            foreach ($baru as $satu) {
+                $m = FaceMatcher::match(array_values($other->descriptor), $satu, $ambang);
+                if ($m['ok']) {
+                    $this->audit->record($nama, 'wajah_duplikat_ditolak', 'hris_wajah', $uid,
+                        ['model' => $model, 'skor' => $m['skor'], 'cocok_dengan' => (string) $other->user_id]);
+                    throw new HrisError('wajah_milik_orang_lain',
+                        'Wajah ini cocok dengan data orang lain. Pendaftaran ditolak dan HR akan menindaklanjuti.', 409);
+                }
             }
         }
 
@@ -283,14 +313,74 @@ final class HrisAttendanceService
         // UNIQUE user_id+status allows one AKTIF and one DIRESET row).
         HrisWajah::query()->where('user_id', $uid)->where('status', 'DIRESET')->delete();
         $fotoPath = self::storePhoto($in['foto']);
+        // A multi-descriptor enrolment stores the set; a legacy single
+        // enrolment keeps the flat shape (readers accept both, no migration).
+        $tersimpan = count($baru) === 1 && ! array_key_exists('descriptors', $in) ? $baru[0] : $baru;
         $row = HrisWajah::query()->create([
             'user_id' => $uid, 'user_ulid' => null, 'model' => $model,
-            'descriptor' => $descriptor, 'foto_path' => $fotoPath,
+            'descriptor' => $tersimpan, 'foto_path' => $fotoPath,
             'consent_at' => now(), 'status' => 'AKTIF', 'dibuat_oleh' => mb_substr($nama, 0, 120),
         ]);
         $this->audit->record($nama, 'wajah_didaftarkan', 'hris_wajah', $uid, ['model' => $model]);
 
         return $row;
+    }
+
+    /**
+     * Complete your own face (W3): append one descriptor to your AKTIF set,
+     * up to 3 total. Accepted only when its smallest distance to the stored
+     * set is within the threshold (same model only) and it matches nobody
+     * else's. Replacing a face still goes through the HR reset (A3).
+     *
+     * @return array{user_id:string,jumlah_descriptor:int}
+     */
+    public function tambahWajah(array $me, array $in): array
+    {
+        $uid = self::s($me['id'] ?? '');
+        $nama = self::s($me['name'] ?? '');
+        if ($uid === '') {
+            throw new HrisError('unauthenticated', 'Login required.', 401);
+        }
+        $descriptor = self::bersihkanSatu($in['descriptor'] ?? null);
+        $model = mb_substr(self::s($in['model'] ?? ''), 0, 64);
+        if ($model === '') {
+            throw new HrisError('validation_failed', 'Model wajah wajib diisi (mis. sface-2021dec-int8).', 422);
+        }
+        $row = HrisWajah::query()->where('user_id', $uid)->where('status', 'AKTIF')->first();
+        if (! $row || ! is_array($row->descriptor)) {
+            throw new HrisError('not_found', 'Wajah belum terdaftar. Daftar dulu sebelum melengkapi.', 404);
+        }
+        if ((string) $row->model !== $model) {
+            throw new HrisError('validation_failed', 'Model sidik baru harus sama dengan yang tersimpan.', 422);
+        }
+        $set = FaceMatcher::storedSet(array_values($row->descriptor)) ?? [];
+        if (count($set) >= 3) {
+            throw new HrisError('wajah_lengkap', 'Wajah sudah lengkap (3 sidik). Minta HR mereset untuk ganti wajah.', 409);
+        }
+        $peta = $this->settings->all()['wajahAmbang'] ?? null;
+        $ambang = FaceMatcher::ambangUntuk($model, is_array($peta) ? $peta : []);
+        $sendiri = FaceMatcher::match(array_values($row->descriptor), $descriptor, $ambang);
+        if (! $sendiri['ok']) {
+            throw new HrisError('wajah_tidak_cocok', 'Sidik baru tidak cocok dengan wajah yang tersimpan. Coba foto ulang.', 422);
+        }
+        foreach (HrisWajah::query()->where('status', 'AKTIF')->where('user_id', '!=', $uid)->get() as $other) {
+            if ((string) $other->model !== $model || ! is_array($other->descriptor)) {
+                continue;
+            }
+            $m = FaceMatcher::match(array_values($other->descriptor), $descriptor, $ambang);
+            if ($m['ok']) {
+                $this->audit->record($nama, 'wajah_duplikat_ditolak', 'hris_wajah', $uid,
+                    ['model' => $model, 'skor' => $m['skor'], 'cocok_dengan' => (string) $other->user_id]);
+                throw new HrisError('wajah_milik_orang_lain',
+                    'Wajah ini cocok dengan data orang lain. Penambahan ditolak dan HR akan menindaklanjuti.', 409);
+            }
+        }
+        $set[] = $descriptor;
+        $row->fill(['descriptor' => $set])->save();
+        $this->audit->record($nama, 'wajah_dilengkapi', 'hris_wajah', $uid,
+            ['model' => $model, 'jumlah_descriptor' => count($set)]);
+
+        return ['user_id' => $uid, 'jumlah_descriptor' => count($set)];
     }
 
     /** HR reset: flip AKTIF to DIRESET so the person may enrol again. */
@@ -310,17 +400,83 @@ final class HrisAttendanceService
         return true;
     }
 
-    /** Enrolled faces WITHOUT descriptors — HR screen only. */
+    /** Enrolled faces WITHOUT descriptors — HR screen only (W5, W6). */
     public function listFaces(): array
     {
+        $sejak = PunchRules::ms() - 7 * 24 * 3600 * 1000;
+        $gagal = [];
+        foreach (HrisAudit::query()->where('aksi', 'wajah_dicek')->where('waktu', '>=', $sejak)->get(['ref_id', 'data']) as $a) {
+            $data = is_array($a->data) ? $a->data : [];
+            if (array_key_exists('cocok', $data) && $data['cocok'] === false) {
+                $gagal[(string) $a->ref_id] = ($gagal[(string) $a->ref_id] ?? 0) + 1;
+            }
+        }
         $out = [];
         foreach (HrisWajah::query()->where('status', 'AKTIF')->orderBy('user_id')->get() as $r) {
+            $set = is_array($r->descriptor) ? FaceMatcher::storedSet(array_values($r->descriptor)) : null;
             $out[] = ['user_id' => $r->user_id, 'nama' => $this->namaUser($r->user_id),
                 'model' => $r->model,
                 'consent_at' => $r->consent_at?->toIso8601String(),
                 'dibuat_oleh' => $r->dibuat_oleh, 'ada_foto' => $r->foto_path ? true : false,
+                'jumlah_descriptor' => $set === null ? 0 : count($set),
+                'gagal_cek_7h' => $gagal[(string) $r->user_id] ?? 0,
                 'version' => (int) $r->version];
         }
+
+        return $out;
+    }
+
+    /**
+     * Recent `wajah_dicek` rows for one person (W5) — HR only, newest first.
+     *
+     * @return array<int,array{waktu:int,skor:float|null,cocok:bool,model:string}>
+     */
+    public function cekLog(string $userId, int $limit = 10): array
+    {
+        $limit = max(1, min(50, $limit));
+        $out = [];
+        foreach (HrisAudit::query()->where('aksi', 'wajah_dicek')->where('ref_id', self::s($userId))
+            ->orderByDesc('waktu')->orderByDesc('id')->limit($limit)->get() as $a) {
+            $data = is_array($a->data) ? $a->data : [];
+            $out[] = ['waktu' => (int) $a->waktu,
+                'skor' => isset($data['skor']) && is_numeric($data['skor']) ? (float) $data['skor'] : null,
+                'cocok' => ! empty($data['cocok']),
+                'model' => (string) ($data['model'] ?? '')];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Score percentiles per model over the last 90 days of `wajah_dicek`
+     * (W6) — HR only. Nearest-rank percentiles over numeric scores.
+     *
+     * @return array<string,array{n:int,p50:float,p90:float,p95:float,p99:float}>
+     */
+    public function kalibrasi(): array
+    {
+        $sejak = PunchRules::ms() - 90 * 24 * 3600 * 1000;
+        $perModel = [];
+        foreach (HrisAudit::query()->where('aksi', 'wajah_dicek')->where('waktu', '>=', $sejak)->get(['data']) as $a) {
+            $data = is_array($a->data) ? $a->data : [];
+            if (! isset($data['skor']) || ! is_numeric($data['skor'])) {
+                continue;
+            }
+            $model = (string) ($data['model'] ?? '');
+            if ($model === '') {
+                continue;
+            }
+            $perModel[$model][] = (float) $data['skor'];
+        }
+        $out = [];
+        foreach ($perModel as $model => $skor) {
+            sort($skor);
+            $n = count($skor);
+            $persentil = fn (int $p): float => round($skor[max(0, (int) ceil($p / 100 * $n) - 1)], 4);
+            $out[$model] = ['n' => $n, 'p50' => $persentil(50), 'p90' => $persentil(90),
+                'p95' => $persentil(95), 'p99' => $persentil(99)];
+        }
+        ksort($out);
 
         return $out;
     }
@@ -536,9 +692,10 @@ final class HrisAttendanceService
     }
 
     /**
-     * Pre-send face check (A19): does the probe match the enrolled face?
-     * Read-only — no score served, nothing written, nothing audited. The
-     * caller rate-limits per user.
+     * Pre-send face check (A19, W5): {terdaftar, cocok}, no score served.
+     * Every check writes a `wajah_dicek` audit row {skor, cocok, model} —
+     * no photo, no descriptor. Rate-limited per user by the caller, and the
+     * 429 answer never reaches (never audits) here.
      *
      * @return array{terdaftar:bool,cocok:bool}
      */
@@ -555,16 +712,24 @@ final class HrisAttendanceService
         }
         $stored = $this->storedFace($uid);
         if ($stored === null) {
+            $this->audit->record(self::s($me['name'] ?? ''), 'wajah_dicek', 'hris_wajah', $uid,
+                ['skor' => null, 'cocok' => false, 'model' => $model]);
+
             return ['terdaftar' => false, 'cocok' => false];
         }
         if ($stored['model'] !== '' && $stored['model'] !== $model) {
             // A descriptor of another model proves nothing either way.
+            $this->audit->record(self::s($me['name'] ?? ''), 'wajah_dicek', 'hris_wajah', $uid,
+                ['skor' => null, 'cocok' => false, 'model' => $model]);
+
             return ['terdaftar' => true, 'cocok' => false];
         }
         $set = $this->settings->all();
         $ambang = FaceMatcher::ambangUntuk($stored['model'] !== '' ? $stored['model'] : $model,
             is_array($set['wajahAmbang'] ?? null) ? $set['wajahAmbang'] : []);
         $m = FaceMatcher::match($stored['descriptor'], $descriptor, $ambang);
+        $this->audit->record(self::s($me['name'] ?? ''), 'wajah_dicek', 'hris_wajah', $uid,
+            ['skor' => $m['skor'], 'cocok' => $m['ok'], 'model' => $model]);
 
         return ['terdaftar' => true, 'cocok' => $m['ok']];
     }
@@ -784,6 +949,7 @@ final class HrisAttendanceService
             'masuk' => $masuk,
             'pulang' => $pulang,
             'wajahTerdaftar' => $this->faceEnrolled($uid),
+            'wajahJumlah' => $this->faceCount($uid),
             'lokasi' => $this->locations(true),
             'aturan' => [
                 'akurasiMaks' => (int) $set['akurasiMaks'],
@@ -876,6 +1042,40 @@ final class HrisAttendanceService
 
     /** @return array<int,float> */
     private static function cleanDescriptor(mixed $d): array
+    {
+        return self::bersihkanSatu($d);
+    }
+
+    /**
+     * Normalize enrolment input to a descriptor set (W2): `descriptors`
+     * (1–3, each validated like a single descriptor) wins; otherwise the
+     * old single `descriptor`. The PWA sends both for old-API compat.
+     *
+     * @return array<int,array<int,float>>
+     */
+    private static function cleanDescriptorSet(mixed $banyak, mixed $satu): array
+    {
+        if ($banyak !== null) {
+            if (! is_array($banyak) || $banyak === []) {
+                throw new HrisError('validation_failed', 'Sidik wajah tidak lengkap. Coba daftarkan ulang.', 422);
+            }
+            $banyak = array_values($banyak);
+            if (count($banyak) > 3) {
+                throw new HrisError('validation_failed', 'Pendaftaran wajah maksimal 3 sidik.', 422);
+            }
+            $out = [];
+            foreach ($banyak as $d) {
+                $out[] = self::bersihkanSatu($d);
+            }
+
+            return $out;
+        }
+
+        return [self::bersihkanSatu($satu)];
+    }
+
+    /** @return array<int,float> */
+    private static function bersihkanSatu(mixed $d): array
     {
         if (! is_array($d)) {
             throw new HrisError('validation_failed', 'Sidik wajah tidak lengkap. Coba daftarkan ulang.', 422);

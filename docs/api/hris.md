@@ -20,15 +20,18 @@ Code: `app/Modules/Hris`.
 
 | Method | Path | Lingkup | Notes |
 |---|---|---|---|
-| GET | `/hris/me/today` | all | Punch-screen bootstrap: shift today, MASUK/PULANG rows, nearest locations, server time, enrolment flag, `perhatian[]` |
+| GET | `/hris/me/today` | all | Punch-screen bootstrap: shift today, MASUK/PULANG rows, nearest locations, server time, enrolment flag + face count (`wajahJumlah`), `perhatian[]` |
 | POST | `/hris/punches` | self | Punch in/out. Repeated MASUK → `200 {duplikat:true}`; repeated PULANG overwrites. `201` otherwise |
 | GET | `/hris/punches?from&to&user` | scoped | History. Crew are forced to their own rows; heads to their divisions |
 | GET | `/hris/punches/{id}/photo` | scoped | Audit photo (self, HR, head of division) |
 | GET | `/hris/queue` | HR + head | Queued punches, longest-waiting first (rows carry `nama` + `divisi`; no server filters — filter client-side) |
 | POST | `/hris/punches/{id}/decision` | HR + head | `{status: VALID\|DITOLAK, nota?, berubah}` — the seen version; stale → `409 version_conflict`, decided → `409 already_decided` |
-| POST | `/hris/faces/me` | self | Enrol own face: `{descriptor[], model, foto?, consent: true}`. Active at once. Duplicate of another's → `409 wajah_milik_orang_lain` + HR audit |
-| POST | `/hris/faces/me/cek` | self | Pre-send check: `{descriptor[], model}` → `{terdaftar, cocok}`. No score, no write, no audit. 10 per 5 min per user → `429 terlalu_sering` |
-| GET | `/hris/faces` | HR | Enrolled faces, **without** descriptors (`user_id`, `nama`, `model`, `consent_at`, `dibuat_oleh`, `ada_foto`, `version`) |
+| POST | `/hris/faces/me` | self | Enrol own face: `{descriptors[1..3] | descriptor, model, foto, consent: true}`. Active at once. Within the set, two descriptors farther apart than the threshold → `422 validation_failed`. Duplicate of another's → `409 wajah_milik_orang_lain` + HR audit |
+| POST | `/hris/faces/me/tambah` | self | Complete own face (W3): `{descriptor, model}` while AKTIF and below 3 descriptors → `{user_id, jumlah_descriptor}` + `wajah_dilengkapi` audit. Shares the cek rate limit. At 3 → `409 wajah_lengkap`; outside the threshold → `422 wajah_tidak_cocok`; someone else's → `409 wajah_milik_orang_lain` + HR audit; another model → `422` |
+| POST | `/hris/faces/me/cek` | self | Pre-send check: `{descriptor[], model}` → `{terdaftar, cocok}`. No score served. Every check audits `wajah_dicek` `{skor, cocok, model}` (no photo, no descriptor); 429 writes nothing. Shares the limit with `tambah`: 10 per 5 min per user → `429 terlalu_sering` |
+| GET | `/hris/faces` | HR | Enrolled faces, **without** descriptors (`user_id`, `nama`, `model`, `consent_at`, `dibuat_oleh`, `ada_foto`, `jumlah_descriptor`, `gagal_cek_7h`, `version`). `gagal_cek_7h` counts `wajah_dicek` with `cocok: false` in the last 7 days |
+| GET | `/hris/faces/kalibrasi` | HR | Check-score percentiles per model over the last 90 days of `wajah_dicek`: `{model: {n, p50, p90, p95, p99}}` |
+| GET | `/hris/faces/{userId}/cek?limit=10` | HR | Recent `wajah_dicek` rows of one person, newest first (`[{waktu, skor, cocok, model}]`, limit ≤ 50) |
 | GET | `/hris/faces/{userId}/photo` | HR | Enrolment photo stream |
 | DELETE | `/hris/faces/{userId}` | HR | Reset: the person may enrol again |
 | GET | `/hris/locations` | all | Attendance locations (read is open; the punch screen needs them) |
@@ -120,7 +123,7 @@ Code: `app/Modules/Hris`.
   "shift": {"kode": "PAGI", "mulai": "08:00", "selesai": "17:00",
             "lintas_hari": false, "sumber": "JADWAL", "libur": 0},
   "masuk": {…}|null, "pulang": {…}|null,
-  "wajahTerdaftar": true,
+  "wajahTerdaftar": true, "wajahJumlah": 2,
   "lokasi": [{"id": "01j…", "nama": "Outlet", "lat": -6.2, "lng": 106.8, "radius": 120, "aktif": true}],
   "aturan": {"akurasiMaks": 100, "awalMenit": 180, "pulangLewatMenit": 180, "toleransiTelat": 5},
   "targetMenit": 540, "bolehPulang": "17:00",
@@ -130,6 +133,9 @@ Code: `app/Modules/Hris`.
 ```
 
 `shift` is `null` when unscheduled, `false` when the roster is unreadable.
+
+`wajahJumlah` is the stored descriptor count (0 when not enrolled) so the
+PWA can show "Lengkapi wajah" below 3.
 
 `targetMenit` is the clock-out goal in minutes from the latest non-DITOLAK
 MASUK (`null` without one); `bolehPulang` is `"HH:MM"` WIB of MASUK + target
@@ -159,8 +165,8 @@ Defaults (`PUT /hris/settings` takes a partial map; unknown keys are `422`):
   "durasiKerja": {"default": 540, "orang": {"u-dwipa": 480}},
   "tanpaShiftBoleh": false,
   "wajahAmbang": {
-    "default": {"metric": "cosine", "ambang": 0.4},
-    "sface-2021dec-int8": {"metric": "cosine", "ambang": 0.4}
+    "default": {"metric": "cosine", "ambang": 0.637},
+    "sface-2021dec-int8": {"metric": "cosine", "ambang": 0.637}
   },
   "hr": ["u-admin"]
 }
@@ -174,8 +180,11 @@ Defaults (`PUT /hris/settings` takes a partial map; unknown keys are `422`):
 - `durasiKerja`: minutes 60–1440 each; `orang` keys are User ids.
 - The unenrolled always queue `WAJAH_KOSONG` (no setting). `wajahWajib` was
   removed: PUT still accepts it and ignores it (old PWA sends it).
-- `wajahAmbang` thresholds are placeholders until the M1 calibration
-  (TODO(mentor) in docs/modules/hris.md).
+- `wajahAmbang` defaults follow the OpenCV SFace reference (similarity ≥
+  0.363 → distance ≤ 0.637, cosine); HR may still override per model, and
+  stored values always win. The `/dev/kalibrasi` screen (W6) shows the
+  `wajah_dicek` score percentiles next to the on-device different-person
+  test to propose a threshold.
 - `hr`: extra HR staff by User id; module admins of `hris` are always HR.
 
 ## Errors
@@ -187,7 +196,9 @@ Defaults (`PUT /hris/settings` takes a partial map; unknown keys are `422`):
 | 403 | `forbidden` | Outside Lingkup (foreign rows, crew in queue, non-HR writes) |
 | 404 | `not_found` | Unknown punch/face/photo/request/attachment |
 | 409 | `already_enrolled` | Enrol while AKTIF (needs HR reset first) |
+| 409 | `wajah_lengkap` | Top-up at 3 descriptors (needs HR reset to replace the face) |
 | 409 | `wajah_milik_orang_lain` | Face matches another enrolled person (audited for HR) |
+| 422 | `wajah_tidak_cocok` | Top-up outside the threshold of the stored face |
 | 409 | `version_conflict` | Stale `berubah` (`details.current`) |
 | 409 | `already_decided` | Deciding a non-MENUNGGU punch or a final request |
 | 429 | `terlalu_sering` | Face pre-check over the rate limit (`details.retryAfter`) |
