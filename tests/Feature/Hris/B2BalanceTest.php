@@ -5,8 +5,11 @@ use App\Modules\Hris\Services\HrisAttendanceService;
 use App\Modules\Hris\Services\HrisBalanceService;
 use App\Modules\Hris\Services\HrisHarianService;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 
 require_once __DIR__.'/helpers.php';
+
+beforeEach(fn () => Storage::fake('local'));
 
 /*
  * The balance ledger (L2–L6): earn/use/expiry with FIFO, PH for holiday
@@ -95,11 +98,13 @@ it('expires leftover PH after three months', function () {
 
 it('earns +1 PH for a VALID holiday punch', function () {
     hrisSettings(['tanpaShiftBoleh' => true]);
+    hrisEnrolOnce('u-dwipa');
     $tgl = hrisToday();
     hrisHoliday($tgl, 'Libur hari ini');
 
     $t = hrisToken('u-dwipa');
-    test()->postJson('/api/v1/hris/punches', ['arah' => 'MASUK'],
+    test()->postJson('/api/v1/hris/punches',
+        ['arah' => 'MASUK'] + hrisWajahPunch('u-dwipa'),
         ['Authorization' => 'Bearer '.$t])->assertCreated();
 
     $out = app(HrisHarianService::class)->beriPhHarian($tgl);

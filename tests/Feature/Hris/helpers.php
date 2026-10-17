@@ -3,6 +3,7 @@
 use App\Auth\AccountRepository;
 use App\Auth\OfficeAccess;
 use App\Modules\Account\Services\AccountService;
+use App\Modules\Hris\Services\HrisAttendanceService;
 use App\Modules\Hris\Services\HrisSettingsService;
 use App\Modules\Hris\Services\PunchRules;
 use App\Modules\Jadwal\Services\JadwalService;
@@ -35,9 +36,61 @@ function hrisMakeHr(string $uid): void
 function hrisSettings(array $over = []): array
 {
     return app(HrisSettingsService::class)->save($over + [
-        'awalMenit' => 60, 'akhirMenit' => 180, 'toleransiTelat' => 5,
-        'tanpaShiftBoleh' => false, 'wajahWajib' => false, 'hr' => [],
+        'awalMenit' => 180, 'akhirMenit' => 180, 'toleransiTelat' => 5,
+        'akurasiMaks' => 100, 'pulangLewatMenit' => 180,
+        'durasiKerja' => ['default' => 540, 'orang' => []],
+        'tanpaShiftBoleh' => false, 'hr' => [],
     ]);
+}
+
+/**
+ * Deterministic per-user face descriptor. Each user takes the next row of
+ * the 16x16 Sylvester-Hadamard matrix (entries repeated 8x to 128 dims):
+ * the same user always matches (distance 0) while two users agree in
+ * exactly half the entries (cosine distance 1.0, far above the 0.4
+ * threshold), so the enrol duplicate check never misfires in tests.
+ */
+function hrisWajahSeed(string $uid): array
+{
+    static $idx = [];
+    if (! isset($idx[$uid])) {
+        if (count($idx) >= 16) {
+            throw new RuntimeException('hrisWajahSeed: pattern pool exhausted');
+        }
+        $idx[$uid] = count($idx);
+    }
+    $k = $idx[$uid];
+    $out = [];
+    for ($j = 0; $j < 16; $j++) {
+        $v = 1;
+        for ($b = 0; $b < 4; $b++) {
+            if ((($k >> $b) & 1) === 1 && ((($j >> $b) & 1) === 1)) {
+                $v = -$v;
+            }
+        }
+        for ($r = 0; $r < 8; $r++) {
+            $out[] = $v === 1 ? 0.5 : -0.5;
+        }
+    }
+
+    return $out;
+}
+
+/** Enrol the user once (no-op when already enrolled). Needs Storage::fake('local') first. */
+function hrisEnrolOnce(string $uid): void
+{
+    $svc = app(HrisAttendanceService::class);
+    if ($svc->faceEnrolled($uid)) {
+        return;
+    }
+    $svc->enrol(hrisMe($uid), ['descriptor' => hrisWajahSeed($uid),
+        'model' => 'sface-2021dec-int8', 'consent' => true, 'foto' => hrisFoto()]);
+}
+
+/** Punch input carrying the user's own (matching) face. */
+function hrisWajahPunch(string $uid, string $arah = 'MASUK', array $extra = []): array
+{
+    return ['arah' => $arah, 'descriptor' => hrisWajahSeed($uid), 'model' => 'sface-2021dec-int8'] + $extra;
 }
 
 /** A constant face descriptor (same person) or its negation (another person). */

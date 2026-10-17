@@ -11,6 +11,7 @@ use App\Modules\Hris\Services\HrisLingkup;
 use App\Support\Api\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 
 /**
  * /api/v1/hris — face enrolment (A3). Self-service at first login, active at
@@ -47,6 +48,30 @@ final class HrisFaceController extends HrisBaseController
 
             return ['user_id' => $row->user_id, 'model' => $row->model, 'status' => $row->status];
         }, 201);
+    }
+
+    /**
+     * Pre-send face check (A19): {terdaftar, cocok}, no score, no write, no
+     * audit. Rate-limited per user: 10 per 5 minutes → 429 terlalu_sering.
+     * A mismatch only warns on the punch screen; the punch itself still
+     * matches server-side (the app can be bypassed).
+     */
+    public function cekMe(Request $r): JsonResponse
+    {
+        $d = $r->validate([
+            'descriptor' => ['required', 'array', 'min:32', 'max:1024'],
+            'model' => ['required', 'string', 'max:64'],
+        ]);
+        $me = $this->me($r);
+        $key = 'hris-cek-wajah:'.self::s($me['id'] ?? '');
+        if (RateLimiter::tooManyAttempts($key, 10)) {
+            return ApiResponse::error('terlalu_sering',
+                'Terlalu sering memeriksa wajah. Coba lagi nanti.', 429,
+                ['retryAfter' => RateLimiter::availableIn($key)]);
+        }
+        RateLimiter::hit($key, 5 * 60);
+
+        return $this->run(fn () => $this->hadir->cekWajah($me, $d));
     }
 
     /** HR reset: the person may enrol again. */

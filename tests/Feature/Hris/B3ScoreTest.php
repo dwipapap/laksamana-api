@@ -3,8 +3,11 @@
 use App\Modules\Hris\Models\HrisSkor;
 use App\Modules\Hris\Services\HrisAttendanceService;
 use App\Modules\Hris\Services\HrisScoreService;
+use Illuminate\Support\Facades\Storage;
 
 require_once __DIR__.'/helpers.php';
+
+beforeEach(fn () => Storage::fake('local'));
 
 /*
  * People Score (S1–S3, S5): versioned formula, monthly snapshots with
@@ -15,9 +18,10 @@ require_once __DIR__.'/helpers.php';
 
 function hrisSkorHadir(string $uid, int $day): void
 {
+    hrisEnrolOnce($uid);
     hrisPlantShift($uid, hrisDate(2026, 9, $day), 'PAGI', '08:00', '17:00');
     app(HrisAttendanceService::class)->recordPunch(['id' => $uid, 'name' => $uid],
-        ['arah' => 'MASUK'], hrisMs(2026, 9, $day, 7, 55));
+        hrisWajahPunch($uid, 'MASUK', []), hrisMs(2026, 9, $day, 7, 55));
 }
 
 it('starts on the default formula and validates new versions', function () {
@@ -66,6 +70,23 @@ it('computes a deterministic score on three components', function () {
     expect($r[0]['diranking'])->toBeTrue();
     // Order is not part of the contract (MySQL's JSON type re-sorts keys).
     expect(array_keys($r[0]['komponen']))->toEqualCanonicalizing(['kehadiran', 'ketepatan', 'disiplin']);
+});
+
+it('counts an early PULANG as not on time', function () {
+    hrisSettings(['tanpaShiftBoleh' => false]);
+    hrisMakeHr('u-admin');
+    app(HrisScoreService::class)->saveFormula(['ketepatan' => 100], '2026-09-01', 'test');
+    hrisClearMonth('u-dwipa', '2026-09');
+    hrisSkorHadir('u-dwipa', 7); // MASUK 07:55, on time on arrival
+    // PULANG after 4 h of a 9 h target: VALID but early.
+    app(HrisAttendanceService::class)->recordPunch(['id' => 'u-dwipa', 'name' => 'u-dwipa'],
+        hrisWajahPunch('u-dwipa', 'PULANG'), hrisMs(2026, 9, 7, 12, 0));
+
+    $t = hrisToken('u-admin');
+    $r = test()->postJson('/api/v1/hris/skor/hitung', ['bulan' => '2026-09', 'user' => 'u-dwipa'],
+        ['Authorization' => 'Bearer '.$t])->assertOk()->json('data');
+
+    expect($r[0]['komponen']['ketepatan']['skor'])->toEqual(0);
 });
 
 it('keeps locked snapshots on their formula version', function () {

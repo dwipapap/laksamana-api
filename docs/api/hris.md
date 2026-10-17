@@ -27,6 +27,7 @@ Code: `app/Modules/Hris`.
 | GET | `/hris/queue` | HR + head | Queued punches, longest-waiting first (rows carry `nama` + `divisi`; no server filters — filter client-side) |
 | POST | `/hris/punches/{id}/decision` | HR + head | `{status: VALID\|DITOLAK, nota?, berubah}` — the seen version; stale → `409 version_conflict`, decided → `409 already_decided` |
 | POST | `/hris/faces/me` | self | Enrol own face: `{descriptor[], model, foto?, consent: true}`. Active at once. Duplicate of another's → `409 wajah_milik_orang_lain` + HR audit |
+| POST | `/hris/faces/me/cek` | self | Pre-send check: `{descriptor[], model}` → `{terdaftar, cocok}`. No score, no write, no audit. 10 per 5 min per user → `429 terlalu_sering` |
 | GET | `/hris/faces` | HR | Enrolled faces, **without** descriptors (`user_id`, `nama`, `model`, `consent_at`, `dibuat_oleh`, `ada_foto`, `version`) |
 | GET | `/hris/faces/{userId}/photo` | HR | Enrolment photo stream |
 | DELETE | `/hris/faces/{userId}` | HR | Reset: the person may enrol again |
@@ -61,9 +62,12 @@ Code: `app/Modules/Hris`.
   "id": "01j…", "user_id": "u-dwipa", "nama": "Dwipa", "divisi": "bar",
   "tanggal_kerja": "2026-10-20",
   "arah": "MASUK", "waktu": 1760918400000, "jam": "09:00",
+  "lat": -6.2, "lng": 106.8, "akurasi_m": 12,
   "lokasi_id": "01j…", "jarak_m": 42, "dalam_area": true,
   "shift_kode": "PAGI", "shift_mulai": "08:00", "shift_selesai": "17:00",
   "lintas_hari": false, "shift_sumber": "JADWAL", "dalam_shift": true,
+  "telat_menit": 0, "pulang_awal": false, "kurang_menit": 0,
+  "target_menit": 540, "durasi_menit": null, "curiga": [],
   "skor_wajah": 0.18, "wajah_ok": true,
   "status": "MENUNGGU", "alasan_antrean": ["LUAR_AREA"], "alasan_kru": "dinas luar",
   "diputus_oleh": "", "diputus_at": 0, "nota": "",
@@ -71,14 +75,35 @@ Code: `app/Modules/Hris`.
 }
 ```
 
+- `dalam_area`: `jarak_m <= radius` **and** `1 <= akurasi <= akurasiMaks`
+  (setting, default 100 m). Missing/zero/too-coarse accuracy is outside;
+  no `jarak - akurasi` slack. No locations registered = inside (setup).
+- `dalam_shift`: MASUK inside `[mulai - awalMenit, selesai]`; PULANG within
+  `target + pulangLewatMenit`.
+- `telat_menit` (MASUK): past `mulai + toleransiTelat`, else 0. `durasi_menit`
+  (PULANG): minutes from the actual MASUK. `target_menit`: JADWAL snapshot
+  duration, else `durasiKerja.orang[userId]`, else BAWAAN snapshot, else
+  `durasiKerja.default`. `pulang_awal` + `kurang_menit`: PULANG short of
+  target (still VALID). Metrics live in `hris_ketukan.info`; rows predating
+  the column recompute them live (`curiga: []`).
+- `curiga[]`: suspicion flags, never a queue reason, HR/head readers only
+  (crew get `[]`): `KOORDINAT_SAMA` (same point as the person's previous
+  punch), `TITIK_PUSAT` (exactly on the location centre), `AKURASI_JANGGAL`
+  (akurasi ≤ 1 or a multiple of 100), `KOORDINAT_KEMBAR` (another user sent
+  the same point within ±5 min).
+
 - `shift_sumber`: `JADWAL` (roster cell), `BAWAAN` (person's default shift),
   `NONE` (genuinely unscheduled), `TAK_TERBACA` (roster unreadable — recorded,
   never queued).
-- `alasan_antrean`: `[]` when VALID, else one of `LUAR_AREA`, `TANPA_SHIFT`,
-  `HARI_LIBUR`, `LUAR_SHIFT`, `WAJAH`, `WAJAH_KOSONG` (`WAJAH` on an enrolled
-  face always wins over rostering reasons so a stranger's punch never hides
-  behind a scheduling issue; otherwise precedence in this order; a `MENUNGGU`
-  row always carries the crew's `alasan_kru`).
+- `alasan_antrean`: `[]` when VALID, else one of `LUAR_AREA`, `WAJAH`
+  (enrolled but mismatched — always wins over rostering reasons so a
+  stranger's punch never hides behind a scheduling issue, and is decided
+  before the roster-unreadable short-circuit), `TANPA_MASUK` (PULANG with no
+  non-DITOLAK MASUK ≤ 18 h earlier), `TANPA_SHIFT`, `HARI_LIBUR`, `LUAR_SHIFT`
+  (MASUK outside `[mulai - awalMenit, selesai]`; PULANG past
+  `target + pulangLewatMenit`), `WAJAH_KOSONG` (never enrolled — always
+  queues, an admin chore; the punch screen locks until Daftar Wajah).
+  A `MENUNGGU` row always carries the crew's `alasan_kru`.
   `HARI_LIBUR` means the person's own schedule says off that day. A public
   holiday in the HRIS calendar never queues a punch; a VALID MASUK on it
   earns PH.
@@ -97,12 +122,19 @@ Code: `app/Modules/Hris`.
   "masuk": {…}|null, "pulang": {…}|null,
   "wajahTerdaftar": true,
   "lokasi": [{"id": "01j…", "nama": "Outlet", "lat": -6.2, "lng": 106.8, "radius": 120, "aktif": true}],
+  "aturan": {"akurasiMaks": 100, "awalMenit": 180, "pulangLewatMenit": 180, "toleransiTelat": 5},
+  "targetMenit": 540, "bolehPulang": "17:00",
   "lingkup": "sendiri",
   "perhatian": [{"kode": "belum_masuk", "judul": "Belum absen masuk", "pesan": "Shift PAGI mulai 08:00.", "layar": "/absen", "tingkat": "penting"}]
 }
 ```
 
 `shift` is `null` when unscheduled, `false` when the roster is unreadable.
+
+`targetMenit` is the clock-out goal in minutes from the latest non-DITOLAK
+MASUK (`null` without one); `bolehPulang` is `"HH:MM"` WIB of MASUK + target
+(`null` without one). `aturan` carries the punch-screen thresholds so the
+PWA can warn before sending (missing fields on an old server = defaults).
 
 `perhatian[]` is computed on request (no push, no scheduler). Each item
 carries `{kode, judul, pesan, layar, tingkat: 'info'|'penting'}`:
@@ -122,8 +154,10 @@ Defaults (`PUT /hris/settings` takes a partial map; unknown keys are `422`):
 
 ```json
 {
-  "awalMenit": 60, "akhirMenit": 180, "toleransiTelat": 5,
-  "tanpaShiftBoleh": false, "wajahWajib": false,
+  "awalMenit": 180, "akhirMenit": 180, "toleransiTelat": 5,
+  "akurasiMaks": 100, "pulangLewatMenit": 180,
+  "durasiKerja": {"default": 540, "orang": {"u-dwipa": 480}},
+  "tanpaShiftBoleh": false,
   "wajahAmbang": {
     "default": {"metric": "cosine", "ambang": 0.4},
     "sface-2021dec-int8": {"metric": "cosine", "ambang": 0.4}
@@ -132,9 +166,14 @@ Defaults (`PUT /hris/settings` takes a partial map; unknown keys are `422`):
 }
 ```
 
-- `awalMenit`/`akhirMenit`: shift window tolerances (0–720).
-- Whoever IS enrolled must match; the unenrolled only queue when
-  `wajahWajib` is on (so day one does not lock the crew out).
+- `awalMenit` (0–720): how early a MASUK is still VALID. `akhirMenit` stays
+  stored but no longer gates MASUK or PULANG.
+- `akurasiMaks` (10–1000 m): GPS accuracy ceiling for `dalam_area`.
+- `pulangLewatMenit` (0–720): grace past the duration target before PULANG
+  queues `LUAR_SHIFT`.
+- `durasiKerja`: minutes 60–1440 each; `orang` keys are User ids.
+- The unenrolled always queue `WAJAH_KOSONG` (no setting). `wajahWajib` was
+  removed: PUT still accepts it and ignores it (old PWA sends it).
 - `wajahAmbang` thresholds are placeholders until the M1 calibration
   (TODO(mentor) in docs/modules/hris.md).
 - `hr`: extra HR staff by User id; module admins of `hris` are always HR.
@@ -151,6 +190,7 @@ Defaults (`PUT /hris/settings` takes a partial map; unknown keys are `422`):
 | 409 | `wajah_milik_orang_lain` | Face matches another enrolled person (audited for HR) |
 | 409 | `version_conflict` | Stale `berubah` (`details.current`) |
 | 409 | `already_decided` | Deciding a non-MENUNGGU punch or a final request |
+| 429 | `terlalu_sering` | Face pre-check over the rate limit (`details.retryAfter`) |
 | 422 | `validation_failed` | Bad arah, missing alasan, bad descriptor/foto/settings/dates |
 | 422 | `rejected` | Other rule rejections (legacy tone) |
 | 422 | `saldo_kurang` | Request/adjustment exceeds the balance (`details.saldo/butuh`) |

@@ -19,9 +19,10 @@ use Illuminate\Support\Str;
  * HRIS attendance: faces, punches, the decision queue, locations and the
  * punch-screen bootstrap. Its OWN logic, copied as concepts from
  * AbsensiService (which stays untouched and unused): server time only, the
- * subject from the token, shift window ±minutes, overnight shifts (a PULANG
- * within 18 h belongs to the MASUK date), queue reasons, and MASUK-wins /
- * PULANG-overwrites.
+ * subject from the token, the MASUK window [mulai - awalMenit, selesai],
+ * overnight shifts (a PULANG within 18 h belongs to the MASUK date), the
+ * PULANG duration measured from the actual MASUK against its target,
+ * queue reasons, and MASUK-wins / PULANG-overwrites.
  *
  * Differences from Absensi, all locked in docs/modules/hris.md: the face
  * model is new (descriptors carry their `model`, matched per model), shifts
@@ -357,10 +358,13 @@ final class HrisAttendanceService
         $now = $nowMs ?? PunchRules::ms();
         $lat = (float) ($in['lat'] ?? 0);
         $lng = (float) ($in['lng'] ?? 0);
+        $akurasi = (int) ($in['akurasi'] ?? 0);
 
         $semuaLokasi = $this->locations(true);
         $dekat = ($lat || $lng) ? PunchRules::nearestLocation($lat, $lng, $semuaLokasi) : null;
-        $dalamArea = $dekat ? ($dekat['jarak'] <= $dekat['lokasi']['radius']) : false;
+        $dalamArea = $dekat
+            ? PunchRules::dalamArea($dekat['jarak'], $dekat['lokasi']['radius'], $akurasi, (int) $set['akurasiMaks'])
+            : false;
         if ($semuaLokasi === []) {
             // Not set up yet: calling everybody "outside" would queue the whole first day.
             $dalamArea = true;
@@ -368,20 +372,54 @@ final class HrisAttendanceService
 
         $menit = PunchRules::menitWib($now);
         $shift = $this->shiftFor($uid, PunchRules::tglWib($now), $menit);
-        $dalamShift = false;
-        if (is_array($shift) && empty($shift['libur'])) {
-            $dalamShift = PunchRules::dalamRentangShift($menit, $shift['mulai'], $shift['selesai'],
-                (int) $set['awalMenit'], (int) $set['akhirMenit']);
-        }
+        $shiftArr = is_array($shift) ? $shift : null;
+        $adaShift = $shiftArr !== null && empty($shiftArr['libur']);
+        $durasiKerja = $set['durasiKerja'] ?? ['default' => 540, 'orang' => []];
 
-        if ($arah === 'PULANG') {
+        $tgl = PunchRules::tglWib($now);
+        $telat = null;
+        $target = null;
+        $durasi = null;
+        $pulangAwal = false;
+        $kurang = 0;
+        $luarWaktu = false;
+        $dalamShift = false;
+        $tanpaMasuk = false;
+        $masuk = null;
+
+        if ($arah === 'MASUK') {
+            // VALID inside [mulai - awalMenit, selesai]; late inside the
+            // shift stays VALID and is only stamped telat_menit.
+            if ($adaShift) {
+                $dalamShift = PunchRules::masukDalamJendela($menit,
+                    $shiftArr['mulai'], $shiftArr['selesai'], (int) $set['awalMenit']);
+                $luarWaktu = ! $dalamShift;
+                $telat = PunchRules::telatMenit($menit, $shiftArr['mulai'], (int) $set['toleransiTelat']);
+            }
+            $target = PunchRules::targetDurasiMenit(
+                $shiftArr['sumber'] ?? null, $shiftArr['mulai'] ?? '', $shiftArr['selesai'] ?? '',
+                $durasiKerja, $uid);
+        } else {
             $masuk = HrisKetukan::query()
                 ->where('user_id', $uid)->where('arah', 'MASUK')->where('status', '!=', 'DITOLAK')
                 ->where('waktu', '>=', $now - 18 * 3600 * 1000)
                 ->orderByDesc('waktu')->first();
-            $tgl = PunchRules::workDateForPulang($masuk?->tanggal_kerja, PunchRules::tglWib($now));
-        } else {
-            $tgl = PunchRules::tglWib($now);
+            if ($masuk === null) {
+                $tanpaMasuk = true;
+            } else {
+                $tgl = PunchRules::workDateForPulang($masuk->tanggal_kerja, PunchRules::tglWib($now));
+                // The target comes from the MASUK row's shift snapshot, never
+                // a re-read: a roster edited mid-day must not move the goal.
+                $target = PunchRules::targetDurasiMenit(
+                    $masuk->shift_sumber !== '' ? $masuk->shift_sumber : null,
+                    $masuk->shift_mulai, $masuk->shift_selesai, $durasiKerja, $uid);
+                $durasi = (int) floor(($now - (int) $masuk->waktu) / 60000);
+                $nilai = PunchRules::nilaiPulang($durasi, $target, (int) $set['pulangLewatMenit']);
+                $luarWaktu = $nilai['terlambat'];
+                $dalamShift = ! $nilai['terlambat'];
+                $pulangAwal = $nilai['pulang_awal'];
+                $kurang = $nilai['kurang_menit'];
+            }
         }
 
         // ALWAYS matched, even when no descriptor was sent: skipping the check
@@ -396,13 +434,13 @@ final class HrisAttendanceService
                 is_array($set['wajahAmbang'] ?? null) ? $set['wajahAmbang'] : []);
             $w = FaceMatcher::match($stored['descriptor'] ?? null, $in['descriptor'] ?? null, $ambang);
         }
-        // Whoever IS enrolled MUST match; the unenrolled are only stopped when
-        // wajahWajib is on (stopping them by default would lock the whole crew
-        // out on day one).
-        $wajahHalangi = $w['terdaftar'] ? ! $w['ok'] : ! empty($set['wajahWajib']);
+        // Whoever was never enrolled always queues WAJAH_KOSONG (A18): the
+        // punch screen locks until Daftar Wajah, and the server never lets a
+        // stranger through as "unenrolled".
+        $wajahHalangi = $w['terdaftar'] ? ! $w['ok'] : true;
 
-        $alasan = PunchRules::tentukanAlasan($dalamArea, $shift, $dalamShift,
-            $wajahHalangi, $w['terdaftar'], (bool) $set['tanpaShiftBoleh']);
+        $alasan = PunchRules::tentukanAlasan($dalamArea, $shift,
+            $wajahHalangi, $w['terdaftar'], $tanpaMasuk, (bool) $set['tanpaShiftBoleh'], $luarWaktu);
         $status = $alasan === '' ? 'VALID' : 'MENUNGGU';
         $alasanKru = mb_substr(trim(self::s($in['alasan'] ?? '')), 0, 255);
         if ($status === 'MENUNGGU' && $alasanKru === '') {
@@ -419,6 +457,17 @@ final class HrisAttendanceService
                 return ['duplikat' => true, 'punch' => $this->shape($ada), 'wajahTerdaftar' => $w['terdaftar']];
             }
         }
+
+        // Suspicion flags (A16): computed now, stored in info, never a queue
+        // reason. A PULANG overwrite excludes the row it replaces (the same
+        // submission being corrected is not "the previous punch").
+        $gantiId = null;
+        if ($arah === 'PULANG') {
+            $gantiId = HrisKetukan::query()->where('user_id', $uid)
+                ->where('tanggal_kerja', $tgl)->where('arah', 'PULANG')->value('id');
+        }
+        $curiga = $this->tandaCurigaUntuk($uid, $now, $lat, $lng, $akurasi, $dekat,
+            $gantiId !== null ? (string) $gantiId : null);
 
         $data = [
             'user_id' => $uid, 'user_ulid' => null, 'tanggal_kerja' => $tgl, 'arah' => $arah,
@@ -441,6 +490,18 @@ final class HrisAttendanceService
             'status' => $status, 'alasan_antrean' => $alasan === '' ? null : [$alasan],
             'alasan_kru' => $alasanKru,
         ];
+        if ($this->kolomInfoAda()) {
+            // The info column is new: servers whose owner has not applied the
+            // migration yet read live values through shape() instead.
+            $data['info'] = [
+                'telat_menit' => $telat,
+                'pulang_awal' => $pulangAwal,
+                'kurang_menit' => $kurang,
+                'target_menit' => $target,
+                'durasi_menit' => $durasi,
+                'curiga' => $curiga,
+            ];
+        }
         if ($arah === 'PULANG') {
             // The last one wins — and a new punch is a new submission, so a
             // previous decision trail is cleared with it.
@@ -475,6 +536,135 @@ final class HrisAttendanceService
     }
 
     /**
+     * Pre-send face check (A19): does the probe match the enrolled face?
+     * Read-only — no score served, nothing written, nothing audited. The
+     * caller rate-limits per user.
+     *
+     * @return array{terdaftar:bool,cocok:bool}
+     */
+    public function cekWajah(array $me, array $in): array
+    {
+        $uid = self::s($me['id'] ?? '');
+        if ($uid === '') {
+            throw new HrisError('unauthenticated', 'Login required.', 401);
+        }
+        $descriptor = self::cleanDescriptor($in['descriptor'] ?? null);
+        $model = mb_substr(self::s($in['model'] ?? ''), 0, 64);
+        if ($model === '') {
+            throw new HrisError('validation_failed', 'Model wajah wajib diisi (mis. sface-2021dec-int8).', 422);
+        }
+        $stored = $this->storedFace($uid);
+        if ($stored === null) {
+            return ['terdaftar' => false, 'cocok' => false];
+        }
+        if ($stored['model'] !== '' && $stored['model'] !== $model) {
+            // A descriptor of another model proves nothing either way.
+            return ['terdaftar' => true, 'cocok' => false];
+        }
+        $set = $this->settings->all();
+        $ambang = FaceMatcher::ambangUntuk($stored['model'] !== '' ? $stored['model'] : $model,
+            is_array($set['wajahAmbang'] ?? null) ? $set['wajahAmbang'] : []);
+        $m = FaceMatcher::match($stored['descriptor'], $descriptor, $ambang);
+
+        return ['terdaftar' => true, 'cocok' => $m['ok']];
+    }
+
+    /** Whether hris_ketukan.info exists (read-only information_schema check, cached per request). */
+    private ?bool $kolomInfo = null;
+
+    private function kolomInfoAda(): bool
+    {
+        if ($this->kolomInfo !== null) {
+            return $this->kolomInfo;
+        }
+        try {
+            $ada = HrisKetukan::query()->getConnection()->selectOne(
+                'SELECT COUNT(*) c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+                ['hris_ketukan', 'info']);
+
+            return $this->kolomInfo = ((int) ($ada->c ?? 0)) > 0;
+        } catch (\Throwable) {
+            return $this->kolomInfo = false;
+        }
+    }
+
+    /**
+     * Suspicion inputs from the database for one punch (A16): the person's
+     * previous punch and whether another user sent the same point within
+     * ±5 minutes.
+     *
+     * @param  array{lokasi:array,jarak:int}|null  $dekat
+     * @return array<int,string>
+     */
+    private function tandaCurigaUntuk(string $uid, int $now, float $lat, float $lng, int $akurasi, ?array $dekat, ?string $kecualiId): array
+    {
+        $sebelum = HrisKetukan::query()->where('user_id', $uid)->where('waktu', '<', $now)
+            ->when($kecualiId !== null, fn ($q) => $q->where('id', '!=', $kecualiId))
+            ->orderByDesc('waktu')->first();
+        $kembar = HrisKetukan::query()->where('user_id', '!=', $uid)
+            ->whereRaw('ABS(`lat` - ?) < 0.000000001', [$lat])
+            ->whereRaw('ABS(`lng` - ?) < 0.000000001', [$lng])
+            ->where('waktu', '>=', $now - 5 * 60 * 1000)
+            ->where('waktu', '<=', $now + 5 * 60 * 1000)
+            ->exists();
+
+        return PunchRules::tandaCuriga($lat, $lng, $akurasi,
+            $dekat ? ['lat' => (float) $dekat['lokasi']['lat'], 'lng' => (float) $dekat['lokasi']['lng']] : null,
+            $sebelum ? ['lat' => (float) $sebelum->lat, 'lng' => (float) $sebelum->lng] : null,
+            $kembar);
+    }
+
+    /**
+     * Punch metrics for shape(): the stored info row, or recomputed live
+     * with pure PunchRules helpers when the row (or the server) predates
+     * the info column — with curiga [] since flags need punch-time context.
+     */
+    private function infoUntuk(HrisKetukan $r): array
+    {
+        $tersimpan = $r->getAttribute('info');
+        if (is_array($tersimpan) && $tersimpan !== []) {
+            return $tersimpan;
+        }
+
+        return $this->hitungInfoLive($r);
+    }
+
+    private function hitungInfoLive(HrisKetukan $r): array
+    {
+        $set = $this->settings->all();
+        $kerja = $set['durasiKerja'] ?? ['default' => 540, 'orang' => []];
+        if ($r->arah === 'PULANG') {
+            $masuk = HrisKetukan::query()
+                ->where('user_id', $r->user_id)->where('arah', 'MASUK')->where('status', '!=', 'DITOLAK')
+                ->where('waktu', '>=', (int) $r->waktu - 18 * 3600 * 1000)
+                ->where('waktu', '<=', (int) $r->waktu)
+                ->orderByDesc('waktu')->first();
+            if ($masuk === null) {
+                return ['telat_menit' => null, 'pulang_awal' => false, 'kurang_menit' => 0,
+                    'target_menit' => null, 'durasi_menit' => null, 'curiga' => []];
+            }
+            $target = PunchRules::targetDurasiMenit(
+                $masuk->shift_sumber !== '' ? $masuk->shift_sumber : null,
+                $masuk->shift_mulai, $masuk->shift_selesai, $kerja, (string) $r->user_id);
+            $durasi = (int) floor(((int) $r->waktu - (int) $masuk->waktu) / 60000);
+            $nilai = PunchRules::nilaiPulang($durasi, $target, (int) $set['pulangLewatMenit']);
+
+            return ['telat_menit' => null, 'pulang_awal' => $nilai['pulang_awal'],
+                'kurang_menit' => $nilai['kurang_menit'],
+                'target_menit' => $target, 'durasi_menit' => $durasi, 'curiga' => []];
+        }
+        $telat = PunchRules::jamKeMenit($r->shift_mulai) >= 0
+            ? PunchRules::telatMenit(PunchRules::menitWib((int) $r->waktu), $r->shift_mulai, (int) $set['toleransiTelat'])
+            : null;
+        $target = PunchRules::targetDurasiMenit(
+            $r->shift_sumber !== '' ? $r->shift_sumber : null,
+            $r->shift_mulai, $r->shift_selesai, $kerja, (string) $r->user_id);
+
+        return ['telat_menit' => $telat, 'pulang_awal' => false, 'kurang_menit' => 0,
+            'target_menit' => $target, 'durasi_menit' => null, 'curiga' => []];
+    }
+
+    /**
      * HR decides a queued punch. Only while still MENUNGGU with the version
      * the decider saw: two HR staff opening the queue together must be TOLD
      * the second decision landed on an already-decided row.
@@ -503,7 +693,7 @@ final class HrisAttendanceService
     }
 
     /** @param  array<int,string>|null  $userIds  null = everyone */
-    public function punches(?array $userIds, string $dari, string $sampai): array
+    public function punches(?array $userIds, string $dari, string $sampai, bool $denganCuriga = false): array
     {
         $dari = PunchRules::tglValid($dari);
         $sampai = PunchRules::tglValid($sampai);
@@ -519,14 +709,14 @@ final class HrisAttendanceService
         }
         $out = [];
         foreach ($q->get() as $r) {
-            $out[] = $this->shape($r);
+            $out[] = $this->shape($r, $denganCuriga);
         }
 
         return ['dari' => $dari, 'sampai' => $sampai, 'ketukan' => $out];
     }
 
     /** Queued punches, longest-waiting first. @param  array<int,string>|null  $userIds */
-    public function queue(?array $userIds): array
+    public function queue(?array $userIds, bool $denganCuriga = false): array
     {
         $q = HrisKetukan::query()->where('status', 'MENUNGGU')->orderBy('waktu')->limit(500);
         if ($userIds !== null) {
@@ -534,7 +724,7 @@ final class HrisAttendanceService
         }
         $out = [];
         foreach ($q->get() as $r) {
-            $out[] = $this->shape($r);
+            $out[] = $this->shape($r, $denganCuriga);
         }
 
         return $out;
@@ -569,6 +759,21 @@ final class HrisAttendanceService
                 $pulang = $p;
             }
         }
+        $set = $this->settings->all();
+        // Clock-out goal (A23, A26): from the latest non-rejected MASUK plus
+        // its target; null without a MASUK.
+        $targetMenit = null;
+        $bolehPulang = null;
+        foreach (array_reverse($punches) as $p) {
+            if ($p['arah'] === 'MASUK' && $p['status'] !== 'DITOLAK') {
+                $targetMenit = PunchRules::targetDurasiMenit(
+                    $p['shift_sumber'] !== '' ? $p['shift_sumber'] : null,
+                    $p['shift_mulai'], $p['shift_selesai'],
+                    $set['durasiKerja'] ?? ['default' => 540, 'orang' => []], $uid);
+                $bolehPulang = PunchRules::jamWib($p['waktu'] + $targetMenit * 60000);
+                break;
+            }
+        }
 
         return [
             'siapa' => ['id' => $uid, 'nama' => self::s($me['name'] ?? '')],
@@ -580,12 +785,33 @@ final class HrisAttendanceService
             'pulang' => $pulang,
             'wajahTerdaftar' => $this->faceEnrolled($uid),
             'lokasi' => $this->locations(true),
+            'aturan' => [
+                'akurasiMaks' => (int) $set['akurasiMaks'],
+                'awalMenit' => (int) $set['awalMenit'],
+                'pulangLewatMenit' => (int) $set['pulangLewatMenit'],
+                'toleransiTelat' => (int) $set['toleransiTelat'],
+            ],
+            'targetMenit' => $targetMenit,
+            'bolehPulang' => $bolehPulang,
         ];
     }
 
-    /** Public projection of a punch (never the raw photo bytes). */
-    public function shape(HrisKetukan $r): array
+    /**
+     * Public projection of a punch (never the raw photo bytes).
+     * curiga[] is HR/head-only: crew (and the puncher's own response) get [].
+     */
+    public function shape(HrisKetukan $r, bool $denganCuriga = false): array
     {
+        $info = $this->infoUntuk($r);
+        $curiga = [];
+        if ($denganCuriga) {
+            foreach ((array) ($info['curiga'] ?? []) as $c) {
+                if (is_string($c) && $c !== '') {
+                    $curiga[] = $c;
+                }
+            }
+        }
+
         return [
             'id' => $r->id, 'user_id' => $r->user_id, 'nama' => $this->namaUser($r->user_id),
             'divisi' => $this->divisiUser($r->user_id),
@@ -598,6 +824,12 @@ final class HrisAttendanceService
             'shift_kode' => $r->shift_kode, 'shift_mulai' => $r->shift_mulai,
             'shift_selesai' => $r->shift_selesai, 'lintas_hari' => (bool) $r->lintas_hari,
             'shift_sumber' => $r->shift_sumber, 'dalam_shift' => (bool) $r->dalam_shift,
+            'telat_menit' => $info['telat_menit'] ?? null,
+            'pulang_awal' => (bool) ($info['pulang_awal'] ?? false),
+            'kurang_menit' => (int) ($info['kurang_menit'] ?? 0),
+            'target_menit' => $info['target_menit'] ?? null,
+            'durasi_menit' => $info['durasi_menit'] ?? null,
+            'curiga' => $curiga,
             'skor_wajah' => $r->skor_wajah === null ? null : (float) $r->skor_wajah,
             'wajah_ok' => (bool) $r->wajah_ok,
             'status' => $r->status, 'alasan_antrean' => $r->alasan_antrean ?? [],

@@ -9,8 +9,8 @@ use App\Core\Models\CoreRecord;
 /**
  * One clock-in (MASUK) or clock-out (PULANG). UNIQUE user_id+tanggal_kerja+arah:
  * a repeated MASUK answers duplikat, a repeated PULANG overwrites (and clears
- * the previous decision). Lateness and duration are never stored — recompute
- * from punches + shifts on read, like AbsensiService::hitungHari().
+ * the previous decision). Punch metrics live in the nullable JSON `info`
+ * column; rows (or servers) predating it recompute them live in shape().
  */
 final class HrisKetukan extends CoreRecord
 {
@@ -32,6 +32,7 @@ final class HrisKetukan extends CoreRecord
             'skor_wajah' => 'float',
             'wajah_ok' => 'boolean',
             'alasan_antrean' => 'array',
+            'info' => 'array',
             'diputus_at' => 'integer',
         ];
     }

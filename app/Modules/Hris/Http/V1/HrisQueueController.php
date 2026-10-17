@@ -33,7 +33,7 @@ final class HrisQueueController extends HrisBaseController
     {
         $me = $this->me($r);
 
-        return $this->run(fn () => $this->hadir->queue($this->lingkup->queueScope($me)));
+        return $this->run(fn () => $this->hadir->queue($this->lingkup->queueScope($me), true));
     }
 
     public function decide(Request $r, string $id): JsonResponse

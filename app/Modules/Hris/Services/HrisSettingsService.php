@@ -16,11 +16,21 @@ use App\Modules\Hris\Models\HrisPengaturan;
 final class HrisSettingsService
 {
     public const DEFAULTS = [
-        'awalMenit' => 60,
+        'awalMenit' => 180,
         'akhirMenit' => 180,
         'toleransiTelat' => 5,
+        // GPS fix accuracy ceiling: dalam_area needs 1 <= akurasi <= akurasiMaks (A13).
+        'akurasiMaks' => 100,
+        // PULANG later than target + this queues LUAR_SHIFT (A24).
+        'pulangLewatMenit' => 180,
+        // Work-duration target in minutes: per-person override, else the
+        // shift snapshot (JADWAL first, BAWAAN), else the default (A22).
+        // `orang` keys are User ids (validated as id-shaped strings, like `hr`).
+        'durasiKerja' => ['default' => 540, 'orang' => []],
         'tanpaShiftBoleh' => false,
-        'wajahWajib' => false,
+        // wajahWajib was removed (A18: the unenrolled always queue
+        // WAJAH_KOSONG). PUT still accepts it and ignores it, because the
+        // old PWA sends it — see save().
         // Per-model face thresholds. The sface-2021dec-int8 numbers are
         // placeholders until the M1 calibration measures same-vs-different
         // distances on 5–10 people (TODO(mentor): confirm or replace).
@@ -70,6 +80,11 @@ final class HrisSettingsService
     {
         $bersih = [];
         foreach ($input as $k => $v) {
+            if ($k === 'wajahWajib') {
+                // Removed setting (A18): the old PWA still sends it, so it
+                // is accepted and ignored instead of refused as unknown.
+                continue;
+            }
             if (! array_key_exists($k, self::DEFAULTS)) {
                 throw new HrisError('validation_failed', "Pengaturan tidak dikenal: {$k}.", 422);
             }
@@ -91,7 +106,10 @@ final class HrisSettingsService
             'awalMenit' => $int($v, 0, 720, $k),
             'akhirMenit' => $int($v, 0, 720, $k),
             'toleransiTelat' => $int($v, 0, 120, $k),
-            'tanpaShiftBoleh', 'wajahWajib', 'kpiInputAktif' => $this->cleanBool($v, $k),
+            'akurasiMaks' => $int($v, 10, 1000, $k),
+            'pulangLewatMenit' => $int($v, 0, 720, $k),
+            'durasiKerja' => $this->cleanDurasi($v),
+            'tanpaShiftBoleh', 'kpiInputAktif' => $this->cleanBool($v, $k),
             'wajahAmbang' => $this->cleanAmbang($v),
             'hr' => $this->cleanHr($v),
             'jatahCuti' => $int($v, 0, 30, $k),
@@ -116,6 +134,35 @@ final class HrisSettingsService
         }
 
         return $v;
+    }
+
+    /** @return array{default:int,orang:array<string,int>} */
+    private function cleanDurasi(mixed $v): array
+    {
+        if (! is_array($v)) {
+            throw new HrisError('validation_failed', 'Pengaturan durasiKerja harus objek {default, orang}.', 422);
+        }
+        $def = $v['default'] ?? 540;
+        if (! is_numeric($def) || (int) $def < 60 || (int) $def > 1440) {
+            throw new HrisError('validation_failed', 'Pengaturan durasiKerja.default harus angka 60–1440.', 422);
+        }
+        $orang = $v['orang'] ?? [];
+        if (! is_array($orang)) {
+            throw new HrisError('validation_failed', 'Pengaturan durasiKerja.orang harus objek id User ke menit.', 422);
+        }
+        $out = [];
+        foreach ($orang as $id => $m) {
+            $id = trim((string) $id);
+            if ($id === '' || strlen($id) > 64) {
+                throw new HrisError('validation_failed', 'Pengaturan durasiKerja.orang memakai id User yang valid.', 422);
+            }
+            if (! is_numeric($m) || (int) $m < 60 || (int) $m > 1440) {
+                throw new HrisError('validation_failed', "Pengaturan durasiKerja.orang[{$id}] harus angka 60–1440.", 422);
+            }
+            $out[$id] = (int) $m;
+        }
+
+        return ['default' => (int) $def, 'orang' => $out];
     }
 
     /** @return array<string,array{metric:string,ambang:float}> */

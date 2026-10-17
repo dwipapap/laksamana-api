@@ -33,10 +33,29 @@ Decisions were settled in a grilling session with the owner on 2026-10-15. Items
 | A3 | Enrolment | Self-service at first login, active at once. Photo comes from the live camera only. The new descriptor is compared with **every** enrolled face, and a match with someone else is rejected and reported to HR. Re-enrolment only after an HR reset. HR can see enrolment photos. Biometric consent is shown once |
 | A4 | Liveness | **None.** The defences are face match, the duplicate check, GPS and the audit photo. If photo spoofing appears, passive MiniFASNet (Apache-2.0) can be added later without changing the flow |
 | A5 | Location | GPS radius per attendance location (haversine, clamped). Legacy `lokasi_absen` may be imported once as a starting point |
-| A6 | Rules copied from `AbsensiService` | Server time only; the subject comes from the token; shift window ±minutes; overnight shift (PULANG ≤ 18 h after MASUK belongs to the MASUK date); queue reasons LUAR_AREA, TANPA_SHIFT, HARI_LIBUR (the person's own day off — a public holiday never queues, it earns PH), LUAR_SHIFT, WAJAH; MENUNGGU needs a human decision; DITOLAK counts as no punch |
+| A6 | Rules copied from `AbsensiService` | Server time only; the subject comes from the token; overnight shift (PULANG ≤ 18 h after MASUK belongs to the MASUK date); queue reasons in the A10–A26 order below (`HARI_LIBUR` is the person's own day off — a public holiday never queues, it earns PH); MENUNGGU needs a human decision; DITOLAK counts as no punch |
 | A7 | Shifts | Read from Jadwal cells, falling back to each person's default shift (`JadwalService`) |
 | A8 | Geofence | **None.** No background geofence, no ENTER/EXIT events, no automatic punch. Location is a per-punch GPS fix only |
 | A9 | Login | Existing `POST /api/v1/auth/login {login, pin}`. No device binding, no app biometric lock. The PWA keeps the Bearer token in `localStorage` (`hris_token`) |
+| A10 | Platform | PWA only. Mock-location/emulator/root/background-absence detection is impossible; risk accepted. Defences: face, audit photo, server `curiga[]` (A16) |
+| A11 | Area shape | Circles only (centre + radius 30–2000 m). No polygons |
+| A12 | Location scope | One global list for everyone. No per-division/person/temporary locations |
+| A13 | GPS accuracy | `dalam_area` needs `jarak <= radius` **and** `1 <= akurasi <= akurasiMaks` (setting, default 100 m). Missing/zero/too-coarse → `LUAR_AREA`. No `jarak − akurasi` slack |
+| A14 | Fix sent | The shown fix (≤ 60 s old) is the sent fix; older → re-acquire and re-show distance + status before sending |
+| A15 | 0,0 | The phone skips the 0,0 placeholder like the server |
+| A16 | Anti-fraud | Server `curiga[]` per punch, flags only (never a queue reason), HR/head eyes only: `KOORDINAT_SAMA`, `TITIK_PUSAT`, `AKURASI_JANGGAL`, `KOORDINAT_KEMBAR` |
+| A17 | Out of scope | Offline punches, break start/end, multi-shift days (one MASUK/PULANG pair; long shifts are one Jadwal shift), live tracking |
+| A18 | Unenrolled | Punch screen locks until Daftar Wajah. Server: never enrolled → always `WAJAH_KOSONG`. Setting `wajahWajib` removed (old PUTs accepted, ignored) |
+| A19 | Pre-send face check | `POST /hris/faces/me/cek {descriptor, model}` → `{terdaftar, cocok}`; no score, no write, no audit; 10 per 5 min per user. Mismatch warns (+ refoto); after 2 failures "Ajukan ke atasan" (queued `WAJAH` with note). The server still matches on punch (the app can be bypassed) |
+| A20 | Early clock-in | VALID up to `awalMenit` before shift start (default 180). Earlier → `LUAR_SHIFT` |
+| A21 | Late clock-in | Always VALID inside the shift, stamped `telat_menit` vs `mulai + toleransiTelat`. Only past shift end is `LUAR_SHIFT`. `akhirMenit` no longer gates |
+| A22 | Work duration | Clock-in → clock-out (breaks count). Target: Jadwal cell duration (overnight +24 h) → `durasiKerja.orang[userId]` → BAWAAN duration → `durasiKerja.default` (540), from the MASUK snapshot |
+| A23 | Clock-out | Goal = actual MASUK + target (`me/today` shows "Boleh pulang HH:MM"). Short of target → VALID with `pulang_awal` + `kurang_menit` (warn + confirm before sending). Next PULANG overwrites. `pulang_awal` lowers Ketepatan, never the meal day |
+| A24 | Too-late clock-out | Past target + `pulangLewatMenit` (default 180) → `LUAR_SHIFT`. PULANG ignores the shift window |
+| A25 | Clock-out without clock-in | No non-DITOLAK MASUK ≤ 18 h earlier → queued, new reason `TANPA_MASUK` |
+| A26 | Out-of-policy flow | The phone guesses from `me/today` and requires a note when out of policy; on server `422` it asks for the note and resends the same payload (no re-shoot) |
+
+Owner wording and PWA halves of A10–A26: repo `laksamana-hris`, `docs/rencana-absensi-lokasi.md` (issue #292 carries the same table). Queue-reason order is now `LUAR_AREA` → `WAJAH` → `TANPA_MASUK` → (roster unreadable: recorded, not queued) → `TANPA_SHIFT` → `HARI_LIBUR` → `LUAR_SHIFT` → `WAJAH_KOSONG`.
 
 ### Leave, PH and requests
 
