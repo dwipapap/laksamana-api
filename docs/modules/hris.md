@@ -29,7 +29,7 @@ Decisions were settled in a grilling session with the owner on 2026-10-15. Items
 | # | Decision | Value |
 |---|---|---|
 | A1 | Source of truth | HRIS punches. Talenta is switched off in March 2027; the legacy `absensi` module and PWA are not used |
-| A2 | Face model | On-device in the web PWA: **YuNet** (detection + 5 landmarks, MIT) + **SFace int8** (OpenCV Zoo, Apache-2.0, 128-dim) on `onnxruntime-web` WASM (`numThreads = 1`, no WebGPU, self-hosted wasm cached with the models); model id `sface-2021dec-int8`, cosine metric, threshold calibrated on web (`/dev/kalibrasi`). DeepFace (Python, server-side) and InsightFace/ArcFace weights (research-only) were rejected. Every crew member enrols again. Descriptors store their `model` |
+| A2 | Face model | On-device in the web PWA: **YuNet** (detection + 5 landmarks, MIT) + **SFace int8** (OpenCV Zoo, Apache-2.0, 128-dim) on `onnxruntime-web` WASM (`numThreads = 1`, no WebGPU, self-hosted wasm cached with the models); model id `sface-2021dec-int8`, cosine metric, default threshold 0.637 with percentiles on `/dev/kalibrasi` (W4, W6). DeepFace (Python, server-side) and InsightFace/ArcFace weights (research-only) were rejected. Every crew member enrols again. Descriptors store their `model` |
 | A3 | Enrolment | Self-service at first login, active at once. Photo comes from the live camera only. The new descriptor is compared with **every** enrolled face, and a match with someone else is rejected and reported to HR. Re-enrolment only after an HR reset. HR can see enrolment photos. Biometric consent is shown once |
 | A4 | Liveness | **None.** The defences are face match, the duplicate check, GPS and the audit photo. If photo spoofing appears, passive MiniFASNet (Apache-2.0) can be added later without changing the flow |
 | A5 | Location | GPS radius per attendance location (haversine, clamped). Legacy `lokasi_absen` may be imported once as a starting point |
@@ -46,7 +46,7 @@ Decisions were settled in a grilling session with the owner on 2026-10-15. Items
 | A16 | Anti-fraud | Server `curiga[]` per punch, flags only (never a queue reason), HR/head eyes only: `KOORDINAT_SAMA`, `TITIK_PUSAT`, `AKURASI_JANGGAL`, `KOORDINAT_KEMBAR` |
 | A17 | Out of scope | Offline punches, break start/end, multi-shift days (one MASUK/PULANG pair; long shifts are one Jadwal shift), live tracking |
 | A18 | Unenrolled | Punch screen locks until Daftar Wajah. Server: never enrolled → always `WAJAH_KOSONG`. Setting `wajahWajib` removed (old PUTs accepted, ignored) |
-| A19 | Pre-send face check | `POST /hris/faces/me/cek {descriptor, model}` → `{terdaftar, cocok}`; no score, no write, no audit; 10 per 5 min per user. Mismatch warns (+ refoto); after 2 failures "Ajukan ke atasan" (queued `WAJAH` with note). The server still matches on punch (the app can be bypassed) |
+| A19 | Pre-send face check | `POST /hris/faces/me/cek {descriptor, model}` → `{terdaftar, cocok}`; no score served; every check audits `wajah_dicek` (W5); shares the 10-per-5-min-per-user limit with `faces/me/tambah`. Mismatch warns (+ refoto); after 2 failures "Ajukan ke atasan" (queued `WAJAH` with note). The server still matches on punch (the app can be bypassed) |
 | A20 | Early clock-in | VALID up to `awalMenit` before shift start (default 180). Earlier → `LUAR_SHIFT` |
 | A21 | Late clock-in | Always VALID inside the shift, stamped `telat_menit` vs `mulai + toleransiTelat`. Only past shift end is `LUAR_SHIFT`. `akhirMenit` no longer gates |
 | A22 | Work duration | Clock-in → clock-out (breaks count). Target: Jadwal cell duration (overnight +24 h) → `durasiKerja.orang[userId]` → BAWAAN duration → `durasiKerja.default` (540), from the MASUK snapshot |
@@ -56,6 +56,19 @@ Decisions were settled in a grilling session with the owner on 2026-10-15. Items
 | A26 | Out-of-policy flow | The phone guesses from `me/today` and requires a note when out of policy; on server `422` it asks for the note and resends the same payload (no re-shoot) |
 
 Owner wording and PWA halves of A10–A26: repo `laksamana-hris`, `docs/rencana-absensi-lokasi.md` (issue #292 carries the same table). Queue-reason order is now `LUAR_AREA` → `WAJAH` → `TANPA_MASUK` → (roster unreadable: recorded, not queued) → `TANPA_SHIFT` → `HARI_LIBUR` → `LUAR_SHIFT` → `WAJAH_KOSONG`.
+
+| # | Decision | Value |
+|---|---|---|
+| W1 | Recognition, not detection | The fringe-vs-combed-hair failure was SFace recognition (score over threshold), not YuNet detection |
+| W2 | Three guided enrolment poses | Straight → slightly left → slightly right. The server stores a descriptor set in the existing `descriptor` column (JSON array of arrays; a flat legacy array reads as one descriptor, no migration). The score is the SMALLEST distance over the set. The duplicate check against other people runs per new descriptor. Within one enrolment, two descriptors farther apart than the threshold mean a different person → `422`. Only the straight photo is kept |
+| W3 | Complete your own face | Below 3 descriptors the crew member sees a Beranda card and tops up to 3 via `POST /hris/faces/me/tambah`. A new photo is accepted only when its smallest distance to the stored set is within the threshold (same model) and it matches nobody else. REPLACING a face still goes through the HR reset (A3) |
+| W4 | Default threshold 0.637 | `wajahAmbang` default (and `sface-2021dec-int8`) is `{metric: cosine, ambang: 0.637}` per the OpenCV SFace reference (similarity ≥ 0.363). Stored values still win; HR may override in Kelola → Pengaturan |
+| W5 | Pre-check audit | Every `POST /hris/faces/me/cek` writes `hris_audit` `wajah_dicek` `{skor, cocok, model}` (no photo, no descriptor); 429 answers write nothing. HR sees the last 10 scores per person in Kelola → Wajah, flagged at ≥ 3 failures in 7 days (`gagal_cek_7h`: "needs top-up or reset"). Crew never sees scores |
+| W6 | Calibration percentiles | `GET /hris/faces/kalibrasi` (HR) shows per-model `{n, p50, p90, p95, p99}` over 90 days of `wajah_dicek` scores, next to the on-device different-person test; the proposed threshold is the midpoint between same-person p99 (audit) and different-person p1 (calibration session) when both exist. Calibrate 5–10 crew before production |
+| W7 | Template learning from VALID punches | POSTPONED until the threshold is calibrated |
+| W8 | Accepted risk | 0.637 is looser: another person's face is more likely to pass at punch time, and a false `wajah_milik_orang_lain` at enrolment is more likely. Closed by W6 |
+
+Owner wording and PWA halves of W1–W8 (map P1–P5 and bottom sheet S1–S3 are PWA-only): repo `laksamana-hris`, `docs/rencana-wajah-peta-sheet.md`.
 
 ### Leave, PH and requests
 

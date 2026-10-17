@@ -4821,7 +4821,7 @@
         "tags": [
           "hris"
         ],
-        "summary": "Enrol your own face (consent required, active at once)",
+        "summary": "Enrol your own face (descriptors 1-3 or legacy single, consent required, active at once)",
         "operationId": "postApiV1HrisFacesMe",
         "security": [
           {
@@ -4902,7 +4902,7 @@
         "tags": [
           "hris"
         ],
-        "summary": "Pre-send face check {terdaftar, cocok}: no score, no write, no audit",
+        "summary": "Pre-send face check {terdaftar, cocok}: audits wajah_dicek, shares limit with top-up",
         "operationId": "postApiV1HrisFacesMeCek",
         "security": [
           {
@@ -9111,6 +9111,198 @@
         ],
         "summary": "Mutation history for one person, scoped by Lingkup",
         "operationId": "getApiV1HrisBalancesMutations",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized (missing/invalid Bearer token)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (module not granted or outside Lingkup)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/hris/faces/me/tambah": {
+      "post": {
+        "tags": [
+          "hris"
+        ],
+        "summary": "Complete your own face while AKTIF and below 3 descriptors (W3)",
+        "operationId": "postApiV1HrisFacesMeTambah",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized (missing/invalid Bearer token)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (module not granted or outside Lingkup)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict (version or duplicate)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many checks (10 per 5 minutes per user, shared with top-up)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "descriptor",
+                  "model"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/hris/faces/kalibrasi": {
+      "get": {
+        "tags": [
+          "hris"
+        ],
+        "summary": "Check-score percentiles per model over 90 days of wajah_dicek (HR)",
+        "operationId": "getApiV1HrisFacesKalibrasi",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized (missing/invalid Bearer token)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (module not granted or outside Lingkup)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/hris/faces/{userId}/cek": {
+      "get": {
+        "tags": [
+          "hris"
+        ],
+        "summary": "Recent wajah_dicek rows of one person, newest first (HR)",
+        "operationId": "getApiV1HrisFacesUserIdCek",
         "security": [
           {
             "bearerAuth": []
