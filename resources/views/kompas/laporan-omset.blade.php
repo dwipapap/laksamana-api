@@ -157,16 +157,10 @@
           <tr><td class="k">Service Charge</td><td class="v">{{ $h['svc'] }}</td></tr>
           <tr><td class="k">Tax</td><td class="v">{{ $h['tax'] }}</td></tr>
           <tr class="sum"><td class="k">Tax &amp; Service<br><span style="font-size:8px;">di luar omset net</span></td><td class="v">{{ $h['taxSvc'] }}</td></tr>
-          <tr><td class="k">Total Discount</td><td class="v">{{ $h['discount'] }}</td></tr>
-          <tr><td class="k">Total Compliment</td><td class="v">{{ $h['comp'] }}</td></tr>
         </table>
       </td></tr></table>
     </td>
   </tr>
-</table>
-
-<table width="100%" class="gap" style="margin-top:2px;">
-  <tr><td class="note">Omset yang dilaporkan net — sudah dikurangi diskon; tax &amp; service charge di luarnya. Rasio komposisi dihitung terhadap Food + Beverage + Lainnya sebelum diskon, jadi ketiganya selalu berjumlah 100%.</td></tr>
 </table>
 
 <table width="100%" class="flat foot" style="margin-top:11px;">
