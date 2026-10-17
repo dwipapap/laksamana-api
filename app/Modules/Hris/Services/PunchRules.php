@@ -95,6 +95,21 @@ final class PunchRules
     }
 
     /**
+     * Inside the attendance area (A13): within the radius AND with a sane
+     * fix, 1 <= akurasi <= akurasiMaks. A missing or zero accuracy is
+     * outside — there is no `jarak - akurasi` slack.
+     */
+    public static function dalamArea(int $jarakM, int $radiusM, mixed $akurasi, int $akurasiMaks): bool
+    {
+        if (! is_numeric($akurasi)) {
+            return false;
+        }
+        $akurasi = (int) $akurasi;
+
+        return $jarakM <= $radiusM && $akurasi >= 1 && $akurasi <= $akurasiMaks;
+    }
+
+    /**
      * Nearest location, skipping placeholder 0,0 rows. null when none is
      * registered yet — distinct from "far from every location".
      *
@@ -145,6 +160,141 @@ final class PunchRules
     }
 
     /**
+     * Is a MASUK punch inside its VALID window (A20, A21):
+     * [mulai - awalMenit, selesai], overnight-aware. Late inside the shift
+     * stays VALID (see telatMenit); earlier than the window or after
+     * `selesai` is LUAR_SHIFT.
+     */
+    public static function masukDalamJendela(int $menitDatang, mixed $mulai, mixed $selesai, int $awalMenit): bool
+    {
+        $m = self::jamKeMenit($mulai);
+        $s = self::jamKeMenit($selesai);
+        if ($m < 0 || $s < 0) {
+            return false;
+        }
+        $akhir = $s <= $m ? $s + 1440 : $s;
+        $awal = $m - $awalMenit;
+        if ($menitDatang >= $awal && $menitDatang <= $akhir) {
+            return true;
+        }
+        $datang2 = $menitDatang + 1440;
+
+        return $datang2 >= $awal && $datang2 <= $akhir;
+    }
+
+    /**
+     * Minutes late vs mulai + toleransiTelat (A21), overnight-aware: a
+     * post-midnight arrival belongs to the evening shift that is still
+     * running. Early arrivals count 0, never negative.
+     */
+    public static function telatMenit(int $menitDatang, mixed $mulai, int $toleransiTelat): int
+    {
+        $m = self::jamKeMenit($mulai);
+        if ($m < 0) {
+            return 0;
+        }
+        if ($menitDatang + 720 < $m) {
+            $menitDatang += 1440;
+        }
+
+        return max(0, $menitDatang - ($m + $toleransiTelat));
+    }
+
+    /** Shift length in minutes (+1440 past midnight), or -1 when unreadable. */
+    public static function durasiShiftMenit(mixed $mulai, mixed $selesai): int
+    {
+        $m = self::jamKeMenit($mulai);
+        $s = self::jamKeMenit($selesai);
+        if ($m < 0 || $s < 0) {
+            return -1;
+        }
+
+        return $s <= $m ? $s + 1440 - $m : $s - $m;
+    }
+
+    /**
+     * Work-duration target in minutes (A22), from the MASUK row's shift
+     * snapshot — never a re-read. Order: the JADWAL snapshot duration,
+     * else the per-person override, else the BAWAAN snapshot duration,
+     * else the configured default.
+     *
+     * @param  array{default:int,orang:array<string,int>}|mixed  $durasiKerja
+     */
+    public static function targetDurasiMenit(?string $sumber, mixed $mulai, mixed $selesai, mixed $durasiKerja, string $userId): int
+    {
+        $kerja = is_array($durasiKerja) ? $durasiKerja : [];
+        $default = (int) ($kerja['default'] ?? 540);
+        if ($default <= 0) {
+            $default = 540;
+        }
+        $orang = (isset($kerja['orang']) && is_array($kerja['orang'])) ? $kerja['orang'] : [];
+        if ($sumber === 'JADWAL') {
+            $d = self::durasiShiftMenit($mulai, $selesai);
+            if ($d > 0) {
+                return $d;
+            }
+        } elseif (isset($orang[$userId]) && (int) $orang[$userId] >= 60) {
+            return (int) $orang[$userId];
+        }
+        if ($sumber === 'BAWAAN') {
+            $d = self::durasiShiftMenit($mulai, $selesai);
+            if ($d > 0) {
+                return $d;
+            }
+        }
+
+        return $default;
+    }
+
+    /**
+     * Judge a PULANG duration (A23, A24).
+     *
+     * @return array{terlambat:bool,pulang_awal:bool,kurang_menit:int}
+     */
+    public static function nilaiPulang(int $durasiMenit, int $targetMenit, int $pulangLewatMenit): array
+    {
+        if ($durasiMenit > $targetMenit + $pulangLewatMenit) {
+            return ['terlambat' => true, 'pulang_awal' => false, 'kurang_menit' => 0];
+        }
+        if ($durasiMenit < $targetMenit) {
+            return ['terlambat' => false, 'pulang_awal' => true, 'kurang_menit' => $targetMenit - $durasiMenit];
+        }
+
+        return ['terlambat' => false, 'pulang_awal' => false, 'kurang_menit' => 0];
+    }
+
+    /**
+     * Suspicion flags for one punch (A16). Pure: the caller supplies the
+     * matched location, the person's previous punch and whether another
+     * user sent the same point within ±5 minutes. NEVER a queue reason —
+     * HR eyes only.
+     *
+     * @param  array{lat:float,lng:float}|null  $lokasi
+     * @param  array{lat:float,lng:float}|null  $sebelumnya
+     * @return array<int,string>
+     */
+    public static function tandaCuriga(float $lat, float $lng, int $akurasi, ?array $lokasi, ?array $sebelumnya, bool $kembar): array
+    {
+        $out = [];
+        if ($sebelumnya !== null
+            && abs($lat - (float) ($sebelumnya['lat'] ?? 0)) < 1e-9
+            && abs($lng - (float) ($sebelumnya['lng'] ?? 0)) < 1e-9) {
+            $out[] = 'KOORDINAT_SAMA';
+        }
+        if ($lokasi !== null && self::haversineMeters($lat, $lng, $lokasi['lat'], $lokasi['lng']) === 0) {
+            $out[] = 'TITIK_PUSAT';
+        }
+        if ($akurasi <= 1 || $akurasi % 100 === 0) {
+            $out[] = 'AKURASI_JANGGAL';
+        }
+        if ($kembar) {
+            $out[] = 'KOORDINAT_KEMBAR';
+        }
+
+        return $out;
+    }
+
+    /**
      * The WORK DATE of a PULANG punch: night-shift crew punch out on the next
      * wall-clock date, but their work day is the date they punched in. The
      * 18-hour lookup itself lives in HrisAttendanceService.
@@ -155,32 +305,40 @@ final class PunchRules
     }
 
     /**
-     * Which queue reason, if any — in legacy precedence order. '' means the
-     * punch is VALID. Pure so the precedence is unit-tested on fixed inputs.
+     * Which queue reason, if any — '' means the punch is VALID. Pure so the
+     * precedence is unit-tested on fixed inputs.
+     *
+     * Order: LUAR_AREA → WAJAH (enrolled but mismatched) → TANPA_MASUK
+     * (PULANG with no MASUK ≤ 18 h earlier) → roster unreadable (recorded,
+     * never queued) → TANPA_SHIFT → HARI_LIBUR → LUAR_SHIFT → WAJAH_KOSONG
+     * (never enrolled: an admin chore, not suspicion).
+     *
+     * WAJAH and TANPA_MASUK are decided BEFORE the roster-unreadable
+     * short-circuit: with shift === false we know nothing about the roster,
+     * but a stranger's face or a missing MASUK is known regardless.
      *
      * HARI_LIBUR means the person's OWN schedule says off that day (the
      * shift's libur flag). A public holiday in the HRIS calendar is NOT a
      * queue reason: crew routinely work on holidays, and that work earns PH
      * (L3) instead of waiting for an HR decision.
      *
+     * $luarWaktu is the time rule for the punch direction: for MASUK,
+     * outside [mulai - awalMenit, selesai]; for PULANG, longer than
+     * target + pulangLewatMenit.
+     *
      * @param  array{kode:string,mulai:string,selesai:string,sumber:string,libur:int}|null|false  $shift
      */
     public static function tentukanAlasan(
         bool $dalamArea,
         array|null|false $shift,
-        bool $dalamShift,
         bool $wajahHalangi,
         bool $wajahTerdaftar,
+        bool $tanpaMasuk,
         bool $tanpaShiftBoleh,
+        bool $luarWaktu,
     ): string {
         if (! $dalamArea) {
             return 'LUAR_AREA';
-        }
-        if ($shift === false) {
-            // The roster could not be read: we know nothing, so the punch is
-            // recorded but NOT queued (a neighbour outage must not send the
-            // whole company to HR approval with no reason given).
-            return '';
         }
         // An enrolled face that does NOT match is fraud suspicion: surface it
         // ahead of rostering reasons, or HR approves a stranger's punch as a
@@ -188,19 +346,27 @@ final class PunchRules
         if ($wajahHalangi && $wajahTerdaftar) {
             return 'WAJAH';
         }
+        if ($tanpaMasuk) {
+            return 'TANPA_MASUK';
+        }
+        if ($shift === false) {
+            // The roster could not be read: we know nothing, so the punch is
+            // recorded but NOT queued (a neighbour outage must not send the
+            // whole company to HR approval with no reason given).
+            return '';
+        }
         if ($shift === null) {
             if (! $tanpaShiftBoleh) {
                 return 'TANPA_SHIFT';
             }
         } elseif (! empty($shift['libur'])) {
             return 'HARI_LIBUR';
-        } elseif (! $dalamShift) {
+        } elseif ($luarWaktu) {
             return 'LUAR_SHIFT';
         }
-        // WAJAH = enrolled but mismatched (HR suspicion); WAJAH_KOSONG =
-        // never enrolled (an admin chore, not suspicion).
+        // Whoever was never enrolled queues last, as an admin chore.
         if ($wajahHalangi) {
-            return $wajahTerdaftar ? 'WAJAH' : 'WAJAH_KOSONG';
+            return 'WAJAH_KOSONG';
         }
 
         return '';

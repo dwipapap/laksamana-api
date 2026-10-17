@@ -87,25 +87,124 @@ it('keeps a PULANG within 18 h on the MASUK date', function () {
 
 // ------------------------------------------------------------ queue reasons
 
-it('orders the queue reasons like the legacy module', function () {
+it('orders the queue reasons: face and TANPA_MASUK beat the roster', function () {
     $shift = ['kode' => 'PAGI', 'mulai' => '08:00', 'selesai' => '17:00', 'sumber' => 'JADWAL', 'libur' => 0];
+    // (dalamArea, shift, wajahHalangi, wajahTerdaftar, tanpaMasuk, tanpaShiftBoleh, luarWaktu)
     $alasan = fn (...$a) => PunchRules::tentukanAlasan(...$a);
 
     // Outside beats everything, even a face mismatch.
-    expect($alasan(false, $shift, true, true, true, false))->toBe('LUAR_AREA');
+    expect($alasan(false, $shift, true, true, false, false, false))->toBe('LUAR_AREA');
+    // An enrolled face that does NOT match is fraud suspicion: ahead of the
+    // roster, and ahead of the roster-unreadable short-circuit below, so a
+    // stranger's punch never passes VALID while Jadwal is down.
+    expect($alasan(true, $shift, true, true, false, false, false))->toBe('WAJAH');
+    expect($alasan(true, false, true, true, false, false, false))->toBe('WAJAH');
+    // A PULANG without a MASUK queues even when the roster cannot be read.
+    expect($alasan(true, false, false, false, true, false, false))->toBe('TANPA_MASUK');
     // An unreadable roster records without queuing.
-    expect($alasan(true, false, false, true, true, false))->toBe('');
+    expect($alasan(true, false, false, false, false, false, false))->toBe('');
     // Genuinely unscheduled queues — unless allowed.
-    expect($alasan(true, null, false, false, false, false))->toBe('TANPA_SHIFT');
-    expect($alasan(true, null, false, false, false, true))->toBe('');
+    expect($alasan(true, null, false, false, false, false, false))->toBe('TANPA_SHIFT');
+    expect($alasan(true, null, false, false, false, true, false))->toBe('');
     // The person's own day off queues, even inside the shift hours.
-    expect($alasan(true, ['libur' => 1] + $shift, true, false, false, false))->toBe('HARI_LIBUR');
-    // Outside the shift window queues.
-    expect($alasan(true, $shift, false, false, false, false))->toBe('LUAR_SHIFT');
-    // Face mismatch queues as suspicion; the unenrolled as admin chore.
-    expect($alasan(true, $shift, true, true, true, false))->toBe('WAJAH');
-    expect($alasan(true, $shift, true, true, false, false))->toBe('WAJAH_KOSONG');
+    expect($alasan(true, ['libur' => 1] + $shift, false, false, false, false, false))->toBe('HARI_LIBUR');
+    // Outside the time window queues.
+    expect($alasan(true, $shift, false, false, false, false, true))->toBe('LUAR_SHIFT');
+    // The unenrolled queue last, as an admin chore.
+    expect($alasan(true, $shift, true, false, false, false, false))->toBe('WAJAH_KOSONG');
     // Clean punches pass.
-    expect($alasan(true, $shift, true, false, true, false))->toBe('')
-        ->and($alasan(true, $shift, true, false, false, false))->toBe('');
+    expect($alasan(true, $shift, false, true, false, false, false))->toBe('')
+        ->and($alasan(true, $shift, false, false, false, false, false))->toBe('');
+});
+
+// ------------------------------------------------------------ area + accuracy (A13)
+
+it('needs distance within radius AND accuracy within 1..akurasiMaks', function () {
+    // Inside radius, good fix: inside.
+    expect(PunchRules::dalamArea(42, 120, 12, 100))->toBeTrue();
+    // Too far: outside, whatever the fix.
+    expect(PunchRules::dalamArea(121, 120, 12, 100))->toBeFalse();
+    // Missing or zero accuracy: outside (no jarak-akurasi slack).
+    expect(PunchRules::dalamArea(0, 120, 0, 100))->toBeFalse()
+        ->and(PunchRules::dalamArea(42, 120, null, 100))->toBeFalse()
+        ->and(PunchRules::dalamArea(42, 120, 'buram', 100))->toBeFalse();
+    // Worse than the ceiling: outside.
+    expect(PunchRules::dalamArea(42, 120, 101, 100))->toBeFalse()
+        ->and(PunchRules::dalamArea(42, 120, 100, 100))->toBeTrue();
+});
+
+// ------------------------------------------------------------ MASUK window (A20, A21)
+
+it('holds MASUK in [mulai-awalMenit, selesai], overnight-aware', function () {
+    // 08:00–17:00, 180 early: 05:00 in, 04:59 out, 17:00 in, 17:01 out.
+    expect(PunchRules::masukDalamJendela(5 * 60, '08:00', '17:00', 180))->toBeTrue()
+        ->and(PunchRules::masukDalamJendela(5 * 60 - 1, '08:00', '17:00', 180))->toBeFalse()
+        ->and(PunchRules::masukDalamJendela(17 * 60, '08:00', '17:00', 180))->toBeTrue()
+        ->and(PunchRules::masukDalamJendela(17 * 60 + 1, '08:00', '17:00', 180))->toBeFalse();
+    // 18:00–02:00, 180 early: 15:00 in, 14:59 out, 02:00 in, 02:01 out.
+    expect(PunchRules::masukDalamJendela(15 * 60, '18:00', '02:00', 180))->toBeTrue()
+        ->and(PunchRules::masukDalamJendela(15 * 60 - 1, '18:00', '02:00', 180))->toBeFalse()
+        ->and(PunchRules::masukDalamJendela(2 * 60, '18:00', '02:00', 180))->toBeTrue()
+        ->and(PunchRules::masukDalamJendela(2 * 60 + 1, '18:00', '02:00', 180))->toBeFalse();
+    expect(PunchRules::masukDalamJendela(9 * 60, '', '', 180))->toBeFalse();
+});
+
+it('counts telat_menit past mulai + toleransiTelat, overnight-aware', function () {
+    expect(PunchRules::telatMenit(8 * 60, '08:00', 5))->toBe(0)
+        ->and(PunchRules::telatMenit(8 * 60 + 5, '08:00', 5))->toBe(0)
+        ->and(PunchRules::telatMenit(8 * 60 + 6, '08:00', 5))->toBe(1)
+        ->and(PunchRules::telatMenit(7 * 60, '08:00', 5))->toBe(0);
+    // Night shift 18:00–02:00: 19:00 is 55 late, 17:00 is early.
+    expect(PunchRules::telatMenit(19 * 60, '18:00', 5))->toBe(55)
+        ->and(PunchRules::telatMenit(17 * 60, '18:00', 5))->toBe(0);
+});
+
+// ------------------------------------------------------------ target duration (A22)
+
+it('resolves the work-duration target: JADWAL, person, BAWAAN, default', function () {
+    $kerja = ['default' => 540, 'orang' => ['u-dwipa' => 480]];
+    // The Jadwal snapshot wins outright (overnight +1440).
+    expect(PunchRules::targetDurasiMenit('JADWAL', '08:00', '17:00', $kerja, 'u-dwipa'))->toBe(540)
+        ->and(PunchRules::targetDurasiMenit('JADWAL', '18:00', '02:00', $kerja, 'u-andry'))->toBe(480);
+    // Without a Jadwal snapshot the per-person override applies.
+    expect(PunchRules::targetDurasiMenit('BAWAAN', '13:00', '22:00', $kerja, 'u-dwipa'))->toBe(480)
+        ->and(PunchRules::targetDurasiMenit('NONE', '', '', $kerja, 'u-dwipa'))->toBe(480);
+    // Otherwise the BAWAAN snapshot, else the default.
+    expect(PunchRules::targetDurasiMenit('BAWAAN', '13:00', '22:00', $kerja, 'u-andry'))->toBe(540)
+        ->and(PunchRules::targetDurasiMenit('NONE', '', '', $kerja, 'u-andry'))->toBe(540)
+        ->and(PunchRules::targetDurasiMenit(null, '', '', $kerja, 'u-andry'))->toBe(540);
+});
+
+it('measures PULANG against target + pulangLewatMenit', function () {
+    // Short of target: early but valid.
+    expect(PunchRules::nilaiPulang(240, 540, 180))
+        ->toBe(['terlambat' => false, 'pulang_awal' => true, 'kurang_menit' => 300]);
+    // On target: clean.
+    expect(PunchRules::nilaiPulang(540, 540, 180))
+        ->toBe(['terlambat' => false, 'pulang_awal' => false, 'kurang_menit' => 0]);
+    // Past target but within grace: clean.
+    expect(PunchRules::nilaiPulang(720, 540, 180))
+        ->toBe(['terlambat' => false, 'pulang_awal' => false, 'kurang_menit' => 0]);
+    // Past target + grace: out of policy.
+    expect(PunchRules::nilaiPulang(721, 540, 180))
+        ->toBe(['terlambat' => true, 'pulang_awal' => false, 'kurang_menit' => 0]);
+});
+
+// ------------------------------------------------------------ suspicion flags (A16)
+
+it('flags suspicious punches without ever queuing them', function () {
+    $lokasi = ['lat' => -6.2, 'lng' => 106.8];
+    // A clean punch: nothing.
+    expect(PunchRules::tandaCuriga(-6.2005, 106.8005, 12, $lokasi, ['lat' => -6.201, 'lng' => 106.801], false))->toBe([]);
+    // Identical coordinates to the person's previous punch.
+    expect(PunchRules::tandaCuriga(-6.2, 106.8, 12, null, ['lat' => -6.2, 'lng' => 106.8], false))
+        ->toBe(['KOORDINAT_SAMA']);
+    // Exactly on the location centre.
+    expect(PunchRules::tandaCuriga(-6.2, 106.8, 12, $lokasi, null, false))->toBe(['TITIK_PUSAT']);
+    // Round or tiny accuracy.
+    expect(PunchRules::tandaCuriga(-6.2005, 106.8005, 100, null, null, false))->toBe(['AKURASI_JANGGAL'])
+        ->and(PunchRules::tandaCuriga(-6.2005, 106.8005, 1, null, null, false))->toBe(['AKURASI_JANGGAL'])
+        ->and(PunchRules::tandaCuriga(-6.2005, 106.8005, 0, null, null, false))->toBe(['AKURASI_JANGGAL']);
+    // Another user sent the same point within ±5 minutes.
+    expect(PunchRules::tandaCuriga(-6.2005, 106.8005, 12, null, null, true))->toBe(['KOORDINAT_KEMBAR']);
 });

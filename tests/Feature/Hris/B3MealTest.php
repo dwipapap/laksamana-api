@@ -2,8 +2,11 @@
 
 use App\Modules\Hris\Services\HrisAttendanceService;
 use App\Modules\Hris\Services\HrisMealService;
+use Illuminate\Support\Facades\Storage;
 
 require_once __DIR__.'/helpers.php';
+
+beforeEach(fn () => Storage::fake('local'));
 
 /*
  * Meal allowance (P1–P2): rates, preview, lock, export. Fixed September 2026
@@ -12,8 +15,9 @@ require_once __DIR__.'/helpers.php';
 
 function hrisHadir(string $uid, int $day, int $h = 9, int $mi = 0): void
 {
+    hrisEnrolOnce($uid);
     app(HrisAttendanceService::class)->recordPunch(['id' => $uid, 'name' => $uid],
-        ['arah' => 'MASUK'], hrisMs(2026, 9, $day, $h, $mi));
+        hrisWajahPunch($uid, 'MASUK', []), hrisMs(2026, 9, $day, $h, $mi));
 }
 
 it('manages rates as HR', function () {

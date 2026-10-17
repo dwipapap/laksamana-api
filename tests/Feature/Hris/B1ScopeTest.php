@@ -14,7 +14,7 @@ function hrisPlantPunch(string $uid, string $arah = 'MASUK'): void
 {
     hrisSettings(['tanpaShiftBoleh' => true]);
     app(HrisAttendanceService::class)->recordPunch(['id' => $uid, 'name' => $uid],
-        ['arah' => $arah], hrisMs(2026, 10, 23, 9, 0));
+        ['arah' => $arah, 'alasan' => 'uji lingkup'], hrisMs(2026, 10, 23, 9, 0));
 }
 
 it('forces crew history to their own rows', function () {

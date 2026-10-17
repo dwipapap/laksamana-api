@@ -78,7 +78,8 @@ final class HrisMeController extends HrisBaseController
             $req = self::s($d['user'] ?? '');
             $scope = $this->lingkup->scopeUsers($me, $req === '' ? null : $req);
 
-            return $this->hadir->punches($scope, $d['from'], $d['to']);
+            return $this->hadir->punches($scope, $d['from'], $d['to'],
+                $this->lingkup->lingkup($me) !== 'sendiri');
         });
     }
 

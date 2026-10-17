@@ -35,6 +35,7 @@ Route::middleware(['auth:sanctum', 'module:hris'])->prefix('hris')->group(functi
 
     // Faces (A3).
     Route::post('faces/me', [F::class, 'enrolMe']);
+    Route::post('faces/me/cek', [F::class, 'cekMe']);
     Route::get('faces', [F::class, 'index']);
     Route::get('faces/{userId}/photo', [F::class, 'photo'])->where('userId', '[A-Za-z0-9._-]+');
     Route::delete('faces/{userId}', [F::class, 'reset'])->where('userId', '[A-Za-z0-9._-]+');

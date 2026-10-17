@@ -30,7 +30,7 @@ it('lists faces with names', function () {
 it('shapes punches with name and division', function () {
     hrisSettings(['tanpaShiftBoleh' => true]);
     app(HrisAttendanceService::class)->recordPunch(['id' => 'u-dwipa', 'name' => 'u-dwipa'],
-        ['arah' => 'MASUK'], hrisMs(2026, 10, 23, 9, 0));
+        ['arah' => 'MASUK', 'alasan' => 'uji'], hrisMs(2026, 10, 23, 9, 0));
     hrisMakeHr('u-admin');
     $t = hrisToken('u-admin');
     $tgl = hrisDate(2026, 10, 23);

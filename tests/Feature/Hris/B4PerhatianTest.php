@@ -61,7 +61,8 @@ it('warns belum_masuk after the threshold, not before or after punching', functi
     expect($item)->toHaveKeys(['kode', 'judul', 'pesan', 'layar', 'tingkat']);
 
     // Once punched in, the warning is gone.
-    app(HrisAttendanceService::class)->recordPunch($me, ['arah' => 'MASUK'], hrisMs(2026, 10, 20, 8, 5));
+    app(HrisAttendanceService::class)->recordPunch($me,
+        ['arah' => 'MASUK', 'alasan' => 'uji'], hrisMs(2026, 10, 20, 8, 5));
     expect(hrisKode($me, hrisMs(2026, 10, 20, 9, 0)))->not->toContain('belum_masuk');
 });
 
@@ -70,13 +71,15 @@ it('warns belum_pulang after shift end, not before or after punching out', funct
     $tgl = hrisDate(2026, 10, 20);
     hrisPlantShift('u-dwipa', $tgl, 'PAGI', '08:00', '17:00');
     $me = hrisMe('u-dwipa');
-    app(HrisAttendanceService::class)->recordPunch($me, ['arah' => 'MASUK'], hrisMs(2026, 10, 20, 8, 0));
+    app(HrisAttendanceService::class)->recordPunch($me,
+        ['arah' => 'MASUK', 'alasan' => 'uji'], hrisMs(2026, 10, 20, 8, 0));
 
     // Default perhatianPulangMenit is 60: 17:30 is still fine.
     expect(hrisKode($me, hrisMs(2026, 10, 20, 17, 30)))->not->toContain('belum_pulang');
     expect(hrisKode($me, hrisMs(2026, 10, 20, 18, 30)))->toContain('belum_pulang');
 
-    app(HrisAttendanceService::class)->recordPunch($me, ['arah' => 'PULANG'], hrisMs(2026, 10, 20, 18, 0));
+    app(HrisAttendanceService::class)->recordPunch($me,
+        ['arah' => 'PULANG', 'alasan' => 'uji'], hrisMs(2026, 10, 20, 18, 0));
     expect(hrisKode($me, hrisMs(2026, 10, 20, 19, 0)))->not->toContain('belum_pulang');
 });
 

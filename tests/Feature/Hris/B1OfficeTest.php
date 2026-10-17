@@ -48,16 +48,35 @@ it('reads and saves settings as HR', function () {
     $h = ['Authorization' => 'Bearer '.$t];
 
     $r = test()->getJson('/api/v1/hris/settings', $h)->assertOk()->json('data');
-    expect($r)->toMatchArray(['awalMenit' => 60, 'akhirMenit' => 180, 'tanpaShiftBoleh' => false]);
+    expect($r)->toMatchArray(['awalMenit' => 180, 'akhirMenit' => 180, 'akurasiMaks' => 100,
+        'pulangLewatMenit' => 180, 'tanpaShiftBoleh' => false]);
+    expect($r)->not->toHaveKey('wajahWajib');
+    expect($r['durasiKerja'])->toMatchArray(['default' => 540, 'orang' => []]);
 
+    // The old PWA still sends wajahWajib: accepted, then ignored (A18).
     $r = test()->putJson('/api/v1/hris/settings', ['data' => ['awalMenit' => 90, 'wajahWajib' => true]], $h)
         ->assertOk()->json('data');
-    expect($r)->toMatchArray(['awalMenit' => 90, 'wajahWajib' => true, 'akhirMenit' => 180]);
+    expect($r)->toMatchArray(['awalMenit' => 90, 'akhirMenit' => 180]);
+    expect($r)->not->toHaveKey('wajahWajib');
 
     // Unknown keys and out-of-range values are refused.
     test()->putJson('/api/v1/hris/settings', ['data' => ['bonus' => 1]], $h)->assertStatus(422);
     test()->putJson('/api/v1/hris/settings', ['data' => ['awalMenit' => 9999]], $h)->assertStatus(422);
     test()->putJson('/api/v1/hris/settings', ['data' => ['tanpaShiftBoleh' => 'ya']], $h)->assertStatus(422);
+    test()->putJson('/api/v1/hris/settings', ['data' => ['akurasiMaks' => 9]], $h)->assertStatus(422);
+    test()->putJson('/api/v1/hris/settings', ['data' => ['akurasiMaks' => 1001]], $h)->assertStatus(422);
+    test()->putJson('/api/v1/hris/settings', ['data' => ['pulangLewatMenit' => 721]], $h)->assertStatus(422);
+    test()->putJson('/api/v1/hris/settings', ['data' => ['durasiKerja' => ['default' => 59, 'orang' => []]]], $h)
+        ->assertStatus(422);
+    test()->putJson('/api/v1/hris/settings', ['data' => ['durasiKerja' => ['default' => 540, 'orang' => ['u-x' => 30]]]], $h)
+        ->assertStatus(422);
+
+    $r = test()->putJson('/api/v1/hris/settings', ['data' => [
+        'akurasiMaks' => 1000, 'pulangLewatMenit' => 0,
+        'durasiKerja' => ['default' => 480, 'orang' => ['u-dwipa' => 600]],
+    ]], $h)->assertOk()->json('data');
+    expect($r)->toMatchArray(['akurasiMaks' => 1000, 'pulangLewatMenit' => 0]);
+    expect($r['durasiKerja'])->toMatchArray(['default' => 480, 'orang' => ['u-dwipa' => 600]]);
 });
 
 it('keeps crew out of settings writes', function () {
@@ -82,5 +101,5 @@ it('imports legacy absensi locations once, idempotently', function () {
 
     expect($dua['dibuat'])->toBe(0);
     expect(HrisLokasi::query()->count())->toBe($satu['dibuat'] + $satu['diperbarui']);
-    expect(app(HrisSettingsService::class)->get('awalMenit'))->toBe(60);
+    expect(app(HrisSettingsService::class)->get('awalMenit'))->toBe(180);
 });
