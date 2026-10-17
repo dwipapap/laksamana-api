@@ -11,7 +11,8 @@ Code: `app/Modules/Hris`.
 - Lingkup (CONTEXT.md) is enforced on the server; the subject is always the
   token holder: `sendiri` (crew: own rows), `divisi` (Kepala Divisi: their
   divisions, never their own queue decision), `semua` (HR: module admins of
-  `hris` plus the `hr` id list in settings).
+  `hris` plus the `hr` id list in settings; HR may decide their own queued
+  punch, owner decision 2026-10-17).
 - Time: server time rendered as WIB. Money: n/a in B1.
 - No liveness (A4). Defences are face match, the duplicate check, GPS and the
   audit photo.
@@ -25,7 +26,7 @@ Code: `app/Modules/Hris`.
 | GET | `/hris/punches?from&to&user` | scoped | History. Crew are forced to their own rows; heads to their divisions |
 | GET | `/hris/punches/{id}/photo` | scoped | Audit photo (self, HR, head of division) |
 | GET | `/hris/queue` | HR + head | Queued punches, longest-waiting first (rows carry `nama` + `divisi`; no server filters — filter client-side) |
-| POST | `/hris/punches/{id}/decision` | HR + head | `{status: VALID\|DITOLAK, nota?, berubah}` — the seen version; stale → `409 version_conflict`, decided → `409 already_decided` |
+| POST | `/hris/punches/{id}/decision` | HR (own punch too) + head (division, not own) | `{status: VALID\|DITOLAK, nota?, berubah}` — the seen version; stale → `409 version_conflict`, decided → `409 already_decided` |
 | POST | `/hris/faces/me` | self | Enrol own face: `{descriptors[1..3] | descriptor, model, foto, consent: true}`. Active at once. Within the set, two descriptors farther apart than the threshold → `422 validation_failed`. Duplicate of another's → `409 wajah_milik_orang_lain` + HR audit |
 | POST | `/hris/faces/me/tambah` | self | Complete own face (W3): `{descriptor, model}` while AKTIF and below 3 descriptors → `{user_id, jumlah_descriptor}` + `wajah_dilengkapi` audit. Shares the cek rate limit. At 3 → `409 wajah_lengkap`; outside the threshold → `422 wajah_tidak_cocok`; someone else's → `409 wajah_milik_orang_lain` + HR audit; another model → `422` |
 | POST | `/hris/faces/me/cek` | self | Pre-send check: `{descriptor[], model}` → `{terdaftar, cocok}`. No score served. Every check audits `wajah_dicek` `{skor, cocok, model}` (no photo, no descriptor); 429 writes nothing. Shares the limit with `tambah`: 10 per 5 min per user → `429 terlalu_sering` |
