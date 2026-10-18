@@ -39,6 +39,7 @@ final class HrisAttendanceService
         private readonly HrisAuditService $audit,
         private readonly AbsensiService $absensi,
         private readonly AccountRepository $users,
+        private readonly HrisCalendarService $kalender,
     ) {}
 
     /** @var array<string,string> user_id → display name (best-effort, per request) */
@@ -878,6 +879,134 @@ final class HrisAttendanceService
         }
 
         return ['dari' => $dari, 'sampai' => $sampai, 'ketukan' => $out];
+    }
+
+    /**
+     * Monthly attendance log for one user (the Riwayat screen): one row per
+     * calendar day with that day's punches, roster shift and public holiday,
+     * plus the Talenta-style summary. Only VALID punches count; MENUNGGU rows
+     * are reported but never counted; DITOLAK rows are ignored entirely.
+     *
+     * @return array{bulan:string,dari:string,sampai:string,hari:array<int,array<string,mixed>>,ringkasan:array<string,int>,rosterTakTerbaca:bool,lokasi:array<int,array<string,mixed>>}
+     */
+    public function riwayat(string $userId, string $bulan, bool $denganCuriga = false): array
+    {
+        $userId = self::s($userId);
+        if ($userId === '') {
+            throw new HrisError('validation_failed', 'User tidak dikenal.', 422);
+        }
+        if (preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $bulan) !== 1) {
+            throw new HrisError('validation_failed', 'Bulan harus YYYY-MM.', 422);
+        }
+        $dari = $bulan.'-01';
+        $sampai = date('Y-m-t', strtotime($dari));
+        $kini = PunchRules::tglWib(PunchRules::ms());
+
+        $perTgl = [];
+        foreach (HrisKetukan::query()->where('user_id', $userId)
+            ->whereBetween('tanggal_kerja', [$dari, $sampai])
+            ->orderBy('waktu')->get() as $r) {
+            $perTgl[$r->tanggal_kerja][] = $r;
+        }
+        try {
+            $kal = [];
+            foreach ($this->kalender->list($dari, $sampai) as $h) {
+                $kal[(string) ($h['tanggal'] ?? '')] = $h;
+            }
+        } catch (\Throwable) {
+            $kal = [];
+        }
+
+        $hari = [];
+        $rosterTakTerbaca = false;
+        $ringkas = ['terlambat' => 0, 'pulang_awal' => 0, 'absen' => 0,
+            'tidak_clock_in' => 0, 'hadir' => 0, 'menunggu' => 0, 'terjadwal' => 0];
+
+        for ($tgl = $dari; $tgl <= $sampai; $tgl = date('Y-m-d', strtotime($tgl.' +1 day'))) {
+            $daftar = $perTgl[$tgl] ?? [];
+            $masuk = $this->bentukRiwayat($daftar, 'MASUK', $denganCuriga);
+            $pulang = $this->bentukRiwayat($daftar, 'PULANG', $denganCuriga);
+            $libur = $kal[$tgl] ?? null;
+            $shift = $this->shiftFor($userId, $tgl);
+            if ($shift === false) {
+                $rosterTakTerbaca = true;
+                $shift = null;
+            }
+            $jenis = 'tanpa-jadwal';
+            if ($tgl > $kini) {
+                $jenis = 'masa-depan';
+            } elseif ($masuk !== null || $pulang !== null) {
+                $jenis = 'kerja';
+            } elseif ($libur !== null) {
+                $jenis = 'libur-umum';
+            } elseif (is_array($shift)) {
+                $kode = strtoupper((string) ($shift['kode'] ?? ''));
+                if ($kode === 'CUTI') {
+                    $jenis = 'cuti';
+                } elseif ($kode === 'IZIN') {
+                    $jenis = 'izin';
+                } elseif ($kode === 'OFF' || $kode === '') {
+                    $jenis = 'off';
+                } elseif (! empty($shift['libur'])) {
+                    $jenis = 'libur-jadwal';
+                } elseif ($tgl === $kini) {
+                    $jenis = 'tak-diketahui';
+                } else {
+                    $jenis = 'absen';
+                }
+            } elseif ($rosterTakTerbaca) {
+                $jenis = 'tak-diketahui';
+            }
+            if ($jenis !== 'masa-depan') {
+                if ($masuk !== null && ($masuk['status'] ?? '') === 'VALID') {
+                    $ringkas['hadir']++;
+                    if ((int) ($masuk['telat_menit'] ?? 0) > 0) {
+                        $ringkas['terlambat']++;
+                    }
+                }
+                if ($pulang !== null && ($pulang['status'] ?? '') === 'VALID' && ! empty($pulang['pulang_awal'])) {
+                    $ringkas['pulang_awal']++;
+                }
+                if ((($masuk['status'] ?? '') === 'MENUNGGU') || (($pulang['status'] ?? '') === 'MENUNGGU')) {
+                    $ringkas['menunggu']++;
+                }
+                if ($jenis === 'absen') {
+                    $ringkas['absen']++;
+                }
+                if (is_array($shift)) {
+                    $kode = strtoupper((string) ($shift['kode'] ?? ''));
+                    if ($kode !== '' && ! in_array($kode, ['OFF', 'CUTI', 'IZIN'], true) && empty($shift['libur'])) {
+                        $ringkas['terjadwal']++;
+                    }
+                }
+                if ($tgl !== $kini && (($masuk !== null) !== ($pulang !== null))) {
+                    $ringkas['tidak_clock_in']++;
+                }
+            }
+            $hari[] = ['tanggal' => $tgl, 'jenis' => $jenis, 'masuk' => $masuk,
+                'pulang' => $pulang, 'tanpaMasuk' => $masuk === null && $pulang !== null,
+                'kalender' => $libur, 'shift' => $shift];
+        }
+
+        return ['bulan' => $bulan, 'dari' => $dari, 'sampai' => $sampai,
+            'hari' => $hari, 'ringkasan' => $ringkas,
+            'rosterTakTerbaca' => $rosterTakTerbaca, 'lokasi' => $this->locations(true)];
+    }
+
+    /** Latest non-DITOLAK punch of one direction, shaped for the client. */
+    private function bentukRiwayat(array $daftar, string $arah, bool $denganCuriga): ?array
+    {
+        $best = null;
+        foreach ($daftar as $r) {
+            if ($r->arah !== $arah || $r->status === 'DITOLAK') {
+                continue;
+            }
+            if ($best === null || (int) $r->waktu > (int) $best->waktu) {
+                $best = $r;
+            }
+        }
+
+        return $best === null ? null : $this->shape($best, $denganCuriga);
     }
 
     /** Queued punches, longest-waiting first. @param  array<int,string>|null  $userIds */

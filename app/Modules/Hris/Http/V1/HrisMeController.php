@@ -7,6 +7,7 @@ namespace App\Modules\Hris\Http\V1;
 use App\Auth\OfficeAccess;
 use App\Modules\Hris\Models\HrisKetukan;
 use App\Modules\Hris\Services\HrisAttendanceService;
+use App\Modules\Hris\Services\HrisError;
 use App\Modules\Hris\Services\HrisLingkup;
 use App\Modules\Hris\Services\HrisPerhatianService;
 use App\Support\Api\ApiResponse;
@@ -80,6 +81,32 @@ final class HrisMeController extends HrisBaseController
 
             return $this->hadir->punches($scope, $d['from'], $d['to'],
                 $this->lingkup->lingkup($me) !== 'sendiri');
+        });
+    }
+
+    /** Monthly attendance log for one user (the Riwayat screen). */
+    public function riwayat(Request $r): JsonResponse
+    {
+        $d = $r->validate([
+            'bulan' => ['required', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
+            'user' => ['nullable', 'string', 'max:64'],
+        ]);
+        $me = $this->me($r);
+
+        return $this->run(function () use ($me, $d) {
+            $req = self::s($d['user'] ?? '');
+            $scope = $this->lingkup->scopeUsers($me, $req === '' ? null : $req);
+            if ($scope === null || $scope === []) {
+                throw new HrisError('validation_failed', 'Parameter user wajib diisi.', 422);
+            }
+            $uid = $scope[0];
+            if ($req === '' && count($scope) > 1) {
+                // A head without a filter reads their own log; the queue
+                // stays the place for watching the division.
+                $uid = self::s($me['id'] ?? '');
+            }
+
+            return $this->hadir->riwayat($uid, $d['bulan'], $this->lingkup->lingkup($me) !== 'sendiri');
         });
     }
 

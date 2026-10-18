@@ -28,6 +28,7 @@ Route::middleware(['auth:sanctum', 'module:hris'])->prefix('hris')->group(functi
     Route::post('punches', [M::class, 'punch']);
     Route::get('punches', [M::class, 'punches']);
     Route::get('punches/{id}/photo', [M::class, 'punchPhoto'])->where('id', '[A-Za-z0-9-]+');
+    Route::get('riwayat', [M::class, 'riwayat']);
 
     // Decision queue (HR + Kepala Divisi).
     Route::get('queue', [Q::class, 'queue']);

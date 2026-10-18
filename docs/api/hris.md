@@ -24,6 +24,7 @@ Code: `app/Modules/Hris`.
 | GET | `/hris/me/today` | all | Punch-screen bootstrap: shift today, MASUK/PULANG rows, nearest locations, server time, enrolment flag + face count (`wajahJumlah`), `perhatian[]` |
 | POST | `/hris/punches` | self | Punch in/out. Repeated MASUK → `200 {duplikat:true}`; repeated PULANG overwrites. `201` otherwise |
 | GET | `/hris/punches?from&to&user` | scoped | History. Crew are forced to their own rows; heads to their divisions |
+| GET | `/hris/riwayat?bulan&user` | scoped | Monthly log for one user: daily rows + summary (Riwayat screen). `bulan` is `YYYY-MM`; `user` defaults to self, HR without it is `422` |
 | GET | `/hris/punches/{id}/photo` | scoped | Audit photo (self, HR, head of division) |
 | GET | `/hris/queue` | HR + head | Queued punches, longest-waiting first (rows carry `nama` + `divisi`; no server filters — filter client-side) |
 | POST | `/hris/punches/{id}/decision` | HR (own punch too) + head (division, not own) | `{status: VALID\|DITOLAK, nota?, berubah}` — the seen version; stale → `409 version_conflict`, decided → `409 already_decided` |
@@ -114,6 +115,41 @@ Code: `app/Modules/Hris`.
 - `berubah` is the ADR-0007 `version` column (the build prompt's `berubah`
   name maps to it; see the migration note). Send it back on decisions.
 - A night-shift PULANG within 18 h of MASUK belongs to the MASUK date.
+
+### Riwayat item
+
+`GET /hris/riwayat?bulan=2026-10` answers one user's month, server-assembled
+so the PWA needs no `jadwal` module grant for the log screen:
+
+```json
+{
+  "bulan": "2026-10", "dari": "2026-10-01", "sampai": "2026-10-31",
+  "hari": [{"tanggal": "2026-10-20", "jenis": "kerja",
+    "masuk": {…}, "pulang": {…}, "tanpaMasuk": false,
+    "kalender": null, "shift": {"kode": "PAGI", "mulai": "08:00", "selesai": "17:00",
+    "lintas_hari": false, "sumber": "JADWAL", "libur": 0}}],
+  "ringkasan": {"terlambat": 1, "pulang_awal": 0, "absen": 0, "tidak_clock_in": 0,
+    "hadir": 20, "menunggu": 0, "terjadwal": 22},
+  "rosterTakTerbaca": false,
+  "lokasi": [{"id": "01j…", "nama": "Outlet", "lat": -6.2, "lng": 106.8, "radius": 120, "aktif": true}]
+}
+```
+
+- `jenis` per day: `kerja` (a non-DITOLAK MASUK or PULANG exists),
+  `libur-umum` (HRIS calendar, never queued), `libur-jadwal` (own roster
+  flag), `cuti`/`izin`/`off` (roster cell code), `absen` (a real shift cell
+  with no punch), `tanpa-jadwal` (no cell at all), `tak-diketahui` (roster
+  unreadable, or today still in progress), `masa-depan`.
+- Counting follows the meal rule (P2): only VALID punches count
+  (`terlambat` from `telat_menit`, `pulang_awal` from the flag, `hadir`
+  distinct days); MENUNGGU is reported but never counted; DITOLAK is
+  ignored. Today never counts `absen` or `tidak_clock_in`.
+- `masuk`/`pulang` are the punch item shape above (latest non-DITOLAK per
+  direction). `shift` is the `shiftFor` answer (`JADWAL`, `BAWAAN`, `null`,
+  never `false` — unreadable days set `rosterTakTerbaca` instead).
+- `user` defaults to the token holder; heads without it read their own log.
+  HR without `user` is `422 validation_failed` (`details` carries nothing
+  extra). Bad `bulan` is `422`.
 
 ### me/today item
 
