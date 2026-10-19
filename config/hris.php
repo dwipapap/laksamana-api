@@ -15,4 +15,16 @@ declare(strict_types=1);
 return [
     'ai_url' => env('HRIS_AI_URL', ''),
     'ai_key' => env('HRIS_AI_KEY', ''),
+
+    /*
+    | Signed face proof (S3). The VPS signs the on-device embedding; the
+    | endpoints accept the descriptor from a valid proof instead of the
+    | client field. Empty secret = no proof is ever accepted and the
+    | mandatory flag counts as false (legacy client-descriptor behaviour).
+    */
+    'face_secret' => env('HRIS_FACE_SECRET', ''),
+    'face_kid' => env('HRIS_FACE_KID', ''),
+    'face_secret_lama' => env('HRIS_FACE_SECRET_LAMA', ''),
+    'face_kid_lama' => env('HRIS_FACE_KID_LAMA', ''),
+    'face_bukti_wajib' => filter_var(env('HRIS_FACE_BUKTI_WAJIB', false), FILTER_VALIDATE_BOOL),
 ];

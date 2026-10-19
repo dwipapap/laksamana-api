@@ -4581,6 +4581,10 @@
                       "MASUK",
                       "PULANG"
                     ]
+                  },
+                  "buktiWajah": {
+                    "type": "string",
+                    "description": "Signed face proof (S3); a valid proof replaces the client descriptor. Missing while HRIS_FACE_BUKTI_WAJIB=true queues the punch."
                   }
                 }
               }
@@ -4965,7 +4969,16 @@
                   "descriptor",
                   "model",
                   "consent"
-                ]
+                ],
+                "properties": {
+                  "buktiWajah": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Signed face proofs (S3), one per descriptor; the enrolment photo binds the first. Missing while HRIS_FACE_BUKTI_WAJIB=true is 422 bukti_wajah_tidak_valid."
+                  }
+                }
               }
             }
           }
@@ -5045,7 +5058,13 @@
                 "required": [
                   "descriptor",
                   "model"
-                ]
+                ],
+                "properties": {
+                  "buktiWajah": {
+                    "type": "string",
+                    "description": "Signed face proof (S3); a valid proof replaces the client descriptor. Missing while HRIS_FACE_BUKTI_WAJIB=true is 422 bukti_wajah_tidak_valid."
+                  }
+                }
               }
             }
           }
@@ -9364,7 +9383,13 @@
                 "required": [
                   "descriptor",
                   "model"
-                ]
+                ],
+                "properties": {
+                  "buktiWajah": {
+                    "type": "string",
+                    "description": "Signed face proof (S3); a valid proof replaces the client descriptor. Missing while HRIS_FACE_BUKTI_WAJIB=true is 422 bukti_wajah_tidak_valid."
+                  }
+                }
               }
             }
           }

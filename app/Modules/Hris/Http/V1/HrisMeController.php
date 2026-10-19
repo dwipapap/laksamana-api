@@ -49,6 +49,7 @@ final class HrisMeController extends HrisBaseController
             'akurasi' => ['nullable', 'integer', 'min:0', 'max:100000'],
             'descriptor' => ['nullable', 'array', 'min:32', 'max:1024'],
             'model' => ['nullable', 'string', 'max:64'],
+            'buktiWajah' => ['nullable', 'string', 'max:32768'],
             'foto' => ['nullable', 'string', 'max:7000000'],
             'alasan' => ['nullable', 'string', 'max:255'],
         ]);

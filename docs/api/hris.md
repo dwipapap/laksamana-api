@@ -22,15 +22,15 @@ Code: `app/Modules/Hris`.
 | Method | Path | Lingkup | Notes |
 |---|---|---|---|
 | GET | `/hris/me/today` | all | Punch-screen bootstrap: shift today, MASUK/PULANG rows, nearest locations, server time, enrolment flag + face count (`wajahJumlah`), `perhatian[]` |
-| POST | `/hris/punches` | self | Punch in/out. Repeated MASUK → `200 {duplikat:true}`; repeated PULANG overwrites. `201` otherwise |
+| POST | `/hris/punches` | self | Punch in/out. Repeated MASUK → `200 {duplikat:true}`; repeated PULANG overwrites. `201` otherwise. Optional `buktiWajah` (signed proof, replaces the client `descriptor`) |
 | GET | `/hris/punches?from&to&user` | scoped | History. Crew are forced to their own rows; heads to their divisions |
 | GET | `/hris/riwayat?bulan&user` | scoped | Monthly log for one user: daily rows + summary (Riwayat screen). `bulan` is `YYYY-MM`; `user` defaults to self |
 | GET | `/hris/punches/{id}/photo` | scoped | Audit photo (self, HR, head of division) |
 | GET | `/hris/queue` | HR + head | Queued punches, longest-waiting first (rows carry `nama` + `divisi`; no server filters — filter client-side) |
 | POST | `/hris/punches/{id}/decision` | HR (own punch too) + head (division, not own) | `{status: VALID\|DITOLAK, nota?, berubah}` — the seen version; stale → `409 version_conflict`, decided → `409 already_decided` |
-| POST | `/hris/faces/me` | self | Enrol own face: `{descriptors[1..3] | descriptor, model, foto, consent: true}`. Active at once. Within the set, two descriptors farther apart than the threshold → `422 validation_failed`. Duplicate of another's → `409 wajah_milik_orang_lain` + HR audit |
-| POST | `/hris/faces/me/tambah` | self | Complete own face (W3): `{descriptor, model}` while AKTIF and below 3 descriptors → `{user_id, jumlah_descriptor}` + `wajah_dilengkapi` audit. Shares the cek rate limit. At 3 → `409 wajah_lengkap`; outside the threshold → `422 wajah_tidak_cocok`; someone else's → `409 wajah_milik_orang_lain` + HR audit; another model → `422` |
-| POST | `/hris/faces/me/cek` | self | Pre-send check: `{descriptor[], model}` → `{terdaftar, cocok}`. No score served. Every check audits `wajah_dicek` `{skor, cocok, model}` (no photo, no descriptor); 429 writes nothing. Shares the limit with `tambah`: 10 per 5 min per user → `429 terlalu_sering` |
+| POST | `/hris/faces/me` | self | Enrol own face: `{descriptors[1..3] | descriptor, model, foto, consent: true}` + optional `buktiWajah[1..3]` (one signed proof per descriptor; the straight photo binds the first). Active at once. Within the set, two descriptors farther apart than the threshold → `422 validation_failed`. Duplicate of another's → `409 wajah_milik_orang_lain` + HR audit |
+| POST | `/hris/faces/me/tambah` | self | Complete own face (W3): `{descriptor, model}` + optional `buktiWajah` while AKTIF and below 3 descriptors → `{user_id, jumlah_descriptor}` + `wajah_dilengkapi` audit. Shares the cek rate limit. At 3 → `409 wajah_lengkap`; outside the threshold → `422 wajah_tidak_cocok`; someone else's → `409 wajah_milik_orang_lain` + HR audit; another model → `422` |
+| POST | `/hris/faces/me/cek` | self | Pre-send check: `{descriptor[], model}` + optional `buktiWajah` → `{terdaftar, cocok}`. No score served. Every check audits `wajah_dicek` `{skor, cocok, model, sumber_wajah}` (no photo, no descriptor); 429 writes nothing. Shares the limit with `tambah`: 10 per 5 min per user → `429 terlalu_sering` |
 | GET | `/hris/faces` | HR | Enrolled faces, **without** descriptors (`user_id`, `nama`, `model`, `consent_at`, `dibuat_oleh`, `ada_foto`, `jumlah_descriptor`, `gagal_cek_7h`, `version`). `gagal_cek_7h` counts `wajah_dicek` with `cocok: false` in the last 7 days |
 | GET | `/hris/faces/kalibrasi` | HR | Check-score percentiles per model over the last 90 days of `wajah_dicek`: `{model: {n, p50, p90, p95, p99}}` |
 | GET | `/hris/faces/{userId}/cek?limit=10` | HR | Recent `wajah_dicek` rows of one person, newest first (`[{waktu, skor, cocok, model}]`, limit ≤ 50) |
@@ -53,13 +53,47 @@ Code: `app/Modules/Hris`.
   "lat": -6.2, "lng": 106.8, "akurasi": 12,
   "descriptor": [0.12, -0.03, "..."],
   "model": "sface-2021dec-int8",
+  "buktiWajah": "<signed proof, replaces descriptor when valid>",
   "foto": "<base64, EXIF GPS stripped on device>",
   "alasan": "dinas luar (wajib bila di luar ketentuan)"
 }
 ```
 
-`lat`/`lng`/`akurasi`/`descriptor`/`model`/`foto`/`alasan` are optional;
+`lat`/`lng`/`akurasi`/`descriptor`/`model`/`foto`/`alasan`/`buktiWajah` are optional;
 `arah` is required. A punch outside the rules without `alasan` is `422`.
+
+### Signed face proof (`buktiWajah`)
+
+The VPS signs the on-device embedding so a rooted phone cannot invent a
+face: `token = base64url(payload JSON) + "." + base64url(HMAC-SHA256 over
+the payload bytes)`. The payload keys run `v,kid,model,descriptor,
+fotoSha256,iat` with no spaces. Verification (server time, never the phone)
+checks the signature (`hash_equals`), a known `kid` (active or previous),
+`model` equal to the request `model` field, age ≤ 120 s with 30 s future
+skew tolerance, and — when a photo is sent — `fotoSha256` equal to the
+SHA-256 of the decoded photo bytes. Any failure is `422
+bukti_wajah_tidak_valid`. The signing keys live only in the server env
+(`HRIS_FACE_SECRET` + `HRIS_FACE_KID`, rotation via `HRIS_FACE_SECRET_LAMA`
++ `HRIS_FACE_KID_LAMA`); with an empty secret every proof is refused and
+`HRIS_FACE_BUKTI_WAJIB` counts as false.
+
+Transition rules:
+
+- A valid proof's descriptor **replaces** the client field on punch, enrol,
+  cek and tambah. Enrol takes one proof per descriptor (`buktiWajah`
+  length must equal the descriptor count); the straight enrolment photo
+  binds the first proof.
+- While `HRIS_FACE_BUKTI_WAJIB=true` (and a secret is set), requests without
+  a proof are refused: punch ignores the client descriptor and queues
+  (`WAJAH` when enrolled, `WAJAH_KOSONG` when not — still needs `alasan`
+  like any queued punch); enrol/cek/tambah answer `422
+  bukti_wajah_tidak_valid`.
+- With the flag off, requests without a proof behave exactly as before.
+- Face audits (`wajah_dicek`, `wajah_didaftarkan`, `wajah_dilengkapi`,
+  `wajah_duplikat_ditolak`) carry `sumber_wajah`: `server` (descriptor from
+  a verified proof), `klien` (descriptor from the client field), or `tanpa`
+  (no descriptor was matched — unenrolled or wrong-model pre-check). Audit
+  data never carries descriptor bytes.
 
 ### Punch item
 
@@ -236,6 +270,7 @@ Defaults (`PUT /hris/settings` takes a partial map; unknown keys are `422`):
 | 409 | `wajah_lengkap` | Top-up at 3 descriptors (needs HR reset to replace the face) |
 | 409 | `wajah_milik_orang_lain` | Face matches another enrolled person (audited for HR) |
 | 422 | `wajah_tidak_cocok` | Top-up outside the threshold of the stored face |
+| 422 | `bukti_wajah_tidak_valid` | Signed face proof missing (while mandatory), expired, or failing signature/kid/model/photo checks |
 | 409 | `version_conflict` | Stale `berubah` (`details.current`) |
 | 409 | `already_decided` | Deciding a non-MENUNGGU punch or a final request |
 | 429 | `terlalu_sering` | Face pre-check over the rate limit (`details.retryAfter`) |
