@@ -123,3 +123,16 @@ it('gives radar to every account as Akses Bawaan, yet an explicit deny still rem
     $access->forgetUser($u['id']);
     expect($access->hasModule($u['id'], 'radar'))->toBeFalse();
 });
+
+it('gives hris to every account as Akses Bawaan, yet an explicit deny still removes it', function () {
+    // #299: every crew member punches in HRIS, so nobody needs a grant first.
+    // HR stays a separate question (hris module admin or the `hr` setting).
+    $u = anyActiveUser();
+    $access = app(OfficeAccess::class);
+    expect($access->builtinModules($u['id']))->toContain('hris')
+        ->and($access->hasModule($u['id'], 'hris'))->toBeTrue();
+
+    app(AccountRepository::class)->upsertGrant($u['id'], 'hris', false, 'test');
+    $access->forgetUser($u['id']);
+    expect($access->hasModule($u['id'], 'hris'))->toBeFalse();
+});
