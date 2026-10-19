@@ -137,6 +137,45 @@ final class HrisLingkup
         }
     }
 
+    /**
+     * Name picker source for HR screens (Penilaian, Disiplin, Rekap): every
+     * roster member with display name and division, whether or not they
+     * enrolled a face. HR sees everyone; heads their divisions; crew are
+     * refused (their screens never need another person's id).
+     *
+     * @return array<int,array{id:string,nama:string,divisi:string}>
+     */
+    public function daftarPengguna(array $me): array
+    {
+        if (! $this->isHr($me) && ! $this->isHead($me)) {
+            throw new HrisError('forbidden', 'Daftar pengguna hanya untuk HR dan Kepala Divisi.', 403);
+        }
+        $boleh = $this->isHr($me) ? null : $this->divisionMemberIds($me);
+        try {
+            $rows = $this->jadwal->rosterWithDivisi();
+        } catch (\Throwable) {
+            return [];
+        }
+        $out = [];
+        foreach ($rows as $r) {
+            $r = (array) $r;
+            $uid = trim((string) ($r['id'] ?? $r['user_id'] ?? ''));
+            if ($uid === '') {
+                continue;
+            }
+            if ($boleh !== null && ! in_array($uid, $boleh, true)) {
+                continue;
+            }
+            $out[] = ['id' => $uid,
+                'nama' => trim((string) ($r['name'] ?? $r['nama'] ?? $uid)) ?: $uid,
+                'divisi' => (string) ($r['divisi'] ?? '')];
+        }
+        usort($out, fn ($a, $b) => strcmp((string) $a['nama'], (string) $b['nama'])
+            ?: strcmp((string) $a['id'], (string) $b['id']));
+
+        return $out;
+    }
+
     public function assertHr(array $me, string $apa): void
     {
         if (! $this->isHr($me)) {

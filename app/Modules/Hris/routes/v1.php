@@ -46,6 +46,7 @@ Route::middleware(['auth:sanctum', 'module:hris'])->prefix('hris')->group(functi
 
     // HR office: locations, settings, one-time import.
     Route::get('locations', [O::class, 'locations']);
+    Route::get('pengguna', [O::class, 'pengguna']);
     Route::post('locations', [O::class, 'saveLocation']);
     Route::patch('locations/{id}', [O::class, 'patchLocation'])->where('id', '[A-Za-z0-9-]+');
     Route::delete('locations/{id}', [O::class, 'deleteLocation'])->where('id', '[A-Za-z0-9-]+');

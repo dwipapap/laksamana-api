@@ -103,3 +103,28 @@ it('imports legacy absensi locations once, idempotently', function () {
     expect(HrisLokasi::query()->count())->toBe($satu['dibuat'] + $satu['diperbarui']);
     expect(app(HrisSettingsService::class)->get('awalMenit'))->toBe(180);
 });
+
+it('serves the roster name picker to HR and heads, never crew', function () {
+    hrisMakeHr('u-admin');
+    $ht = hrisToken('u-admin');
+    $h = ['Authorization' => 'Bearer '.$ht];
+
+    $r = test()->getJson('/api/v1/hris/pengguna', $h)->assertOk()->json('data');
+    expect($r)->toHaveKey('pengguna');
+    expect(count($r['pengguna']))->toBeGreaterThan(0);
+    foreach ($r['pengguna'] as $p) {
+        expect($p)->toHaveKeys(['id', 'nama', 'divisi']);
+        expect($p['id'])->not->toBe('');
+        expect($p['nama'])->not->toBe('');
+    }
+    $nama = array_column($r['pengguna'], 'nama');
+    $urut = $nama;
+    sort($urut);
+    expect($nama)->toBe($urut);
+});
+
+it('keeps crew out of the roster name picker', function () {
+    $t = hrisToken('u-dwipa');
+    test()->getJson('/api/v1/hris/pengguna', ['Authorization' => 'Bearer '.$t])
+        ->assertStatus(403)->assertJsonPath('error.code', 'forbidden');
+});

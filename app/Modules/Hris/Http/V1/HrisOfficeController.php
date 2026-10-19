@@ -89,6 +89,16 @@ final class HrisOfficeController extends HrisBaseController
         });
     }
 
+    // ------------------------------------------------------------ pengguna
+
+    /** Name picker source for HR screens: id + name + division, face or not. */
+    public function pengguna(Request $r): JsonResponse
+    {
+        $me = $this->me($r);
+
+        return $this->run(fn () => ['pengguna' => $this->lingkup->daftarPengguna($me)]);
+    }
+
     // ------------------------------------------------------------ settings
 
     public function settings(Request $r): JsonResponse

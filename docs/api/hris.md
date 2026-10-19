@@ -37,6 +37,7 @@ Code: `app/Modules/Hris`.
 | GET | `/hris/faces/{userId}/photo` | HR | Enrolment photo stream |
 | DELETE | `/hris/faces/{userId}` | HR | Reset: the person may enrol again |
 | GET | `/hris/locations` | all | Attendance locations (read is open; the punch screen needs them) |
+| GET | `/hris/pengguna` | HR + head | Roster id + name + division for HR pickers (heads: own divisions; crew: `403`) |
 | POST | `/hris/locations` | HR | Create (radius clamped 30–2000 m). `201 {id}` |
 | PATCH | `/hris/locations/{id}` | HR | Update (upsert body). `201 {id}` |
 | DELETE | `/hris/locations/{id}` | HR | `{hapus: 1\|0}` |

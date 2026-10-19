@@ -5330,6 +5330,52 @@
         }
       }
     },
+    "/api/v1/hris/pengguna": {
+      "get": {
+        "tags": [
+          "hris"
+        ],
+        "summary": "Roster id + name + division for HR pickers (HR + head)",
+        "operationId": "getApiV1HrisPengguna",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized (missing/invalid Bearer token)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (HR or head only)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/hris/locations/{id}": {
       "patch": {
         "tags": [
