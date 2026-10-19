@@ -76,17 +76,32 @@ Route::middleware(['auth:sanctum', 'module:konten|campaign'])->prefix('konten/an
     Route::post('oauth/instagram/start', [CA::class, 'igStart']);
     Route::post('oauth/instagram/sync', [CA::class, 'igSync']);
     Route::post('oauth/instagram/disconnect', [CA::class, 'igDisconnect']);
+
+    // Google Review (menu Analytics): two sources — Business Profile OAuth
+    // (full reviews + replies) and Places API key (read-only top-up).
+    Route::get('google', [CA::class, 'googleState']);
+    Route::post('google/sync', [CA::class, 'googleSync']);
+    Route::post('google/start', [CA::class, 'googleStart']);
+    Route::post('google/reply', [CA::class, 'googleReply']);
+    Route::post('google/reply/delete', [CA::class, 'googleDeleteReply']);
+    Route::post('google/flag', [CA::class, 'googleFlag']);
+    Route::post('google/ai', [CA::class, 'googleAi']);
+    Route::post('google/draft', [CA::class, 'googleAiDraft']);
 });
 
 Route::middleware(['auth:sanctum', 'module:campaign,admin'])->prefix('konten/analytics')->group(function () {
     Route::put('settings', [CA::class, 'saveSettings']);
+    // Campaign admin only, like legacy campaignGoogleCari / campaignGooglePutus.
+    Route::post('google/search', [CA::class, 'googleSearch']);
+    Route::post('google/disconnect', [CA::class, 'googleDisconnect']);
 });
 
 // OAuth callbacks are public: the single-use state token is the guard,
-// like the legacy campaign-tiktok.php / campaign-instagram.php.
+// like the legacy campaign-tiktok.php / campaign-instagram.php / campaign-google.php.
 Route::prefix('konten/analytics')->group(function () {
     Route::get('oauth/tiktok/callback', [CA::class, 'tiktokCallback']);
     Route::get('oauth/instagram/callback', [CA::class, 'igCallback']);
+    Route::get('oauth/google/callback', [CA::class, 'googleCallback']);
 });
 
 // G-13 (#187): restore the whole database from a backup file — module admin, typed confirmation PULIHKAN.

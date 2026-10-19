@@ -63,7 +63,7 @@ it('validates insight writes exactly like legacy', function () {
         ->assertStatus(422)->assertJsonPath('error.message', 'Temuan wajib diisi — itulah inti insight-nya.');
     $this->withToken($t)->postJson('/api/v1/konten/analytics/insights', ['temuan' => 'x', 'url' => 'http://a'])
         ->assertStatus(422)->assertJsonPath('error.message', 'Tautan konten harus diawali https:// .');
-    $this->withToken($t)->postJson('/api/v1/konten/analytics/insights', ['temuan' => 'x', 'url' => 'https://a'])
+    $this->withToken($t)->postJson('/api/v1/konten/analytics/insights', ['temuan' => 'x', 'url' => ''])
         ->assertStatus(422)->assertJsonPath('error.message', 'Tautan konten wajib diisi, supaya insight bisa ditelusuri ke konten aslinya.');
     $this->withToken($t)->postJson('/api/v1/konten/analytics/insights',
         ['temuan' => 'x', 'url' => 'https://contoh.id/a', 'tglTayang' => '2026-13-99'])
@@ -175,20 +175,20 @@ it('syncs TikTok against faked API responses', function () {
     Http::fake(function ($request) {
         $url = (string) $request->url();
         if (str_contains($url, '/v2/user/info/')) {
-            return Http::response(['data' => ['data' => ['user' => [
+            return Http::response(['data' => ['user' => [
                 'display_name' => 'Brand', 'avatar_url' => 'https://contoh.id/a.png', 'follower_count' => 42,
                 'following_count' => 7, 'likes_count' => 100, 'video_count' => 3,
-            ]]]]);
+            ]]]);
         }
         if (str_contains($url, '/v2/video/list/')) {
-            return Http::response(['data' => ['data' => ['videos' => [[
+            return Http::response(['data' => ['videos' => [[
                 'id' => 'vid_sync_1', 'video_description' => 'Sinkron', 'create_time' => 1760000000,
                 'cover_image_url' => '', 'share_url' => 'https://contoh.id/s1',
                 'view_count' => 500, 'like_count' => 50, 'comment_count' => 5, 'share_count' => 2, 'duration' => 15,
-            ]], 'has_more' => false]]]);
+            ]], 'has_more' => false]]);
         }
 
-        return Http::response(['data' => ['data' => ['videos' => []]]]);
+        return Http::response(['data' => ['videos' => []]]);
     });
     $res = $this->withToken($t)->postJson('/api/v1/konten/analytics/oauth/tiktok/sync')->assertOk();
     expect($res->json('data.jumlah'))->toBeGreaterThanOrEqual(1);
@@ -204,23 +204,23 @@ it('syncs Instagram against faked API responses', function () {
     Http::fake(function ($request) {
         $url = (string) $request->url();
         if (str_contains($url, '/me/media')) {
-            return Http::response(['data' => ['data' => [[
+            return Http::response(['data' => [[
                 'id' => 'ig_sync_1', 'caption' => 'IG sinkron', 'media_type' => 'VIDEO',
                 'permalink' => 'https://contoh.id/ig1', 'timestamp' => '2026-10-01T10:00:00+0000',
                 'thumbnail_url' => '', 'like_count' => 30, 'comments_count' => 3,
-            ]]]]);
-        }
-        if (str_contains($url, '/insights')) {
-            return Http::response(['data' => ['data' => [
-                ['name' => 'views', 'values' => [['value' => 300]]],
-                ['name' => 'reach', 'values' => [['value' => 250]]],
             ]]]);
         }
+        if (str_contains($url, '/insights')) {
+            return Http::response(['data' => [
+                ['name' => 'views', 'values' => [['value' => 300]]],
+                ['name' => 'reach', 'values' => [['value' => 250]]],
+            ]]);
+        }
 
-        return Http::response(['data' => [
+        return Http::response([
             'username' => 'brand', 'name' => 'Brand', 'followers_count' => 10,
             'follows_count' => 2, 'media_count' => 1, 'biography' => 'Bio',
-        ]]);
+        ]);
     });
     $res = $this->withToken($t)->postJson('/api/v1/konten/analytics/oauth/instagram/sync')->assertOk();
     expect($res->json('data.jumlah'))->toBeGreaterThanOrEqual(1);

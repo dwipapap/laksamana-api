@@ -155,3 +155,52 @@ Secrets precedence: `META_MODEL_API_KEY`, `TIKTOK_CLIENT_KEY/SECRET`,
 `{API_PUBLIC_URL}/api/v1/konten/analytics/oauth/{tiktok,instagram}/callback`
 (both must be registered in the TikTok/Meta apps, dev and production).
 `OFFICE_VUE_URL` tells the callbacks where the Vue app lives.
+
+## Google Review (#greview)
+
+v1 port of `konten-mysql/lib_greview.php` (office `develop`): the Analytics
+"Google Review" menu. Base: `/api/v1/konten/analytics/google`. Same gate
+`konten|campaign`; place search and disconnect need a campaign module
+admin; the OAuth callback is public (the single-use state token is the
+guard, like legacy `campaign-google.php`) and redirects to the Vue app
+(`{OFFICE_VUE_URL}/konten/greview?google=ok|gagal&pesan=…#greview`).
+
+Two sources, and the difference decides what can be done: **Business
+Profile** (OAuth of the profile owner/manager) returns ALL reviews plus
+their replies and can post replies; **Places API** (key) returns 5 reviews
+per pull and is read-only. Places covered by Business Profile are never
+pulled again; duplicate profiles are skipped. There is no review delete:
+`ditangani` is a flag, `pertama_at` is insert-only, and reviews reach the
+AI only when asked (`/ai`, `/draft`, through the existing Meta provider).
+
+Reads and writes share the physical `cg_gtempat` / `cg_gtempat_harian` /
+`cg_greview` tables (plus the `google` row of `cg_akun`) with the old
+analytics frontend. Validation messages are the legacy Indonesian strings
+verbatim.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/google` | Full read: `tempat`, `harian` (120 days), `review` (≤3000, newest first), `totalTersimpan`, `akun` (no tokens, with `terhubung`), `ai` (stored analysis or null), `syncAt`, `galat`. |
+| POST | `/google/sync` | GBP reviews (full history once per location, then head pages) + Places top-up for uncovered places. → `{jumlah, galat}`. |
+| POST | `/google/start` | → `{url}` (Google OAuth, offline + consent, state 15 min). Needs client id+secret. |
+| GET | `/oauth/google/callback?code&state` | Public. Exchanges, saves token, pulls locations once, syncs once, redirects to Vue `?google=ok\|gagal&pesan=…#greview`. |
+| POST | `/google/reply` | `{id*, teks*}` — published on Maps under the business name (`balasan_oleh` = the writer). GBP only (≤4000 chars). |
+| POST | `/google/reply/delete` | `{id*}` — deletes our reply on Google too (confirm in the client). GBP only. |
+| POST | `/google/flag` | `{id*, ditangani, catatan}` — internal follow-up flag (≤1500 chars), separate from the public reply. |
+| POST | `/google/ai` | `{hari (7–365, default 90), tempat}` → guest-experience analysis stored under `gr_ai`: ringkasan, sentimen, kekuatan, perbaikan, tangani (≤15, with reply drafts). Invented review ids dropped. |
+| POST | `/google/draft` | `{id*, arahan}` → one reply draft (≤600 chars, never stored). |
+| POST | `/google/search` | **Campaign admin.** `{q*}` → `{hasil: [{id, nama, alamat, rating, total}]}` (Place-ID finder for Pengaturan). |
+| POST | `/google/disconnect` | **Campaign admin.** Clears tokens (reviews & places stay). |
+
+Settings additions (`PUT /analytics/settings`, campaign admin):
+`googleClientId`, `googleClientSecret`, `placesKey` (empty = keep,
+`HAPUS` = clear) and `placesIds` (non-secret; anything not Place-ID
+shaped is rejected). The setting summary gains `googleOauthSiap`,
+`googleDariConfig`, `googleRedirectUri`, `placesKeyAda`,
+`placesDariConfig`, `placesIds`.
+
+Secrets precedence: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+`GOOGLE_PLACES_KEY` from the environment win over the settings table.
+The OAuth redirect URI is
+`{API_PUBLIC_URL}/api/v1/konten/analytics/oauth/google/callback` (must be
+registered in the Google Cloud OAuth client, dev and production).

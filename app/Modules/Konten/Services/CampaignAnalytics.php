@@ -39,6 +39,12 @@ class CampaignAnalytics
 
     public const IG_GRAPH = 'https://graph.instagram.com/v23.0';
 
+    public const GR_SCOPE = 'https://www.googleapis.com/auth/business.manage';
+
+    public const GR_PLACES = 'https://places.googleapis.com/v1';
+
+    public const GR_MAKS_BALAS = 4000;
+
     public const AI_MODELS = ['muse-spark-1.3-contributor', 'muse-spark-1.3', 'muse-spark-1.2-contributor', 'muse-spark-1.2'];
 
     public const AI_URL = 'https://api.meta.ai/v1/messages';
@@ -150,6 +156,35 @@ class CampaignAnalytics
             dibuat_oleh VARCHAR(120), dibuat_at BIGINT, diubah_oleh VARCHAR(120), diubah_at BIGINT,
             KEY tanggal (tanggal))");
         $db->statement('CREATE TABLE IF NOT EXISTS cg_setting (k VARCHAR(60) PRIMARY KEY, v TEXT)');
+        /* Google Review (lib_greview.php): places the business watches. id is
+           the place_id (Places) or "accounts/A/locations/L" (Business
+           Profile); place_id is kept apart so two sources for the same place
+           are recognised. */
+        $db->statement("CREATE TABLE IF NOT EXISTS cg_gtempat (id VARCHAR(190) NOT NULL PRIMARY KEY,
+            sumber VARCHAR(10) NOT NULL DEFAULT '', place_id VARCHAR(190) NOT NULL DEFAULT '',
+            nama VARCHAR(255) NOT NULL DEFAULT '', alamat VARCHAR(500) NOT NULL DEFAULT '',
+            rating DECIMAL(3,2) NULL, total INT NULL, url VARCHAR(600) NOT NULL DEFAULT '',
+            aktif TINYINT(1) NOT NULL DEFAULT 1, sync_at BIGINT NOT NULL DEFAULT 0,
+            galat VARCHAR(600) NOT NULL DEFAULT '')");
+        /* Daily rating & review-count snapshot — the only way to see the
+           rating move, since Google keeps no history. */
+        $db->statement('CREATE TABLE IF NOT EXISTS cg_gtempat_harian (tempat_id VARCHAR(190) NOT NULL,
+            tgl DATE NOT NULL, rating DECIMAL(3,2) NULL, total INT NULL,
+            PRIMARY KEY (tempat_id, tgl))');
+        /* id = sha1(review resource name): resource names can run past 190
+           chars, and a truncated PK would make two reviews overwrite each
+           other. */
+        $db->statement('CREATE TABLE IF NOT EXISTS cg_greview (id VARCHAR(40) NOT NULL PRIMARY KEY,
+            nama_res VARCHAR(600) NOT NULL DEFAULT \'\', sumber VARCHAR(10) NOT NULL DEFAULT \'\',
+            tempat_id VARCHAR(190) NOT NULL DEFAULT \'\', penulis VARCHAR(200) NOT NULL DEFAULT \'\',
+            penulis_url VARCHAR(600) NOT NULL DEFAULT \'\', foto VARCHAR(900) NOT NULL DEFAULT \'\',
+            rating TINYINT NOT NULL DEFAULT 0, teks TEXT NULL, waktu_ms BIGINT NOT NULL DEFAULT 0,
+            url VARCHAR(600) NOT NULL DEFAULT \'\', balasan TEXT NULL, balasan_at BIGINT NOT NULL DEFAULT 0,
+            balasan_oleh VARCHAR(120) NOT NULL DEFAULT \'\', ditangani TINYINT(1) NOT NULL DEFAULT 0,
+            tangani_catatan TEXT NULL, tangani_oleh VARCHAR(120) NOT NULL DEFAULT \'\',
+            tangani_at BIGINT NOT NULL DEFAULT 0, pertama_at BIGINT NOT NULL DEFAULT 0,
+            sync_at BIGINT NOT NULL DEFAULT 0,
+            KEY idx_gr_tempat (tempat_id), KEY idx_gr_waktu (waktu_ms))');
     }
 
     // ─────────────────────────── settings ──
@@ -282,7 +317,7 @@ class CampaignAnalytics
                 'igSiap' => $this->secret('INSTAGRAM_APP_ID', 'ig_id') !== '' && $this->secret('INSTAGRAM_APP_SECRET', 'ig_secret') !== '',
                 'igDariConfig' => $this->secretFromConfig('INSTAGRAM_APP_ID'),
                 'igRedirectUri' => $this->igRedirectUri(),
-            ],
+            ] + $this->googleSettingSummary(),
             'boleh' => ['admin' => $isAdmin],
         ];
     }
@@ -506,6 +541,25 @@ class CampaignAnalytics
     {
         return NamedLock::run('konten', 'konten_save', function () use ($d, $by, $baseVersion) {
             $this->ensureTables();
+            $id = trim((string) ($d['id'] ?? ''));
+            $cur = null;
+            if ($id !== '') {
+                $cur = $this->findInsight($id);
+                if (! $cur) {
+                    throw new RuntimeException('not_found:Insight yang disunting tidak ditemukan.');
+                }
+                if ($baseVersion !== null) {
+                    $this->checkVersion($cur, $baseVersion);
+                }
+                /* PATCH: absent keys keep the stored value, so a partial
+                   payload validates as the whole it becomes. */
+                foreach (['platform' => 'platform', 'kategori' => 'kategori', 'temuan' => 'temuan', 'url' => 'url',
+                    'tglTayang' => 'tgl_tayang', 'metrik' => 'metrik', 'aksi' => 'aksi'] as $k => $col) {
+                    if (! array_key_exists($k, $d)) {
+                        $d[$k] = $cur->$col;
+                    }
+                }
+            }
             $temuan = self::cut($d['temuan'] ?? '', 2000);
             if ($temuan === '') {
                 throw new RuntimeException('Temuan wajib diisi — itulah inti insight-nya.');
@@ -531,18 +585,10 @@ class CampaignAnalytics
                 'metrik' => self::cut($d['metrik'] ?? '', 255),
                 'aksi' => self::cut($d['aksi'] ?? '', 2000),
             ];
-            $id = trim((string) ($d['id'] ?? ''));
             $db = $this->db();
             if ($id !== '') {
-                $cur = $this->findInsight($id);
-                if (! $cur) {
-                    throw new RuntimeException('not_found:Insight yang disunting tidak ditemukan.');
-                }
-                if ($baseVersion !== null) {
-                    $this->checkVersion($cur, $baseVersion);
-                    if ($this->sameInsight($cur, $nilai)) {
-                        return ['id' => $id, 'unchanged' => true];
-                    }
+                if ($baseVersion !== null && $this->sameInsight($cur, $nilai)) {
+                    return ['id' => $id, 'unchanged' => true];
                 }
                 $db->update('UPDATE cg_insight SET platform=?, kategori=?, temuan=?, url=?, tgl_tayang=?, metrik=?, aksi=?, diubah_oleh=?, diubah_at=? WHERE id=?',
                     [$nilai['platform'], $nilai['kategori'], $nilai['temuan'], $nilai['url'], $nilai['tgl_tayang'], $nilai['metrik'], $nilai['aksi'], $by, $now, $id]);
@@ -619,6 +665,26 @@ class CampaignAnalytics
     {
         return NamedLock::run('konten', 'konten_save', function () use ($d, $by, $baseVersion) {
             $this->ensureTables();
+            $id = trim((string) ($d['id'] ?? ''));
+            $cur = null;
+            if ($id !== '') {
+                $cur = $this->findSchedule($id);
+                if (! $cur) {
+                    throw new RuntimeException('not_found:Jadwal yang disunting tidak ditemukan.');
+                }
+                if ($baseVersion !== null) {
+                    $this->checkVersion($cur, $baseVersion);
+                }
+                /* PATCH: absent keys keep the stored value (bankId stays
+                   create-only: it marks an idea TERJADWAL on insert). */
+                foreach (['platform' => 'platform', 'judul' => 'judul', 'caption' => 'caption', 'tanggal' => 'tanggal',
+                    'jam' => 'jam', 'status' => 'status', 'insightId' => 'insight_id', 'pic' => 'pic',
+                    'tautan' => 'tautan', 'catatan' => 'catatan'] as $k => $col) {
+                    if (! array_key_exists($k, $d)) {
+                        $d[$k] = $cur->$col;
+                    }
+                }
+            }
             $judul = self::cut($d['judul'] ?? '', 200);
             if ($judul === '') {
                 throw new RuntimeException('Judul konten wajib diisi.');
@@ -655,18 +721,10 @@ class CampaignAnalytics
                 'tautan' => self::cut($tautan, 600),
                 'catatan' => self::cut($d['catatan'] ?? '', 2000),
             ];
-            $id = trim((string) ($d['id'] ?? ''));
             $db = $this->db();
             if ($id !== '') {
-                $cur = $this->findSchedule($id);
-                if (! $cur) {
-                    throw new RuntimeException('not_found:Jadwal yang disunting tidak ditemukan.');
-                }
-                if ($baseVersion !== null) {
-                    $this->checkVersion($cur, $baseVersion);
-                    if ($this->sameSchedule($cur, $nilai)) {
-                        return ['id' => $id, 'unchanged' => true];
-                    }
+                if ($baseVersion !== null && $this->sameSchedule($cur, $nilai)) {
+                    return ['id' => $id, 'unchanged' => true];
                 }
                 $db->update('UPDATE cg_jadwal SET platform=?, judul=?, caption=?, tanggal=?, jam=?, status=?, insight_id=?, pic=?, tautan=?, catatan=?, diubah_oleh=?, diubah_at=? WHERE id=?',
                     [$nilai['platform'], $nilai['judul'], $nilai['caption'], $nilai['tanggal'], $nilai['jam'], $nilai['status'], $nilai['insight_id'], $nilai['pic'], $nilai['tautan'], $nilai['catatan'], $by, $now, $id]);
@@ -763,13 +821,8 @@ class CampaignAnalytics
     {
         return NamedLock::run('konten', 'konten_save', function () use ($d, $by, $baseVersion) {
             $this->ensureTables();
-            $nilai = self::bankValues($d);
-            if ($nilai['judul'] === '') {
-                throw new RuntimeException('Judul ide wajib diisi.');
-            }
-            $now = self::nowMs();
             $id = trim((string) ($d['id'] ?? ''));
-            $db = $this->db();
+            $cur = null;
             if ($id !== '') {
                 $cur = $this->findBank($id);
                 if (! $cur) {
@@ -777,9 +830,23 @@ class CampaignAnalytics
                 }
                 if ($baseVersion !== null) {
                     $this->checkVersion($cur, $baseVersion);
-                    if ($this->sameBank($cur, $nilai)) {
-                        return ['id' => $id, 'unchanged' => true];
+                }
+                /* PATCH: absent keys keep the stored value. */
+                foreach (['judul', 'platform', 'format', 'pilar', 'hook', 'caption', 'tanggal', 'jam', 'alasan'] as $k) {
+                    if (! array_key_exists($k, $d)) {
+                        $d[$k] = $cur->$k;
                     }
+                }
+            }
+            $nilai = self::bankValues($d);
+            if ($nilai['judul'] === '') {
+                throw new RuntimeException('Judul ide wajib diisi.');
+            }
+            $now = self::nowMs();
+            $db = $this->db();
+            if ($id !== '') {
+                if ($baseVersion !== null && $this->sameBank($cur, $nilai)) {
+                    return ['id' => $id, 'unchanged' => true];
                 }
                 $db->update('UPDATE cg_bank SET judul=?, platform=?, format=?, pilar=?, hook=?, caption=?, tanggal=?, jam=?, alasan=?, diubah_oleh=?, diubah_at=? WHERE id=?',
                     [$nilai['judul'], $nilai['platform'], $nilai['format'], $nilai['pilar'], $nilai['hook'], $nilai['caption'], $nilai['tanggal'], $nilai['jam'], $nilai['alasan'], $by, $now, $id]);
@@ -863,6 +930,8 @@ class CampaignAnalytics
             $req = Http::timeout($timeout)->connectTimeout(10)->withHeaders($headers);
             $res = match (strtoupper($method)) {
                 'GET' => $req->get($url),
+                'PUT' => $req->withBody(is_string($body) ? $body : '', $headers['Content-Type'] ?? 'application/json')->put($url),
+                'DELETE' => $req->send('DELETE', $url),
                 default => $req->withBody(is_string($body) ? $body : '', $headers['Content-Type'] ?? 'application/json')->post($url),
             };
         } catch (\Throwable $e) {
@@ -1645,7 +1714,8 @@ class CampaignAnalytics
     public function saveSettings(array $d): array
     {
         $this->ensureTables();
-        foreach (['aiKeyMeta' => 'ai_key_meta', 'tiktokKey' => 'tiktok_key', 'tiktokSecret' => 'tiktok_secret', 'igId' => 'ig_id', 'igSecret' => 'ig_secret'] as $f => $k) {
+        foreach (['aiKeyMeta' => 'ai_key_meta', 'tiktokKey' => 'tiktok_key', 'tiktokSecret' => 'tiktok_secret', 'igId' => 'ig_id', 'igSecret' => 'ig_secret',
+            'googleClientId' => 'google_client_id', 'googleClientSecret' => 'google_client_secret', 'placesKey' => 'google_places_key'] as $f => $k) {
             if (! isset($d[$f])) {
                 continue;
             }
@@ -1690,6 +1760,777 @@ class CampaignAnalytics
         if (isset($d['profil'])) {
             $this->saveSetting('profil', self::cut((string) $d['profil'], 1500));
         }
+        /* Place IDs are not secret. Anything that is not Place-ID shaped is
+           REJECTED — a pasted Maps link must not sit there silently pulling
+           nothing. */
+        if (isset($d['placesIds'])) {
+            $ids = [];
+            foreach (preg_split('/[\s,;]+/', (string) $d['placesIds']) as $p) {
+                $p = trim($p);
+                if ($p === '') {
+                    continue;
+                }
+                if (! preg_match('/^[A-Za-z0-9_\-]{10,190}$/', $p)) {
+                    throw new RuntimeException('Place ID tidak sah: "'.self::cut($p, 60).'". Pakai tombol Cari tempat untuk mendapatkannya.');
+                }
+                $ids[] = $p;
+            }
+            $this->saveSetting('google_places', implode(',', array_unique($ids)));
+        }
+
+        return ['ok' => true];
+    }
+
+    // ─────────────────────────── Google Review ──
+    //
+    // v1 port of laksamana-office/konten-mysql/lib_greview.php (develop
+    // 78424a5, 6e578df): the Konten Analytics "Google Review" menu. Two
+    // sources, and the difference decides what can be done:
+    //
+    //   Business Profile (gbp) — OAuth of the profile owner/manager: ALL
+    //     reviews + their replies, and replies can be posted from here.
+    //   Places API (places) — API key: 5 reviews per pull, read-only.
+    //
+    // Places covered by Business Profile (same metadata.placeId) are never
+    // pulled again — one review would stand twice. There is NO DELETE: a
+    // review Google no longer returns is left alone; "ditangani" is a flag,
+    // not a deletion. The only DELETE sent is to Google (removing our own
+    // reply), and only on request. Reviews are never sent to the AI unless
+    // asked (gr_ai / gr_ai_draf below).
+    //
+    // Secrets precedence: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and
+    // GOOGLE_PLACES_KEY from the environment win over the settings table,
+    // like the TikTok/Instagram/Meta keys.
+
+    private function googleClientId(): string
+    {
+        return $this->secret('GOOGLE_CLIENT_ID', 'google_client_id');
+    }
+
+    private function googleClientSecret(): string
+    {
+        return $this->secret('GOOGLE_CLIENT_SECRET', 'google_client_secret');
+    }
+
+    private function googlePlacesKey(): string
+    {
+        return $this->secret('GOOGLE_PLACES_KEY', 'google_places_key');
+    }
+
+    /** Place IDs watched through the Places API. */
+    public function googlePlacesIds(): array
+    {
+        $out = [];
+        foreach (preg_split('/[\s,;]+/', $this->setting('google_places')) as $p) {
+            $p = trim($p);
+            if ($p !== '' && preg_match('/^[A-Za-z0-9_\-]{10,190}$/', $p)) {
+                $out[] = $p;
+            }
+        }
+
+        return array_values(array_unique($out));
+    }
+
+    public function googleRedirectUri(): string
+    {
+        $base = rtrim((string) env('API_PUBLIC_URL', ''), '/');
+        if ($base === '') {
+            $base = 'https://'.((string) ($_SERVER['SERVER_NAME'] ?? 'api.laksamanamuda.id'));
+        }
+
+        return $base.'/api/v1/konten/analytics/oauth/google/callback';
+    }
+
+    /** Setting summary for the screen — secrets never ride along. */
+    public function googleSettingSummary(): array
+    {
+        return [
+            'googleOauthSiap' => $this->googleClientId() !== '' && $this->googleClientSecret() !== '',
+            'googleDariConfig' => $this->secretFromConfig('GOOGLE_CLIENT_ID'),
+            'googleRedirectUri' => $this->googleRedirectUri(),
+            'placesKeyAda' => $this->googlePlacesKey() !== '',
+            'placesDariConfig' => $this->secretFromConfig('GOOGLE_PLACES_KEY'),
+            'placesIds' => implode(', ', $this->googlePlacesIds()),
+        ];
+    }
+
+    private static function wibDate(int $offset = 0): string
+    {
+        return gmdate('Y-m-d', time() + 7 * 3600 + $offset * 86400);
+    }
+
+    private static function isoMs(mixed $t): int
+    {
+        $x = strtotime((string) $t);
+
+        return $x ? $x * 1000 : 0;
+    }
+
+    private static function googleError(array $r, string $awal): string
+    {
+        $p = $r['data']['error']['message'] ?? $r['data']['error_description']
+            ?? (isset($r['data']['error']) && is_string($r['data']['error']) ? $r['data']['error'] : $r['mentah']);
+        $p = is_string($p) ? $p : json_encode($p);
+        /* Quota 0 = the Business Profile API access has not been approved
+           yet. The raw message ("Quota exceeded ... 0") reads like
+           overuse. */
+        if (stripos($p, 'quota') !== false && ($r['kode'] ?? null) == 429) {
+            $p .= ' — kemungkinan besar akses Business Profile API untuk project Google Cloud ini BELUM disetujui Google (kuotanya 0 sampai pengajuan disetujui).';
+        }
+        if (($r['kode'] ?? null) == 403 && stripos($p, 'has not been used') !== false) {
+            $p .= ' — aktifkan API itu di Google Cloud Console → APIs & Services → Library.';
+        }
+
+        return $awal.' ('.($r['kode'] ?? '?').'): '.$p;
+    }
+
+    /** @throws RuntimeException */
+    public function googleStart(string $by): array
+    {
+        $this->ensureTables();
+        if ($this->googleClientId() === '' || $this->googleClientSecret() === '') {
+            throw new RuntimeException('Client ID & Client secret Google belum diisi di Pengaturan.');
+        }
+        $state = bin2hex(random_bytes(16));
+        $this->saveSetting('google_state', json_encode(['s' => $state, 'exp' => self::nowMs() + 15 * 60000, 'by' => $by]));
+        /* access_type=offline + prompt=consent: WITHOUT both, Google gives
+           no refresh token on the second grant, and the connection silently
+           dies an hour later with no way to renew it. */
+
+        return ['url' => 'https://accounts.google.com/o/oauth2/v2/auth?'.http_build_query([
+            'client_id' => $this->googleClientId(), 'redirect_uri' => $this->googleRedirectUri(),
+            'response_type' => 'code', 'scope' => self::GR_SCOPE,
+            'access_type' => 'offline', 'prompt' => 'consent',
+            'include_granted_scopes' => 'true', 'state' => $state,
+        ])];
+    }
+
+    private function googleSaveToken(string $tok, int $exp, string $refresh, string $scope, string $by, string $email): void
+    {
+        $now = self::nowMs();
+        /* Google's refresh token has no expiry (until revoked, and unless
+           the app is still in Testing) — recorded far in the future; if
+           Google rejects it, refresh_exp is zeroed in googleToken(). */
+        $this->db()->update('INSERT INTO cg_akun (platform, nama, open_id, access_token, refresh_token, token_exp, refresh_exp, scope, sync_galat, oleh, at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE nama=VALUES(nama), open_id=VALUES(open_id), access_token=VALUES(access_token),
+              refresh_token=VALUES(refresh_token), token_exp=VALUES(token_exp), refresh_exp=VALUES(refresh_exp),
+              scope=VALUES(scope), sync_galat=VALUES(sync_galat), oleh=VALUES(oleh), at=VALUES(at)',
+            ['google', $email, $email, $tok, $refresh, $exp, $now + 3650 * 86400000, $scope, '', $by, $now]);
+    }
+
+    /** @throws RuntimeException */
+    public function googleCallback(string $code, string $state): array
+    {
+        $this->ensureTables();
+        $st = json_decode($this->setting('google_state'), true);
+        if (! is_array($st) || ! hash_equals((string) ($st['s'] ?? ''), $state)) {
+            throw new RuntimeException('Tautan otorisasi tidak dikenal. Ulangi dari tombol Hubungkan.');
+        }
+        if ((int) ($st['exp'] ?? 0) < self::nowMs()) {
+            throw new RuntimeException('Tautan otorisasi sudah kedaluwarsa (15 menit). Ulangi dari tombol Hubungkan.');
+        }
+        $this->saveSetting('google_state', '');
+        $r = $this->http('POST', 'https://oauth2.googleapis.com/token',
+            ['Content-Type' => 'application/x-www-form-urlencoded'],
+            http_build_query(['code' => $code, 'client_id' => $this->googleClientId(),
+                'client_secret' => $this->googleClientSecret(),
+                'redirect_uri' => $this->googleRedirectUri(), 'grant_type' => 'authorization_code']), 30);
+        $d = $r['data'];
+        if (! $d || empty($d['access_token'])) {
+            throw new RuntimeException(self::googleError($r, 'Google menolak token'));
+        }
+        $lamaRefresh = '';
+        if (empty($d['refresh_token'])) {
+            $lamaRefresh = (string) ($this->db()->selectOne("SELECT refresh_token FROM cg_akun WHERE platform = 'google'")->refresh_token ?? '');
+            if ($lamaRefresh === '') {
+                throw new RuntimeException('Google tidak memberi refresh token. Cabut akses app ini di myaccount.google.com/permissions lalu Hubungkan lagi.');
+            }
+        }
+        /* The consenting account's email — so the screen can name WHO is
+           connected; id_token is not requested, so it is read from
+           tokeninfo. */
+        $email = '';
+        $ti = $this->http('GET', 'https://oauth2.googleapis.com/tokeninfo?access_token='.rawurlencode((string) $d['access_token']), [], null, 20);
+        if (($ti['data'] ?? null) && ! empty($ti['data']['email'])) {
+            $email = (string) $ti['data']['email'];
+        }
+        $this->googleSaveToken((string) $d['access_token'],
+            self::nowMs() + (int) ($d['expires_in'] ?? 3600) * 1000,
+            ! empty($d['refresh_token']) ? (string) $d['refresh_token'] : $lamaRefresh,
+            (string) ($d['scope'] ?? self::GR_SCOPE), (string) ($st['by'] ?? ''), $email);
+        $this->googleLocations();
+
+        return $this->googleSync();
+    }
+
+    /** A still-valid access token; renewed via the refresh token under 2 min left. @throws RuntimeException */
+    private function googleToken(): string
+    {
+        $a = $this->db()->selectOne("SELECT * FROM cg_akun WHERE platform = 'google'");
+        if (! $a || (string) $a->refresh_token === '') {
+            throw new RuntimeException('Akun Google Business Profile belum terhubung.');
+        }
+        if ((int) $a->refresh_exp < self::nowMs()) {
+            throw new RuntimeException('Izin Google sudah dicabut atau kedaluwarsa. Tekan Hubungkan lagi.');
+        }
+        if ((int) $a->token_exp - self::nowMs() > 120000) {
+            return (string) $a->access_token;
+        }
+        $r = $this->http('POST', 'https://oauth2.googleapis.com/token',
+            ['Content-Type' => 'application/x-www-form-urlencoded'],
+            http_build_query(['client_id' => $this->googleClientId(), 'client_secret' => $this->googleClientSecret(),
+                'refresh_token' => (string) $a->refresh_token, 'grant_type' => 'refresh_token']), 30);
+        if (! $r['data'] || empty($r['data']['access_token'])) {
+            /* invalid_grant = refresh token revoked / app still in Testing
+               (Testing refresh tokens live 7 days). Marked disconnected so
+               the screen says to reconnect instead of repeating the same
+               error every sync. */
+            if (($r['data']['error'] ?? null) === 'invalid_grant') {
+                $this->db()->update("UPDATE cg_akun SET refresh_exp = 0, sync_galat = ? WHERE platform = 'google'",
+                    ['Izin Google dicabut/kedaluwarsa. Kalau app OAuth masih berstatus Testing, izinnya cuma bertahan 7 hari — terbitkan (Publish) app-nya.']);
+
+                throw new RuntimeException('Izin Google dicabut atau kedaluwarsa (invalid_grant). Tekan Hubungkan lagi. Kalau terulang tiap ±7 hari, app OAuth-nya masih berstatus Testing.');
+            }
+
+            throw new RuntimeException(self::googleError($r, 'Google menolak memperbarui token'));
+        }
+        $tok = (string) $r['data']['access_token'];
+        $this->db()->update("UPDATE cg_akun SET access_token = ?, token_exp = ? WHERE platform = 'google'",
+            [$tok, self::nowMs() + (int) ($r['data']['expires_in'] ?? 3600) * 1000]);
+
+        return $tok;
+    }
+
+    /** @throws RuntimeException */
+    private function googleGet(string $tok, string $url): array
+    {
+        $r = $this->http('GET', $url, ['Authorization' => 'Bearer '.$tok], null, 40);
+        if ($r['kode'] !== 200 || ! is_array($r['data'])) {
+            throw new RuntimeException(self::googleError($r, 'Google Business Profile menolak'));
+        }
+
+        return $r['data'];
+    }
+
+    /**
+     * Business locations from every account the person can reach. Old
+     * locations no longer returned are DEACTIVATED, not deleted — their
+     * reviews stay stored.
+     *
+     * @throws RuntimeException
+     */
+    public function googleLocations(): int
+    {
+        $this->ensureTables();
+        $tok = $this->googleToken();
+        $akun = [];
+        $url = 'https://mybusinessaccountmanagement.googleapis.com/v1/accounts?pageSize=20';
+        for ($h = 0; $url !== '' && $h < 5; $h++) {
+            $d = $this->googleGet($tok, $url);
+            foreach ($d['accounts'] ?? [] as $a) {
+                $akun[] = (string) $a['name'];
+            }
+            $url = ! empty($d['nextPageToken'])
+                ? 'https://mybusinessaccountmanagement.googleapis.com/v1/accounts?pageSize=20&pageToken='.rawurlencode($d['nextPageToken']) : '';
+        }
+        $ada = [];
+        foreach ($akun as $acc) {
+            $base = 'https://mybusinessbusinessinformation.googleapis.com/v1/'.$acc.'/locations?pageSize=100&readMask=name,title,storefrontAddress,metadata';
+            $url = $base;
+            for ($h = 0; $url !== '' && $h < 10; $h++) {
+                $d = $this->googleGet($tok, $url);
+                foreach ($d['locations'] ?? [] as $l) {
+                    /* Profiles Google flags as DUPLICATE are skipped: they
+                       never face the public and take no reviews; pulled,
+                       they only birth twin cards full of errors. Skipped,
+                       their old rows join the deactivation below. */
+                    if (! empty($l['metadata']['duplicateLocation'])) {
+                        continue;
+                    }
+                    /* The v4 name for reviews = accounts/A/locations/L. */
+                    $locId = preg_replace('#^locations/#', '', (string) $l['name']);
+                    $id = $acc.'/locations/'.$locId;
+                    $alamat = '';
+                    if (isset($l['storefrontAddress']['addressLines'])) {
+                        $alamat = implode(', ', (array) $l['storefrontAddress']['addressLines']);
+                    }
+                    if (isset($l['storefrontAddress']['locality'])) {
+                        $alamat .= ($alamat !== '' ? ', ' : '').$l['storefrontAddress']['locality'];
+                    }
+                    $this->db()->update('INSERT INTO cg_gtempat (id, sumber, place_id, nama, alamat, url, aktif)
+                        VALUES (?, ?, ?, ?, ?, ?, 1)
+                        ON DUPLICATE KEY UPDATE sumber=VALUES(sumber), place_id=VALUES(place_id),
+                          nama=VALUES(nama), alamat=VALUES(alamat), url=VALUES(url), aktif=1',
+                        [$id, 'gbp', isset($l['metadata']['placeId']) ? (string) $l['metadata']['placeId'] : '',
+                            self::cut($l['title'] ?? '', 250), self::cut($alamat, 490),
+                            isset($l['metadata']['mapsUri']) ? self::cut($l['metadata']['mapsUri'], 590) : '']);
+                    $ada[$id] = true;
+                }
+                $url = ! empty($d['nextPageToken']) ? $base.'&pageToken='.rawurlencode($d['nextPageToken']) : '';
+            }
+        }
+        foreach ($this->db()->select("SELECT id FROM cg_gtempat WHERE sumber = 'gbp'") as $t) {
+            if (! isset($ada[$t->id])) {
+                $this->db()->update('UPDATE cg_gtempat SET aktif = 0 WHERE id = ?', [$t->id]);
+            }
+        }
+
+        return count($ada);
+    }
+
+    /** @param array<string,mixed> $r */
+    private function googleSaveReview(array $r, int $now): void
+    {
+        /* Our own columns (in-system replies, ditangani flags) are NOT
+           overwritten by sync — except replies genuinely from Google
+           (answered in Maps directly), and only for the gbp source. */
+        $this->db()->update("INSERT INTO cg_greview (id, nama_res, sumber, tempat_id, penulis, penulis_url, foto, rating, teks, waktu_ms, url, balasan, balasan_at, pertama_at, sync_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE nama_res=VALUES(nama_res), tempat_id=VALUES(tempat_id), penulis=VALUES(penulis),
+              penulis_url=VALUES(penulis_url), foto=VALUES(foto), rating=VALUES(rating), teks=VALUES(teks),
+              waktu_ms=VALUES(waktu_ms), url=VALUES(url),
+              balasan=IF(VALUES(sumber)='gbp', VALUES(balasan), balasan),
+              balasan_at=IF(VALUES(sumber)='gbp', VALUES(balasan_at), balasan_at), sync_at=VALUES(sync_at)",
+            [sha1($r['nama_res']), self::cut($r['nama_res'], 590), $r['sumber'], $r['tempat_id'],
+                self::cut($r['penulis'], 190), self::cut($r['penulis_url'], 590), self::cut($r['foto'], 890),
+                max(0, min(5, (int) $r['rating'])), self::cut($r['teks'], 6000), (int) $r['waktu_ms'],
+                self::cut($r['url'], 590), $r['balasan'], (int) $r['balasan_at'], $now, $now]);
+    }
+
+    private function googleDaily(string $tempatId, float|int|null $rating, ?int $total): void
+    {
+        $this->db()->update('INSERT INTO cg_gtempat_harian (tempat_id, tgl, rating, total) VALUES (?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE rating=VALUES(rating), total=VALUES(total)',
+            [$tempatId, self::wibDate(0), $rating, $total]);
+    }
+
+    /** Business Profile reviews + Places top-ups. @throws RuntimeException */
+    public function googleSync(): array
+    {
+        $this->ensureTables();
+        $now = self::nowMs();
+        $jumlah = 0;
+        $galat = [];
+        $dicakup = [];
+        /* 1. Business Profile — every review of every location. */
+        $q = $this->db()->selectOne("SELECT refresh_token FROM cg_akun WHERE platform = 'google' AND refresh_exp > ?", [$now]);
+        if ($q && (string) $q->refresh_token !== '') {
+            try {
+                $tok = $this->googleToken();
+                if (! (int) $this->db()->selectOne("SELECT COUNT(*) c FROM cg_gtempat WHERE sumber='gbp'")->c) {
+                    $this->googleLocations();
+                }
+                foreach ($this->db()->select("SELECT * FROM cg_gtempat WHERE sumber='gbp' AND aktif=1") as $t) {
+                    if ((string) $t->place_id !== '') {
+                        $dicakup[(string) $t->place_id] = true;
+                    }
+                    try {
+                        $base = 'https://mybusiness.googleapis.com/v4/'.$t->id.'/reviews?pageSize=50&orderBy='.rawurlencode('updateTime desc');
+                        $url = $base;
+                        $rating = null;
+                        $total = null;
+                        /* Full history once (up to 40 pages = 2,000
+                           reviews), then the first page only — new and
+                           newly edited reviews always sort first on
+                           updateTime. */
+                        $penuh = $this->setting('gbp_bf_'.sha1($t->id)) !== '1';
+                        for ($h = 0; $url !== '' && $h < ($penuh ? 40 : 2); $h++) {
+                            $d = $this->googleGet($tok, $url);
+                            if (isset($d['averageRating'])) {
+                                $rating = (float) $d['averageRating'];
+                            }
+                            if (isset($d['totalReviewCount'])) {
+                                $total = (int) $d['totalReviewCount'];
+                            }
+                            $bintang = ['ONE' => 1, 'TWO' => 2, 'THREE' => 3, 'FOUR' => 4, 'FIVE' => 5];
+                            foreach ($d['reviews'] ?? [] as $rv) {
+                                $rep = $rv['reviewReply'] ?? null;
+                                $this->googleSaveReview(['nama_res' => (string) $rv['name'], 'sumber' => 'gbp',
+                                    'tempat_id' => (string) $t->id,
+                                    'penulis' => isset($rv['reviewer']['displayName']) ? (string) $rv['reviewer']['displayName'] : 'Pengguna Google',
+                                    'penulis_url' => '',
+                                    'foto' => isset($rv['reviewer']['profilePhotoUrl']) ? (string) $rv['reviewer']['profilePhotoUrl'] : '',
+                                    'rating' => isset($rv['starRating'], $bintang[$rv['starRating']]) ? $bintang[$rv['starRating']] : 0,
+                                    'teks' => isset($rv['comment']) ? self::googleStripTranslation((string) $rv['comment']) : '',
+                                    'waktu_ms' => self::isoMs($rv['createTime'] ?? ''),
+                                    'url' => (string) $t->url,
+                                    'balasan' => $rep && isset($rep['comment']) ? (string) $rep['comment'] : null,
+                                    'balasan_at' => $rep && isset($rep['updateTime']) ? self::isoMs($rep['updateTime']) : 0], $now);
+                                $jumlah++;
+                            }
+                            $url = ! empty($d['nextPageToken']) ? $base.'&pageToken='.rawurlencode($d['nextPageToken']) : '';
+                        }
+                        if ($penuh && $url === '') {
+                            $this->saveSetting('gbp_bf_'.sha1($t->id), '1');
+                        }
+                        $this->db()->update('UPDATE cg_gtempat SET rating = ?, total = ?, sync_at = ?, galat = ? WHERE id = ?',
+                            [$rating, $total, $now, '', $t->id]);
+                        $this->googleDaily((string) $t->id, $rating, $total);
+                    } catch (\Throwable $e) {
+                        $galat[] = $t->nama.': '.$e->getMessage();
+                        $this->db()->update('UPDATE cg_gtempat SET galat = ? WHERE id = ?',
+                            [self::cut($e->getMessage(), 590), $t->id]);
+                    }
+                }
+                $this->db()->update("UPDATE cg_akun SET sync_at = ?, sync_galat = ? WHERE platform = 'google'",
+                    [$now, self::cut(implode(' | ', $galat), 390)]);
+            } catch (\Throwable $e) {
+                $galat[] = $e->getMessage();
+                $this->db()->update("UPDATE cg_akun SET sync_at = ?, sync_galat = ? WHERE platform = 'google'",
+                    [$now, self::cut($e->getMessage(), 390)]);
+            }
+        }
+        /* 2. Places API — places Business Profile does not cover. */
+        $key = $this->googlePlacesKey();
+        if ($key !== '') {
+            foreach ($this->googlePlacesIds() as $pid) {
+                if (isset($dicakup[$pid])) {
+                    continue;
+                }
+                try {
+                    $jumlah += $this->googlePlacesPull($key, $pid, $now);
+                } catch (\Throwable $e) {
+                    $galat[] = $pid.': '.$e->getMessage();
+                    $this->db()->update("INSERT INTO cg_gtempat (id, sumber, place_id, galat) VALUES (?, 'places', ?, ?)
+                        ON DUPLICATE KEY UPDATE galat = VALUES(galat)",
+                        [$pid, $pid, self::cut($e->getMessage(), 590)]);
+                }
+            }
+            /* Place IDs removed from Pengaturan are deactivated (their
+               reviews stay stored). */
+            $aktif = array_flip($this->googlePlacesIds());
+            foreach ($this->db()->select("SELECT id FROM cg_gtempat WHERE sumber = 'places'") as $t) {
+                $this->db()->update('UPDATE cg_gtempat SET aktif = ? WHERE id = ?',
+                    [isset($aktif[$t->id]) ? 1 : 0, $t->id]);
+            }
+        }
+        $this->saveSetting('google_sync_at', (string) $now);
+        $this->saveSetting('google_galat', self::cut(implode(' | ', $galat), 900));
+
+        return ['jumlah' => $jumlah, 'galat' => $galat];
+    }
+
+    /**
+     * Business Profile glues on a machine translation: "original text\n\n
+     * (Translated by Google)\ntranslation" or the reverse "(Original)".
+     * What is stored is the guest's ORIGINAL text.
+     */
+    public static function googleStripTranslation(string $s): string
+    {
+        if (preg_match('/\(Original\)\s*(.+)$/s', $s, $m)) {
+            return trim($m[1]);
+        }
+        $p = strpos($s, '(Translated by Google)');
+        if ($p !== false) {
+            return trim(substr($s, 0, $p));
+        }
+
+        return $s;
+    }
+
+    /** @throws RuntimeException */
+    private function googlePlacesPull(string $key, string $pid, int $now): int
+    {
+        $r = $this->http('GET', self::GR_PLACES.'/places/'.rawurlencode($pid).'?languageCode=id',
+            ['X-Goog-Api-Key' => $key,
+                'X-Goog-FieldMask' => 'id,displayName,formattedAddress,rating,userRatingCount,googleMapsUri,reviews'], null, 30);
+        if ($r['kode'] !== 200 || ! is_array($r['data'])) {
+            throw new RuntimeException(self::googleError($r, 'Places API menolak'));
+        }
+        $d = $r['data'];
+        $rating = isset($d['rating']) ? (float) $d['rating'] : null;
+        $total = isset($d['userRatingCount']) ? (int) $d['userRatingCount'] : null;
+        $this->db()->update("INSERT INTO cg_gtempat (id, sumber, place_id, nama, alamat, rating, total, url, aktif, sync_at, galat)
+            VALUES (?, 'places', ?, ?, ?, ?, ?, ?, 1, ?, '')
+            ON DUPLICATE KEY UPDATE nama=VALUES(nama), alamat=VALUES(alamat), rating=VALUES(rating),
+              total=VALUES(total), url=VALUES(url), aktif=1, sync_at=VALUES(sync_at), galat=''",
+            [$pid, $pid, self::cut($d['displayName']['text'] ?? $pid, 250),
+                self::cut($d['formattedAddress'] ?? '', 490), $rating, $total,
+                self::cut($d['googleMapsUri'] ?? '', 590), $now]);
+        $this->googleDaily($pid, $rating, $total);
+        $n = 0;
+        foreach ($d['reviews'] ?? [] as $rv) {
+            if (empty($rv['name'])) {
+                continue;
+            }
+            $teks = isset($rv['originalText']['text']) ? (string) $rv['originalText']['text']
+                : (isset($rv['text']['text']) ? (string) $rv['text']['text'] : '');
+            $this->googleSaveReview(['nama_res' => (string) $rv['name'], 'sumber' => 'places', 'tempat_id' => $pid,
+                'penulis' => isset($rv['authorAttribution']['displayName']) ? (string) $rv['authorAttribution']['displayName'] : 'Pengguna Google',
+                'penulis_url' => isset($rv['authorAttribution']['uri']) ? (string) $rv['authorAttribution']['uri'] : '',
+                'foto' => isset($rv['authorAttribution']['photoUri']) ? (string) $rv['authorAttribution']['photoUri'] : '',
+                'rating' => isset($rv['rating']) ? (int) $rv['rating'] : 0, 'teks' => $teks,
+                'waktu_ms' => self::isoMs($rv['publishTime'] ?? ''),
+                'url' => isset($rv['googleMapsUri']) ? (string) $rv['googleMapsUri']
+                    : (isset($d['googleMapsUri']) ? (string) $d['googleMapsUri'] : ''),
+                'balasan' => null, 'balasan_at' => 0], $now);
+            $n++;
+        }
+
+        return $n;
+    }
+
+    /**
+     * Find a Place ID from a place name — nobody memorises Place IDs.
+     *
+     * @throws RuntimeException
+     */
+    public function googleSearch(array $d): array
+    {
+        $this->ensureTables();
+        $key = $this->googlePlacesKey();
+        if ($key === '') {
+            throw new RuntimeException('API key Places belum diisi (simpan dulu pengaturannya).');
+        }
+        $q = self::cut($d['q'] ?? '', 200);
+        if ($q === '') {
+            throw new RuntimeException('Ketik nama tempatnya.');
+        }
+        $r = $this->http('POST', self::GR_PLACES.'/places:searchText',
+            ['Content-Type' => 'application/json', 'X-Goog-Api-Key' => $key,
+                'X-Goog-FieldMask' => 'places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount'],
+            json_encode(['textQuery' => $q, 'languageCode' => 'id', 'pageSize' => 8]), 30);
+        if ($r['kode'] !== 200 || ! is_array($r['data'])) {
+            throw new RuntimeException(self::googleError($r, 'Places API menolak'));
+        }
+        $out = [];
+        foreach ($r['data']['places'] ?? [] as $p) {
+            $out[] = ['id' => (string) $p['id'], 'nama' => $p['displayName']['text'] ?? '',
+                'alamat' => $p['formattedAddress'] ?? '',
+                'rating' => isset($p['rating']) ? (float) $p['rating'] : null,
+                'total' => isset($p['userRatingCount']) ? (int) $p['userRatingCount'] : null];
+        }
+
+        return ['hasil' => $out];
+    }
+
+    /** Full read: places, 120 days of daily snapshots, reviews, account (no tokens), stored AI. */
+    public function googleRead(): array
+    {
+        $this->ensureTables();
+        $db = $this->db();
+        $tempat = $db->select('SELECT * FROM cg_gtempat ORDER BY aktif DESC, nama ASC');
+        $harian = $db->select('SELECT * FROM cg_gtempat_harian WHERE tgl >= ? ORDER BY tgl ASC', [self::wibDate(-120)]);
+        $review = $db->select('SELECT id, sumber, tempat_id, penulis, penulis_url, foto, rating, teks, waktu_ms, url,
+            balasan, balasan_at, balasan_oleh, ditangani, tangani_catatan, tangani_oleh, tangani_at, pertama_at
+            FROM cg_greview ORDER BY waktu_ms DESC LIMIT 3000');
+        $totalTersimpan = (int) $db->selectOne('SELECT COUNT(*) c FROM cg_greview')->c;
+        $akun = $db->selectOne("SELECT nama, refresh_exp, sync_at, sync_galat, oleh, at FROM cg_akun WHERE platform = 'google'");
+        if ($akun) {
+            $akun->terhubung = (int) $akun->refresh_exp > self::nowMs();
+        }
+        $ai = json_decode($this->setting('gr_ai'), true);
+
+        return ['tempat' => $tempat, 'harian' => $harian, 'review' => $review,
+            'totalTersimpan' => $totalTersimpan, 'akun' => $akun ?: null,
+            'ai' => is_array($ai) ? $ai : null,
+            'syncAt' => (int) $this->setting('google_sync_at', '0'), 'galat' => $this->setting('google_galat')];
+    }
+
+    /** @throws RuntimeException */
+    public function googleFindReview(string $id): object
+    {
+        $this->ensureTables();
+        $r = $this->db()->selectOne('SELECT * FROM cg_greview WHERE id = ?', [(string) $id]);
+        if (! $r) {
+            throw new RuntimeException('not_found:Review tidak ditemukan. Muat ulang halamannya.');
+        }
+
+        return $r;
+    }
+
+    /**
+     * The reply is PUBLISHED ON GOOGLE MAPS under the business name — seen
+     * in public. The writer is recorded (balasan_oleh) because Google only
+     * records the business name itself.
+     *
+     * @throws RuntimeException
+     */
+    public function googleReply(array $d, string $by): array
+    {
+        $r = $this->googleFindReview((string) ($d['id'] ?? ''));
+        if ($r->sumber !== 'gbp') {
+            throw new RuntimeException('Review ini ditarik lewat Places API — Google tidak mengizinkan membalasnya dari luar. Hubungkan Google Business Profile di Pengaturan supaya review bisa dibalas dari sini.');
+        }
+        $teks = trim((string) ($d['teks'] ?? ''));
+        if ($teks === '') {
+            throw new RuntimeException('Isi balasannya dulu.');
+        }
+        if (mb_strlen($teks) > self::GR_MAKS_BALAS) {
+            throw new RuntimeException('Balasan terlalu panjang (maks '.self::GR_MAKS_BALAS.' huruf).');
+        }
+        $tok = $this->googleToken();
+        $res = $this->http('PUT', 'https://mybusiness.googleapis.com/v4/'.$r->nama_res.'/reply',
+            ['Authorization' => 'Bearer '.$tok, 'Content-Type' => 'application/json'],
+            json_encode(['comment' => $teks], JSON_UNESCAPED_UNICODE), 30);
+        if ($res['kode'] !== 200) {
+            throw new RuntimeException(self::googleError($res, 'Google menolak balasan'));
+        }
+        $now = self::nowMs();
+        $this->db()->update('UPDATE cg_greview SET balasan = ?, balasan_at = ?, balasan_oleh = ? WHERE id = ?',
+            [$teks, $now, $by, $r->id]);
+
+        return ['ok' => true, 'at' => $now];
+    }
+
+    /** @throws RuntimeException */
+    public function googleDeleteReply(array $d): array
+    {
+        $r = $this->googleFindReview((string) ($d['id'] ?? ''));
+        if ($r->sumber !== 'gbp') {
+            throw new RuntimeException('Review ini tidak bisa dikelola dari sini (sumber Places API).');
+        }
+        $tok = $this->googleToken();
+        $res = $this->http('DELETE', 'https://mybusiness.googleapis.com/v4/'.$r->nama_res.'/reply',
+            ['Authorization' => 'Bearer '.$tok], null, 30);
+        if ($res['kode'] !== 200 && $res['kode'] !== 204 && $res['kode'] !== 404) {
+            throw new RuntimeException(self::googleError($res, 'Google menolak menghapus balasan'));
+        }
+        $this->db()->update("UPDATE cg_greview SET balasan = NULL, balasan_at = 0, balasan_oleh = '' WHERE id = ?", [$r->id]);
+
+        return ['ok' => true];
+    }
+
+    /**
+     * The "ditangani" flag — for internal follow-up (guest contacted,
+     * kitchen issue fixed), separate from the public reply.
+     *
+     * @throws RuntimeException
+     */
+    public function googleFlag(array $d, string $by): array
+    {
+        $r = $this->googleFindReview((string) ($d['id'] ?? ''));
+        $ya = ! empty($d['ditangani']);
+        $this->db()->update('UPDATE cg_greview SET ditangani = ?, tangani_catatan = ?, tangani_oleh = ?, tangani_at = ? WHERE id = ?',
+            [$ya ? 1 : 0, $ya ? self::cut($d['catatan'] ?? '', 1500) : null,
+                $ya ? $by : '', $ya ? self::nowMs() : 0, $r->id]);
+
+        return ['ok' => true];
+    }
+
+    /** @throws RuntimeException */
+    public function googleAi(array $d, string $by): array
+    {
+        $this->ensureTables();
+        $hari = max(7, min(365, (int) ($d['hari'] ?? 90)));
+        $dari = (time() - $hari * 86400) * 1000;
+        $tempat = isset($d['tempat']) ? (string) $d['tempat'] : '';
+        $sql = 'SELECT g.id, g.penulis, g.rating, g.teks, g.waktu_ms, g.balasan, g.ditangani, t.nama tnama
+            FROM cg_greview g LEFT JOIN cg_gtempat t ON t.id = g.tempat_id
+            WHERE g.waktu_ms >= ?'.($tempat !== '' ? ' AND g.tempat_id = ?' : '').' ORDER BY g.waktu_ms DESC LIMIT 250';
+        $baris = $this->db()->select($sql, $tempat !== '' ? [$dari, $tempat] : [$dari]);
+        if (! $baris) {
+            throw new RuntimeException('Belum ada review dalam '.$hari.' hari terakhir untuk dianalisa. Sinkronkan dulu, atau pilih rentang yang lebih panjang.');
+        }
+        /* Short ids (r1, r2, …) for the AI: cheaper on tokens, and invented
+           ids are recognisable and dropped. */
+        $peta = [];
+        $data = [];
+        foreach ($baris as $i => $b) {
+            $k = 'r'.($i + 1);
+            $peta[$k] = $b->id;
+            $data[] = ['id' => $k, 'bintang' => (int) $b->rating,
+                'tanggal' => $b->waktu_ms ? gmdate('Y-m-d', (int) ($b->waktu_ms / 1000) + 7 * 3600) : '',
+                'tempat' => (string) $b->tnama, 'teks' => self::cut((string) $b->teks, 700),
+                'sudahDibalas' => $b->balasan !== null && $b->balasan !== '',
+                'sudahDitangani' => (int) $b->ditangani === 1];
+        }
+        $profil = $this->setting('profil', self::PROFIL_BAWAAN);
+        $system = 'Kamu manajer pengalaman tamu (guest experience) untuk bisnis F&B di Indonesia. Jawab dalam Bahasa Indonesia. '
+            .'Analisa HANYA dari review yang diberikan; jangan mengarang review, angka, atau kejadian. Setiap temuan wajib menyebut id review buktinya. '
+            .'Balas HANYA dengan satu objek JSON, tanpa teks lain.';
+        $prompt = "Profil bisnis: $profil\nReview Google ($hari hari terakhir, terbaru dulu):\n".json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+            ."\n\nBuat analisa dengan bentuk JSON persis berikut:\n"
+            .'{"ringkasan":"3-4 kalimat kondisi umum","sentimen":{"positif":0,"netral":0,"negatif":0},'
+            .'"kekuatan":[{"tema":"","penjelasan":"","bukti":["r1"]}],'
+            .'"perbaikan":[{"masalah":"","area":"Makanan|Minuman|Pelayanan|Kecepatan|Kebersihan|Harga|Suasana|Fasilitas|Lainnya","jumlah":0,"prioritas":"tinggi|sedang|rendah","saran":"langkah konkret yang bisa dikerjakan tim","bukti":["r2"]}],'
+            .'"tangani":[{"review":"r3","urgensi":"segera|tinggi|sedang","alasan":"kenapa perlu ditangani","tindakan":"tindak lanjut internal yang disarankan","usulanBalasan":"draf balasan publik yang sopan, minta maaf bila perlu, tanpa janji yang tidak bisa ditepati, maks 600 huruf"}]}'
+            ."\nAturan: sentimen berisi JUMLAH review. 3-6 kekuatan, 3-8 perbaikan diurut prioritas. 'tangani' berisi review yang mengeluh/kecewa dan BELUM dibalas atau BELUM ditangani, "
+            .'diurut paling mendesak (bintang rendah, keluhan berat seperti keracunan/kebersihan/perlakuan kasar/uang, review terbaru), maksimal 15. Jangan masukkan review yang sudah dibalas DAN sudah ditangani.';
+        $r = $this->aiAsk($system, $prompt, 9000);
+        /* Fresh connection after the AI wait (else "MySQL server has gone away"). */
+        $this->freshDb();
+        $h = $r['hasil'];
+        $bersihBukti = function ($arr) use ($peta) {
+            $o = [];
+            if (is_array($arr)) {
+                foreach ($arr as $x) {
+                    if (isset($peta[(string) $x])) {
+                        $o[] = $peta[(string) $x];
+                    }
+                }
+            }
+
+            return array_values(array_unique($o));
+        };
+        $out = ['ringkasan' => isset($h['ringkasan']) ? self::cut($h['ringkasan'], 1500) : '',
+            'sentimen' => isset($h['sentimen']) && is_array($h['sentimen']) ? $h['sentimen'] : null,
+            'kekuatan' => [], 'perbaikan' => [], 'tangani' => []];
+        foreach ((isset($h['kekuatan']) && is_array($h['kekuatan']) ? $h['kekuatan'] : []) as $x) {
+            if (! is_array($x)) {
+                continue;
+            }
+            $out['kekuatan'][] = ['tema' => self::cut($x['tema'] ?? '', 200),
+                'penjelasan' => self::cut($x['penjelasan'] ?? '', 600),
+                'bukti' => $bersihBukti($x['bukti'] ?? [])];
+        }
+        foreach ((isset($h['perbaikan']) && is_array($h['perbaikan']) ? $h['perbaikan'] : []) as $x) {
+            if (! is_array($x)) {
+                continue;
+            }
+            $out['perbaikan'][] = ['masalah' => self::cut($x['masalah'] ?? '', 250),
+                'area' => self::cut($x['area'] ?? '', 40),
+                'jumlah' => (int) ($x['jumlah'] ?? 0),
+                'prioritas' => in_array($x['prioritas'] ?? '', ['tinggi', 'sedang', 'rendah'], true) ? $x['prioritas'] : 'sedang',
+                'saran' => self::cut($x['saran'] ?? '', 800), 'bukti' => $bersihBukti($x['bukti'] ?? [])];
+        }
+        /* "tangani" entries pointing at invented reviews are DROPPED — a
+           draft for a review that does not exist is usable by nobody. */
+        foreach ((isset($h['tangani']) && is_array($h['tangani']) ? $h['tangani'] : []) as $x) {
+            if (! is_array($x) || ! isset($x['review'], $peta[(string) $x['review']])) {
+                continue;
+            }
+            $out['tangani'][] = ['id' => $peta[(string) $x['review']],
+                'urgensi' => in_array($x['urgensi'] ?? '', ['segera', 'tinggi', 'sedang'], true) ? $x['urgensi'] : 'sedang',
+                'alasan' => self::cut($x['alasan'] ?? '', 500), 'tindakan' => self::cut($x['tindakan'] ?? '', 600),
+                'usulanBalasan' => self::cut($x['usulanBalasan'] ?? '', 1200)];
+        }
+        $out['meta'] = ['at' => self::nowMs(), 'oleh' => $by, 'model' => $r['model'],
+            'hari' => $hari, 'jumlah' => count($baris), 'tempat' => $tempat];
+        $this->saveSetting('gr_ai', json_encode($out, JSON_UNESCAPED_UNICODE));
+
+        return $out;
+    }
+
+    /**
+     * A reply draft for ONE review (the "Buat draf AI" button in the reply
+     * box). Never stored; a person still sends it.
+     *
+     * @throws RuntimeException
+     */
+    public function googleAiDraft(array $d): array
+    {
+        $this->ensureTables();
+        $r = $this->googleFindReview((string) ($d['id'] ?? ''));
+        $profil = $this->setting('profil', self::PROFIL_BAWAAN);
+        $system = 'Kamu menulis balasan review Google atas nama bisnis F&B di Indonesia. Bahasa mengikuti bahasa review (default Indonesia), sopan, hangat, personal, '
+            .'tidak defensif, tidak menjanjikan kompensasi yang tidak disebut, maksimal 600 huruf. Balas HANYA dengan JSON {"balasan":"..."}.';
+        $prompt = "Profil bisnis: $profil\nNama tamu: ".$r->penulis."\nBintang: ".(int) $r->rating."\nReview: ".self::cut((string) $r->teks, 2000)
+            .((isset($d['arahan']) && trim($d['arahan']) !== '') ? "\nArahan dari tim: ".self::cut($d['arahan'], 500) : '');
+        $x = $this->aiAsk($system, $prompt, 1500);
+
+        return ['balasan' => self::cut($x['hasil']['balasan'] ?? '', self::GR_MAKS_BALAS)];
+    }
+
+    public function googleDisconnect(string $by): array
+    {
+        $this->ensureTables();
+        $now = self::nowMs();
+        /* Tokens are emptied; pulled reviews & places STAY stored. */
+        $this->db()->update("UPDATE cg_akun SET access_token='', refresh_token='', token_exp=0, refresh_exp=0, oleh=?, at=? WHERE platform=?",
+            [$by, $now, 'google']);
+        $this->log('Akun Google', '', 'diputus', $by);
 
         return ['ok' => true];
     }

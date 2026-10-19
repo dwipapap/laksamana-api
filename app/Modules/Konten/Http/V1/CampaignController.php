@@ -63,7 +63,9 @@ class CampaignController
     private function safe(callable $fn): JsonResponse
     {
         try {
-            return ApiResponse::ok($fn());
+            $out = $fn();
+
+            return $out instanceof JsonResponse ? $out : ApiResponse::ok($out);
         } catch (RecordConflict $e) {
             return self::conflict($e);
         } catch (RuntimeException $e) {
@@ -133,6 +135,18 @@ class CampaignController
         return ApiResponse::ok($this->analytics->state(false)['setting']);
     }
 
+    private function requireVersion(Request $r, ?string $id, mixed $bodyId): ?JsonResponse
+    {
+        if (($id ?? '') === '' && trim((string) ($bodyId ?? '')) === '') {
+            return null;
+        }
+        if ($this->baseVersion($r) === null) {
+            return ApiResponse::error('version_required', 'Send the version you last read (If-Match header or "version").', 428);
+        }
+
+        return null;
+    }
+
     // ─────────────────────────── insight ──
 
     public function saveInsight(Request $r, ?string $id = null): JsonResponse
@@ -148,6 +162,9 @@ class CampaignController
             'aksi' => 'nullable|string',
             'sumber' => 'nullable|in:manual,tiktok,instagram,konten,ai',
         ]);
+        if ($err = $this->requireVersion($r, $id, $v['id'] ?? null)) {
+            return $err;
+        }
 
         return $this->safe(function () use ($r, $v, $id) {
             if ($id !== null && $id !== '') {
@@ -156,7 +173,7 @@ class CampaignController
             $out = $this->analytics->saveInsight($v, $this->actor($r), $this->baseVersion($r));
             $row = $this->analytics->findInsight($out['id']);
 
-            return self::withVersion((array) $row, CampaignAnalytics::versionOfRow($row))->getData(true);
+            return self::withVersion((array) $row, CampaignAnalytics::versionOfRow($row));
         });
     }
 
@@ -190,6 +207,9 @@ class CampaignController
             'catatan' => 'nullable|string',
             'bankId' => 'nullable|string|max:40',
         ]);
+        if ($err = $this->requireVersion($r, $id, $v['id'] ?? null)) {
+            return $err;
+        }
 
         return $this->safe(function () use ($r, $v, $id) {
             if ($id !== null && $id !== '') {
@@ -198,7 +218,7 @@ class CampaignController
             $out = $this->analytics->saveSchedule($v, $this->actor($r), $this->baseVersion($r));
             $row = $this->analytics->findSchedule($out['id']);
 
-            return self::withVersion((array) $row, CampaignAnalytics::versionOfRow($row))->getData(true);
+            return self::withVersion((array) $row, CampaignAnalytics::versionOfRow($row));
         });
     }
 
@@ -233,6 +253,9 @@ class CampaignController
             'sumber' => 'nullable|in:manual,riset',
             'batch' => 'nullable|string|max:40',
         ]);
+        if ($err = $this->requireVersion($r, $id, $v['id'] ?? null)) {
+            return $err;
+        }
 
         return $this->safe(function () use ($r, $v, $id) {
             if ($id !== null && $id !== '') {
@@ -241,7 +264,7 @@ class CampaignController
             $out = $this->analytics->saveBank($v, $this->actor($r), $this->baseVersion($r));
             $row = $this->analytics->findBank($out['id']);
 
-            return self::withVersion((array) $row, CampaignAnalytics::versionOfRow($row))->getData(true);
+            return self::withVersion((array) $row, CampaignAnalytics::versionOfRow($row));
         });
     }
 
@@ -341,6 +364,99 @@ class CampaignController
         }
     }
 
+    // ─────────────────────────── Google Review ──
+
+    public function googleState(): JsonResponse
+    {
+        return ApiResponse::ok($this->analytics->googleRead());
+    }
+
+    public function googleSync(): JsonResponse
+    {
+        return $this->safe(fn () => $this->analytics->googleSync());
+    }
+
+    public function googleStart(Request $r): JsonResponse
+    {
+        return $this->safe(fn () => $this->analytics->googleStart($this->actor($r)));
+    }
+
+    public function googleReply(Request $r): JsonResponse
+    {
+        $v = $r->validate([
+            'id' => 'required|string|max:40',
+            'teks' => 'nullable|string',
+        ]);
+
+        return $this->safe(fn () => $this->analytics->googleReply($v, $this->actor($r)));
+    }
+
+    public function googleDeleteReply(Request $r): JsonResponse
+    {
+        $v = $r->validate(['id' => 'required|string|max:40']);
+
+        return $this->safe(fn () => $this->analytics->googleDeleteReply($v));
+    }
+
+    public function googleFlag(Request $r): JsonResponse
+    {
+        $v = $r->validate([
+            'id' => 'required|string|max:40',
+            'ditangani' => 'nullable|boolean',
+            'catatan' => 'nullable|string',
+        ]);
+
+        return $this->safe(fn () => $this->analytics->googleFlag($v, $this->actor($r)));
+    }
+
+    public function googleAi(Request $r): JsonResponse
+    {
+        $v = $r->validate([
+            'hari' => 'nullable|integer|min:1|max:1000',
+            'tempat' => 'nullable|string|max:190',
+        ]);
+
+        return $this->safe(fn () => $this->analytics->googleAi($v, $this->actor($r)));
+    }
+
+    public function googleAiDraft(Request $r): JsonResponse
+    {
+        $v = $r->validate([
+            'id' => 'required|string|max:40',
+            'arahan' => 'nullable|string',
+        ]);
+
+        return $this->safe(fn () => $this->analytics->googleAiDraft($v));
+    }
+
+    /** Campaign admin only (route gate): like legacy campaignGoogleCari. */
+    public function googleSearch(Request $r): JsonResponse
+    {
+        $v = $r->validate(['q' => 'nullable|string']);
+
+        return $this->safe(fn () => $this->analytics->googleSearch($v));
+    }
+
+    /** Campaign admin only (route gate): tokens cleared, reviews stay. */
+    public function googleDisconnect(Request $r): JsonResponse
+    {
+        return $this->safe(fn () => $this->analytics->googleDisconnect($this->actor($r)));
+    }
+
+    /** Public: the state token is the guard (single-use, 15 minutes), like legacy. */
+    public function googleCallback(Request $r): RedirectResponse
+    {
+        try {
+            $n = $this->analytics->googleCallback((string) $r->query('code', ''), (string) $r->query('state', ''));
+            $pesan = 'Google Business Profile terhubung, '.$n['jumlah'].' review ditarik.'
+                .($n['galat'] ? ' Sebagian gagal: '.implode(' | ', $n['galat']) : '');
+
+            return redirect()->to(self::vueBase().'/konten/greview?google=ok&pesan='.urlencode($pesan).'#greview');
+        } catch (RuntimeException $e) {
+            return redirect()->to(self::vueBase().'/konten/greview?google=gagal&pesan='.urlencode($e->getMessage()).'#greview');
+        }
+    }
+
     // ─────────────────────────── settings (campaign admin) ──
 
     public function saveSettings(Request $r): JsonResponse
@@ -352,6 +468,10 @@ class CampaignController
             'tiktokSecret' => 'nullable|string',
             'igId' => 'nullable|string',
             'igSecret' => 'nullable|string',
+            'googleClientId' => 'nullable|string',
+            'googleClientSecret' => 'nullable|string',
+            'placesKey' => 'nullable|string',
+            'placesIds' => 'nullable|string',
             'kategori' => 'nullable',
             'profil' => 'nullable|string',
         ]);

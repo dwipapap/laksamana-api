@@ -62,3 +62,48 @@ This is an older variant of marketing's saveAll. Reuse `App\Support\RowSync` (bu
 - `GET /state` (one-call bootstrap) + `GET /stats`, `GET /logs` +
   `POST /logs`, `GET|PUT /documents/{settings,perms,seeded}` (whole-object,
   content-hash versioned).
+
+## Google Review (menu Analytics, port of `lib_greview.php`)
+
+Legacy source (office `develop` 78424a5, 6e578df — not on `main`):
+`konten-mysql/lib_greview.php` + `campaign-google.php`, 11
+`campaignGoogle*` actions through `cg_aksi`. **No legacy compat route:**
+campaign actions were never ported to `KontenLegacyController` (TikTok/IG
+likewise v1-only), so the old frontend keeps calling the legacy PHP for
+these while Vue uses v1.
+
+- **Tables** (konten DB, `CREATE TABLE IF NOT EXISTS` in
+  `CampaignAnalytics::ensureTables`, same shape as `gr_pastikan` — no
+  Laravel migration, per the legacy-table rule): `cg_gtempat` (watched
+  places, `sumber` gbp/places), `cg_gtempat_harian` (PK
+  `tempat_id,tgl`, daily rating/total snapshots), `cg_greview` (PK
+  `sha1` of the review resource name). `cg_akun` row `platform='google'`
+  holds the OAuth tokens; `cg_setting` keys `google_client_id`,
+  `google_client_secret`, `google_places_key`, `google_places`,
+  `google_state`, `google_sync_at`, `google_galat`, `gr_ai`, `gbp_bf_*`.
+  Env `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`GOOGLE_PLACES_KEY` win
+  over the table, like the TikTok/IG keys.
+- **Two sources:** Business Profile OAuth (`business.manage`,
+  `access_type=offline` + `prompt=consent`) pulls ALL reviews and can
+  reply (PUT/DELETE v4 `/reply`); Places API key pulls 5 reviews per
+  place, read-only, accumulated per sync. Places covered by GBP (same
+  `metadata.placeId`) are skipped; `metadata.duplicateLocation` profiles
+  are skipped (and deactivated). GBP backfills once per location
+  (`gbp_bf_<sha1>`, ≤40 pages `updateTime desc`), then the first pages.
+- **Never delete:** `cg_greview` has no delete path; `pertama_at` is
+  insert-only; sync only overwrites GBP replies from Google itself.
+  Reviews reach the AI only via `google/ai` + `google/draft` (existing
+  `aiAsk()` provider); invented AI review ids are dropped.
+- **v1** (gate `konten|campaign`; search/disconnect need a campaign admin;
+  OAuth callback public, state-guarded, redirects to
+  `{OFFICE_VUE_URL}/konten/greview?google=ok|gagal&pesan=…#greview`):
+  contract in `docs/api/konten.md` ("Google Review"), tests in
+  `tests/Feature/Konten/GoogleReviewTest.php`.
+- **Deliberate differences from legacy:** PATCH updates merge absent keys
+  from the stored row (so partial payloads validate as the whole they
+  become); update-without-version is 428 and stale-version 409 before
+  field validation (the documented contract, which the port now keeps);
+  `safe()` passes controller-built responses through unwrapped
+  (previously double-enveloped); disconnect appends a log entry like the
+  TikTok/IG disconnects. Validation messages stay the legacy Indonesian
+  strings verbatim.

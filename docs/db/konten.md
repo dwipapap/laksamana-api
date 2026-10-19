@@ -220,6 +220,32 @@ every row missing from the payload with no `_sejak` bound (reproduced
 exactly; v1 has no whole-state save so it cannot happen there). An empty
 list never deletes. `logs` trim to the newest 5000 on append.
 
+## Google Review tables (legacy, not core)
+
+`cg_gtempat`, `cg_gtempat_harian` and `cg_greview` are legacy analytics
+tables in the konten database, created with `CREATE TABLE IF NOT EXISTS`
+by `CampaignAnalytics::ensureTables()` (same shape as `gr_pastikan`;
+charset/collation fall back to the database default
+`utf8mb4/utf8mb4_unicode_ci`, identical to the legacy explicit clause).
+They are NOT core tables: no migration, no importer, no cutover.
+
+- `cg_gtempat`: watched places. `id` is the place_id (Places) or
+  `accounts/A/locations/L` (Business Profile); `place_id` is kept apart
+  so two sources for the same place are recognised. `sumber` gbp/places,
+  `aktif` (unlisted locations are deactivated, never deleted), `rating`,
+  `total`, `sync_at`, `galat`.
+- `cg_gtempat_harian`: PK (`tempat_id`, `tgl`) — daily rating/total
+  snapshots, the only way to see the rating move.
+- `cg_greview`: PK `sha1` of the review resource name (resource names can
+  run past 190 chars; a truncated PK would collide). Our own columns
+  (`balasan*` from this system, `ditangani*`) survive sync; only replies
+  genuinely from Google overwrite them, gbp only. `pertama_at` is
+  insert-only. No delete path exists.
+- `cg_akun` row `platform='google'` holds the OAuth tokens (same columns
+  as TikTok/IG); `cg_setting` keys `google_client_id`,
+  `google_client_secret`, `google_places_key`, `google_places`,
+  `google_state`, `google_sync_at`, `google_galat`, `gr_ai`, `gbp_bf_*`.
+
 ## Concurrency
 
 The millisecond stamp is the concurrency scheme (`baseUpdatedAt` guard,
