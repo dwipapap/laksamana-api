@@ -47,8 +47,46 @@ class AccountRepository
 
     public static function userColumnsSql(): string
     {
+        return 'id, name, pin, active, keterangan, no_hp, talenta_id, username, email, '
+            .implode(', ', array_values(OfficeAccess::HR_COLUMNS));
+    }
+
+    /** Whether the legacy `users` table already has the `email` column (manual ALTER, docs/db/identity.md). */
+    protected ?bool $hasEmail = null;
+
+    protected function hasEmailColumn(): bool
+    {
+        if ($this->hasEmail !== null) {
+            return $this->hasEmail;
+        }
+        try {
+            $this->hasEmail = (bool) $this->db()->selectOne(
+                'SELECT 1 x FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1',
+                ['users', 'email']);
+        } catch (\Throwable) {
+            $this->hasEmail = false; // optional legacy column: never break reads on the check itself
+        }
+
+        return $this->hasEmail;
+    }
+
+    /** SELECT list for `users`: with `email` when the column exists, without it (plus '' fallback) before the ALTER. */
+    protected function userSelectColumns(): string
+    {
+        if ($this->hasEmailColumn()) {
+            return self::userColumnsSql();
+        }
+
         return 'id, name, pin, active, keterangan, no_hp, talenta_id, username, '
             .implode(', ', array_values(OfficeAccess::HR_COLUMNS));
+    }
+
+    /** Raw row -> legacy shape: missing `email` (pre-ALTER) reads as ''. */
+    protected static function withEmailFallback(array $row): array
+    {
+        $row['email'] ??= '';
+
+        return $row;
     }
 
     // ---------------------------------------------------------------- users
@@ -56,9 +94,9 @@ class AccountRepository
     /** @return array<string,mixed>|null */
     public function userById(string $id): ?array
     {
-        $r = $this->db()->selectOne('SELECT '.self::userColumnsSql().' FROM `users` WHERE id = ? LIMIT 1', [self::s($id)]);
+        $r = $this->db()->selectOne('SELECT '.$this->userSelectColumns().' FROM `users` WHERE id = ? LIMIT 1', [self::s($id)]);
 
-        return $r ? (array) $r : null;
+        return $r ? self::withEmailFallback((array) $r) : null;
     }
 
     /**
@@ -75,7 +113,8 @@ class AccountRepository
             return null;
         }
         $pin = self::s($pin);
-        $cols = 'id, name, pin, active, keterangan, talenta_id, username';
+        $cols = 'id, name, pin, active, keterangan, no_hp, talenta_id, username'
+            .($this->hasEmailColumn() ? ', email' : '');
 
         $r = $this->db()->selectOne(
             "SELECT $cols FROM `users`
@@ -83,21 +122,21 @@ class AccountRepository
             [$u, $pin]
         );
         if ($r) {
-            return (array) $r;
+            return self::withEmailFallback((array) $r);
         }
         $r = $this->db()->selectOne(
             "SELECT $cols FROM `users` WHERE LOWER(TRIM(name)) = ? AND TRIM(pin) = ? AND active = 1",
             [$u, $pin]
         );
 
-        return $r ? (array) $r : null;
+        return $r ? self::withEmailFallback((array) $r) : null;
     }
 
     /** @return array<int,array<string,mixed>> real rows only (no half-empty ghosts) */
     public function allUsers(): array
     {
-        return array_map(fn ($r) => (array) $r, $this->db()->select(
-            'SELECT '.self::userColumnsSql()." FROM `users`
+        return array_map(fn ($r) => self::withEmailFallback((array) $r), $this->db()->select(
+            'SELECT '.$this->userSelectColumns()." FROM `users`
              WHERE TRIM(id) <> '' AND TRIM(name) <> '' ORDER BY name ASC"
         ));
     }
@@ -133,6 +172,20 @@ class AccountRepository
         return $r ? (array) $r : null;
     }
 
+    /** @return array<string,mixed>|null owner (id, name) of a non-blank email (case-insensitive); null before the ALTER */
+    public function emailOwner(string $email, string $exceptId): ?array
+    {
+        $e = mb_strtolower(trim(self::s($email)), 'UTF-8');
+        if ($e === '' || ! $this->hasEmailColumn()) {
+            return null;
+        }
+        $r = $this->db()->selectOne("SELECT id, name FROM `users`
+             WHERE TRIM(email) <> '' AND LOWER(TRIM(email)) = ? AND id <> ? LIMIT 1",
+            [$e, self::s($exceptId)]);
+
+        return $r ? (array) $r : null;
+    }
+
     /** Legacy changePin: by name, active only. Returns affected rows. */
     public function updatePinByName(string $name, string $pin): int
     {
@@ -159,11 +212,18 @@ class AccountRepository
     /**
      * Dynamic user update. Keys are column names (validated against the
      * users table); values are stored as given. Returns affected rows.
+     * `email` is dropped silently before the legacy ALTER (docs/db/identity.md).
      */
     public function updateUser(string $id, array $columns): int
     {
-        $allowed = ['name', 'pin', 'active', 'keterangan', 'no_hp', 'talenta_id', 'username',
+        $allowed = ['name', 'pin', 'active', 'keterangan', 'no_hp', 'talenta_id', 'username', 'email',
             ...array_values(OfficeAccess::HR_COLUMNS)];
+        if (! $this->hasEmailColumn()) {
+            unset($columns['email']);
+        } elseif (array_key_exists('email', $columns)) {
+            $e = mb_strtolower(trim((string) $columns['email']), 'UTF-8');
+            $columns['email'] = $e;
+        }
         $set = [];
         $arg = [];
         foreach ($columns as $col => $val) {
@@ -184,8 +244,13 @@ class AccountRepository
     /** Dynamic user insert. Keys are column names (same allowlist as updateUser, plus `id`). */
     public function insertUser(array $columns): void
     {
-        $allowed = ['id', 'name', 'pin', 'active', 'keterangan', 'no_hp', 'talenta_id', 'username',
+        $allowed = ['id', 'name', 'pin', 'active', 'keterangan', 'no_hp', 'talenta_id', 'username', 'email',
             ...array_values(OfficeAccess::HR_COLUMNS)];
+        if (! $this->hasEmailColumn()) {
+            unset($columns['email']);
+        } elseif (array_key_exists('email', $columns)) {
+            $columns['email'] = mb_strtolower(trim((string) $columns['email']), 'UTF-8');
+        }
         $cols = [];
         $vals = [];
         foreach ($columns as $col => $val) {

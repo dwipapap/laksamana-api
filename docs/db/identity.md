@@ -4,7 +4,8 @@ User, Modul, Akses (Izin Akses, Larangan, Admin Modul), Divisi (its words,
 Kepala Divisi, Penempatan Divisi) and the legacy Sesi tokens. First in the
 cutover order (PRD #1): every other FK points at `user`.
 
-Migration: `database/migrations/2026_09_26_090000_create_identity_tables.php`.
+Migration: `database/migrations/2026_09_26_090000_create_identity_tables.php`
+plus `2026_10_19_090000_add_email_to_user_table.php` (`user.email`, nullable unique, `''` = `NULL` like `username`).
 Importer: `App\Core\Imports\AccountImporter` (`php artisan core:import account`).
 Served from core when `DB_ACCOUNT_CONNECTION=core` (#44): `App\Auth\CoreAccountRepository`
 replaces `AccountRepository` behind the same contract, and the switch back to
@@ -37,6 +38,7 @@ erDiagram
         string legacy_id UK "users.id"
         string nama
         string username UK "NULL when blank"
+        string email UK "NULL when blank, lowercase"
         string nama_tampilan
         string pin "plain until security follow-up #1"
         bool aktif "false = User Nonaktif"
@@ -112,6 +114,7 @@ erDiagram
 | `account.users.id` | `user.legacy_id` | ULID `id` is new |
 | `users.name`, `pin`, `active`, `no_hp`, `talenta_id` | `nama`, `pin`, `aktif`, `no_hp`, `talenta_id` | |
 | `users.username` | `username` | `''` → `NULL`, so the unique index allows many Users without one |
+| `users.email` | `email` | `''` → `NULL` (lowercased), same convention as `username`; importer reads it when the legacy column exists, else `NULL` |
 | `users.display_name` | `nama_tampilan` | |
 | `users.keterangan` | `tim` | Tim, free text: Akses Bawaan, Divisi |
 | `users.branch`, `organization`, `job_position`, `job_level`, `employment_status` | `cabang`, `organisasi`, `jabatan`, `level_jabatan`, `status_kerja` | HR data |
@@ -151,6 +154,34 @@ Penempatan Divisi cannot be deleted; its words go with it.
 
 Account has no legacy concurrency field; `version` starts at `1` and the
 importer bumps it on every row it changes.
+
+## Contact email (`email` + `no_hp`)
+
+- **Core:** `2026_10_19_090000_add_email_to_user_table.php` adds
+  `user.email VARCHAR(190) NULL UNIQUE` (`''` → `NULL`, lowercased — the same
+  convention as `username`). `CoreAccountRepository::USER` selects it as
+  `COALESCE(email,'')`, `COLUMNS` maps `email => email`, and `coreValue`
+  lowercases + `''` → `NULL`.
+- **Legacy:** the account DB has no migrations. Apply once, by hand, on every
+  environment that still serves `legacy_account` (production, dev, the restored
+  local dump):
+
+  ```sql
+  ALTER TABLE `users`
+    ADD COLUMN `email` VARCHAR(190) NULL DEFAULT NULL AFTER `username`,
+    ADD UNIQUE INDEX `users_email_unique` (`email`);
+  ```
+
+  Until that ALTER runs, `AccountRepository` keeps working: reads fall back to
+  `email = ''` (`hasEmailColumn()` via `information_schema`), writes drop the
+  `email` key, and `emailOwner()` reports no clash. After the ALTER, reads and
+  writes use the column with no code change.
+- **API:** `GET /me` returns `email` (`''` when empty) alongside `noHp`;
+  `POST /users` / `PATCH /users/{id}` accept `email` (nullable, email, ≤190,
+  lowercase) and return `{id, email, noHp}`; `PUT /me/contact {email?, noHp?}`
+  is the self-service equivalent (`email_taken` / `bad_email` / `bad_no_hp`
+  on refusal); rosters (`POST/PATCH /account/roster`) whitelist `email`
+  through `rosterSaveUserCore`.
 
 ## Import and switch
 

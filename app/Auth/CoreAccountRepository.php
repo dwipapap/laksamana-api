@@ -26,13 +26,14 @@ use Illuminate\Support\Str;
 class CoreAccountRepository extends AccountRepository
 {
     private const USER = "u.legacy_id AS id, u.nama AS name, u.pin, u.aktif AS active, u.tim AS keterangan,
-        u.no_hp, u.talenta_id, COALESCE(u.username, '') AS username, u.cabang AS branch,
+        u.no_hp, u.talenta_id, COALESCE(u.username, '') AS username, COALESCE(u.email, '') AS email, u.cabang AS branch,
         u.organisasi AS organization, u.jabatan AS job_position, u.level_jabatan AS job_level,
         u.status_kerja AS employment_status, COALESCE(DATE_FORMAT(u.tanggal_bergabung, '%Y-%m-%d'), '') AS join_date";
 
     /** legacy users column => core user column */
     private const COLUMNS = ['id' => 'legacy_id', 'name' => 'nama', 'pin' => 'pin', 'active' => 'aktif',
         'keterangan' => 'tim', 'no_hp' => 'no_hp', 'talenta_id' => 'talenta_id', 'username' => 'username',
+        'email' => 'email',
         'branch' => 'cabang', 'organization' => 'organisasi', 'job_position' => 'jabatan',
         'job_level' => 'level_jabatan', 'employment_status' => 'status_kerja', 'join_date' => 'tanggal_bergabung'];
 
@@ -51,6 +52,7 @@ class CoreAccountRepository extends AccountRepository
     {
         return match ($col) {
             'username' => self::s($v) === '' ? null : self::s($v),
+            'email' => self::s($v) === '' ? null : mb_strtolower(self::s($v), 'UTF-8'),
             'join_date' => self::date(self::s($v)),
             'active' => (int) $v ? 1 : 0,
             default => $v,
@@ -62,6 +64,12 @@ class CoreAccountRepository extends AccountRepository
         $d = \DateTimeImmutable::createFromFormat('!Y-m-d', $v);
 
         return $d !== false && $d->format('Y-m-d') === $v ? $v : null;
+    }
+
+    /** Core always has `user.email` once the 2026_10_19 migration runs; no legacy fallback. */
+    protected function hasEmailColumn(): bool
+    {
+        return true;
     }
 
     public function userUlid(string $legacyId): ?string
@@ -126,6 +134,20 @@ class CoreAccountRepository extends AccountRepository
     {
         $r = $this->db()->selectOne('SELECT legacy_id AS id, nama AS name FROM `user` WHERE TRIM(talenta_id) = ? AND legacy_id <> ?
              ORDER BY legacy_id LIMIT 1', [self::s($tid), self::s($exceptId)]);
+
+        return $r ? (array) $r : null;
+    }
+
+    /** @return array<string,mixed>|null owner (id, name) of a non-blank email (case-insensitive) */
+    public function emailOwner(string $email, string $exceptId): ?array
+    {
+        $e = mb_strtolower(trim(self::s($email)), 'UTF-8');
+        if ($e === '') {
+            return null;
+        }
+        $r = $this->db()->selectOne("SELECT legacy_id AS id, nama AS name FROM `user`
+             WHERE TRIM(COALESCE(email, '')) <> '' AND LOWER(TRIM(email)) = ? AND legacy_id <> ?
+             ORDER BY legacy_id LIMIT 1", [$e, self::s($exceptId)]);
 
         return $r ? (array) $r : null;
     }

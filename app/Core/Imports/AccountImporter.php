@@ -65,9 +65,11 @@ final class AccountImporter implements Importer
             // 1. parents (no deletes yet: children must let go first)
             $userRows = [];
             foreach ($users as $u) {
+                $rawEmail = isset($u->email) ? strtolower(trim((string) $u->email)) : '';
                 $userRows[(string) $u->id] = [
                     'nama' => (string) $u->name,
                     'username' => trim((string) $u->username) === '' ? null : (string) $u->username,
+                    'email' => $rawEmail === '' ? null : $rawEmail,
                     'nama_tampilan' => (string) $u->display_name,
                     'pin' => (string) $u->pin,
                     'aktif' => (int) $u->active,

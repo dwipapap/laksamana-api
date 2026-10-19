@@ -12,6 +12,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('me', [AuthController::class, 'me']);
     Route::put('me/pin', [AuthController::class, 'changePin']);
     Route::put('me/username', [AuthController::class, 'setUsername']);
+    Route::put('me/contact', [AuthController::class, 'updateContact']);
 
     // rosters: any authenticated account (legacy exposes these without any gate)
     Route::get('account/roster', [AccountAdminController::class, 'divisiRoster']);

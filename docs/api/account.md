@@ -17,7 +17,7 @@ The Office screens (`deploy/index.html`: Kelola User / Kelola Akses; `deploy/jad
 | Screen | Endpoints |
 |---|---|
 | Login / logout | `auth/login`, `auth/logout` |
-| Current user | `GET /me`, `PUT /me/pin`, `PUT /me/username` |
+| Current user | `GET /me`, `PUT /me/pin`, `PUT /me/username`, `PUT /me/contact` |
 | Kelola User (list, add, edit, import Excel) | `GET /users`, `POST /users`, `PATCH /users/{id}`, `POST /users/bulk` |
 | Kelola User (activate/deactivate, delete) | `PUT /users/{id}/active`, `DELETE /users/{id}` |
 | Kelola Akses (checkboxes, per Modul) | `GET /users` (`modules`, `grants`, `denies`, `adminModules` per user + `meta.rules`), `PUT /users/{id}/access`, `PUT /users/{id}/admin`, `listAccess` |
@@ -34,17 +34,18 @@ The Office screens (`deploy/index.html`: Kelola User / Kelola Akses; `deploy/jad
 |---|---|---|
 | POST | `/api/v1/auth/login` | `{login, pin, device?}`. Username first, then full name; active accounts only. Rate limited (10 failed attempts / 15 min per IP+login). Returns `{token, tokenType, expiresAt, user}`. Wrong/inactive → 401 `invalid_credentials`. |
 | POST | `/api/v1/auth/logout` | Revokes the current token. → `{loggedOut: true}` |
-| GET | `/api/v1/me` | The caller's profile (`id, name, username, keterangan, modules, adminModules, headDivisi`, the six HR columns, `tim`, `noHp`, `talentaId`, `ulid`). `tim` = `[{key, label}]`, the Beranda teams read whole-word from the Tim column (`AppSupportTim`; several per User, never an access rule). v1 only: legacy `whoami` is unchanged. |
+| GET | `/api/v1/me` | The caller's profile (`id, name, username, keterangan, modules, adminModules, headDivisi`, the six HR columns, `tim`, `email`, `noHp`, `talentaId`, `ulid`). `email` is `''` when empty. `tim` = `[{key, label}]`, the Beranda teams read whole-word from the Tim column (`AppSupportTim`; several per User, never an access rule). v1 only: legacy `whoami` is unchanged. |
 | PUT | `/api/v1/me/pin` | `{currentPin, newPin}`. Unlike legacy `changePin` this verifies the current PIN. Wrong → 422 `invalid_credentials`; bad shape → 422 `validation_failed`. |
 | PUT | `/api/v1/me/username` | `{username}` (may be `null`/empty to clear). → `{username}`. Invalid → 422 `bad_username`; taken → 422 `username_taken`. |
+| PUT | `/api/v1/me/contact` | `{email?, noHp?}` (either may be `null`/empty to clear). `email` must be a lowercase email ≤190 chars and unique when filled; `noHp` is trimmed ≤32 chars. → `{email, noHp}`. Bad shape → 422 `validation_failed`; bad email → 422 `bad_email`; taken → 422 `email_taken`; bad phone → 422 `bad_no_hp`. |
 
 ## Users (Superadmin)
 
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/users` | Every real user: identity + HR columns + `modules`, `grants`, `denies`, `adminModules`, `ulid`. `meta.modules` = active Modul keys; `meta.rules` = `{bawaan, terbatas, adminBawaan}` for drawing the checkboxes. Never a PIN. |
-| POST | `/users` | Body as `saveUser` (`name` required; `pin` empty → `1111`; `active`; `keterangan`; `noHp`; `talentaId`; `username`; the six HR columns). → `201 {id}`. Duplicate name/username → 422 `name_taken`/`username_taken`; duplicate Talenta ID → 422 `talenta_taken`. |
-| PATCH | `/users/{id}` | Same body. An empty/omitted `pin` keeps the old PIN (v1 never falls back to `1111` on edit). → `{id}` |
+| POST | `/users` | Body as `saveUser` (`name` required; `pin` empty → `1111`; `active`; `keterangan`; `noHp`; `email` lowercase ≤190, unique when filled, empty clears; `talentaId`; `username`; the six HR columns). → `201 {id, email, noHp}`. Duplicate name/username → 422 `name_taken`/`username_taken`; duplicate email → 422 `email_taken`; duplicate Talenta ID → 422 `talenta_taken`; bad email → 422 `bad_email`. |
+| PATCH | `/users/{id}` | Same body. An empty/omitted `pin` keeps the old PIN (v1 never falls back to `1111` on edit). An omitted `email` keeps the old email ( unlike `noHp`, which clears when omitted — legacy `saveUser` behaviour). → `{id, email, noHp}` |
 | POST | `/users/bulk` | `{users: [{…saveUser…, _baris?}]}`, 1–500 rows (legacy `saveUsers`). Each row goes through the same `saveUser` rules. → `201 {sukses, gagal, baris:[{baris, nama, error, takenBy}]}`. Empty → 422 `empty`; over 500 → 422 `too_many`. |
 | PUT | `/users/{id}/active` | `{active: bool}`. → `{id, active}`. Self → 422 `cannot_deactivate_self`; another Superadmin → 422 `cannot_deactivate_admin`. |
 | DELETE | `/users/{id}` | Permanent delete of a **deactivated** account (+ its grants/admins). Active → 422 `must_deactivate_first`; self → 422 `cannot_delete_self`; Kepala Divisi on core → 409 `is_kepala_divisi`. → `{}` |
@@ -77,8 +78,8 @@ The Office screens (`deploy/index.html`: Kelola User / Kelola Akses; `deploy/jad
 |---|---|---|---|
 | GET | `/account/roster` | any account | All users with Tim + HR columns (never PINs). Same as legacy `listDivisiRoster`. |
 | GET | `/account/modules/{module}/members` | any account | Users holding that Modul, with `isModuleAdmin`. Same as legacy `listModuleRoster`. |
-| POST | `/account/roster` | `jadwal` admin | Pengelola Roster (`rosterSaveUser`): add a crew member. Only identity columns are accepted (`name`, `keterangan`, `noHp`, `talentaId`, `active`, the six HR columns) — never `grants`/`admins`/`username`. → `201 {id}` |
-| PATCH | `/account/roster/{id}` | `jadwal` admin | Same identity whitelist; keeps the old PIN. When `active` is sent it is applied through the `rosterSetActive` rules below, so a PATCH cannot deactivate the caller or a Superadmin (422 `cannot_deactivate_self` / `cannot_deactivate_admin`). → `{id}` |
+| POST | `/account/roster` | `jadwal` admin | Pengelola Roster (`rosterSaveUser`): add a crew member. Only identity columns are accepted (`name`, `keterangan`, `noHp`, `email`, `talentaId`, `active`, the six HR columns) — never `grants`/`admins`/`username`. → `201 {id}` |
+| PATCH | `/account/roster/{id}` | `jadwal` admin | Same identity whitelist; keeps the old PIN. `email`/`noHp` are returned as `{id, email, noHp}`. When `active` is sent it is applied through the `rosterSetActive` rules below, so a PATCH cannot deactivate the caller or a Superadmin (422 `cannot_deactivate_self` / `cannot_deactivate_admin`). → `{id}` |
 | PUT | `/account/roster/{id}/active` | `jadwal` admin | Legacy `rosterSetActive`. Anything but an explicit `false` means active. → `{id, active}`. Self → 422 `cannot_deactivate_self`; Superadmin → 422 `cannot_deactivate_admin`. |
 | DELETE | `/account/roster/{id}` | `jadwal` admin | Legacy `rosterHapusUser`. Only a **deactivated** non-Superadmin, non-self row. → `{id, nama}`. Refusals: 422 `must_deactivate_first`, `cannot_delete_self`, `cannot_delete_admin`; on core 409 `is_kepala_divisi`. |
 
@@ -90,4 +91,4 @@ The Office screens (`deploy/index.html`: Kelola User / Kelola Akses; `deploy/jad
 | 403 | `forbidden` (module not granted / not a Superadmin / not a Pengelola Roster) |
 | 404 | `not_found` |
 | 409 | `is_kepala_divisi` |
-| 422 | `validation_failed`, `missing_fields`, `missing_key`, `empty`, `too_many`, `name_taken`, `username_taken`, `talenta_taken`, `bad_username`, `last_superadmin`, `cannot_delete_self`, `cannot_delete_admin`, `must_deactivate_first`, `cannot_deactivate_self`, `cannot_deactivate_admin`, `bad_pin` |
+| 422 | `validation_failed`, `missing_fields`, `missing_key`, `empty`, `too_many`, `name_taken`, `username_taken`, `email_taken`, `talenta_taken`, `bad_username`, `bad_email`, `bad_no_hp`, `last_superadmin`, `cannot_delete_self`, `cannot_delete_admin`, `must_deactivate_first`, `cannot_deactivate_self`, `cannot_deactivate_admin`, `bad_pin` |

@@ -67,6 +67,11 @@ class AccountService
         return (bool) preg_match('/^[A-Za-z0-9._-]{3,40}$/', $v);
     }
 
+    public static function emailValid(string $v): bool
+    {
+        return strlen($v) <= 190 && filter_var($v, FILTER_VALIDATE_EMAIL) !== false;
+    }
+
     /** @return array<int,array<string,mixed>> real rows only (no half-empty ghosts) */
     public function allUsers(): array
     {
@@ -132,6 +137,8 @@ class AccountService
             'name' => self::s($u['name']),
             'username' => self::s($u['username']),
             'keterangan' => self::s($u['keterangan']),
+            'email' => mb_strtolower(self::s($u['email'] ?? ''), 'UTF-8'),
+            'noHp' => self::s($u['no_hp'] ?? ''),
             'modules' => $this->access->modules($u['id']),
             'adminModules' => $this->access->adminModules($u['id']),
             'token' => $this->sessions->create($u['id']),
@@ -210,6 +217,31 @@ class AccountService
         return ['ok' => true, 'username' => $new];
     }
 
+    /** Self-service contact update: v1 PUT /me/contact (row chosen by the server). */
+    public function applyContact(string $userId, mixed $email, mixed $noHp): array
+    {
+        $e = $email === null ? '' : mb_strtolower(self::s($email), 'UTF-8');
+        $h = $noHp === null ? '' : self::s($noHp);
+        if (strlen($h) > 32) {
+            return ['ok' => false, 'error' => 'bad_no_hp'];
+        }
+        if ($e !== '') {
+            if (! self::emailValid($e)) {
+                return ['ok' => false, 'error' => 'bad_email'];
+            }
+            if ($du = $this->users->emailOwner($e, $userId)) {
+                return ['ok' => false, 'error' => 'email_taken', 'takenBy' => self::s($du['name'])];
+            }
+        }
+        $this->users->updateUser($userId, ['email' => $e, 'no_hp' => $h]);
+        $this->access->forgetUser($userId);
+        $fresh = $this->access->userById($userId);
+
+        return ['ok' => true,
+            'email' => mb_strtolower(self::s($fresh['email'] ?? $e), 'UTF-8'),
+            'noHp' => self::s($fresh['no_hp'] ?? $h)];
+    }
+
     public function sessionRefresh(array $body): array
     {
         $id = self::s($body['userId'] ?? '');
@@ -245,6 +277,7 @@ class AccountService
             'active' => (int) $u['active'] === 1,
             'keterangan' => self::s($u['keterangan']),
             'noHp' => self::s($u['no_hp']),
+            'email' => mb_strtolower(self::s($u['email'] ?? ''), 'UTF-8'),
             'talentaId' => self::s($u['talenta_id']),
             'username' => self::s($u['username']),
             'modules' => $this->access->modules($u['id']),
@@ -304,6 +337,8 @@ class AccountService
         $ket = self::s($body['keterangan'] ?? '');
         $hp = self::s($body['noHp'] ?? '');
         $tid = self::s($body['talentaId'] ?? '');
+        $emailPresent = array_key_exists('email', $body);
+        $email = $emailPresent ? mb_strtolower(self::s($body['email']), 'UTF-8') : '';
         $active = (array_key_exists('active', $body) && $body['active'] === false) ? 0 : 1;
         if ($name === '') {
             return ['ok' => false, 'error' => 'missing_fields'];
@@ -319,10 +354,21 @@ class AccountService
                 return ['ok' => false, 'error' => 'talenta_taken', 'takenBy' => self::s($d['name'])];
             }
         }
+        if ($email !== '') {
+            if (! self::emailValid($email)) {
+                return ['ok' => false, 'error' => 'bad_email'];
+            }
+            if ($du = $this->users->emailOwner($email, $editId)) {
+                return ['ok' => false, 'error' => 'email_taken', 'takenBy' => self::s($du['name'])];
+            }
+        }
 
         if ($editId !== '') {
             $columns = ['name' => $name, 'pin' => $pin, 'active' => $active,
                 'keterangan' => $ket, 'no_hp' => $hp, 'talenta_id' => $tid];
+            if ($emailPresent) {
+                $columns['email'] = $email;
+            }
             if (array_key_exists('username', $body)) {
                 $un = trim(self::s($body['username']));
                 if ($un !== '') {
@@ -346,8 +392,11 @@ class AccountService
             if ($n === 0 && ! $this->access->userById($editId)) {
                 return ['ok' => false, 'error' => 'not_found'];
             }
+            $fresh = $this->access->userById($editId);
 
-            return ['ok' => true, 'id' => $editId];
+            return ['ok' => true, 'id' => $editId,
+                'email' => mb_strtolower(self::s($fresh['email'] ?? ($columns['email'] ?? '')), 'UTF-8'),
+                'noHp' => self::s($fresh['no_hp'] ?? $hp)];
         }
 
         $base = 'u-'.preg_replace('/[^a-z0-9]+/', '', mb_strtolower($name, 'UTF-8'));
@@ -362,13 +411,16 @@ class AccountService
         }
         $this->access->forgetUser($id);
         $columns = ['id' => $id, 'name' => $name, 'pin' => $pin, 'active' => $active,
-            'keterangan' => $ket, 'no_hp' => $hp, 'talenta_id' => $tid];
+            'keterangan' => $ket, 'no_hp' => $hp, 'talenta_id' => $tid, 'email' => $email];
         foreach (OfficeAccess::HR_COLUMNS as $key => $col) {
             $columns[$col] = array_key_exists($key, $body) ? self::hrValue($key, $body[$key]) : '';
         }
         $this->users->insertUser($columns);
+        $fresh = $this->access->userById($id);
 
-        return ['ok' => true, 'id' => $id];
+        return ['ok' => true, 'id' => $id,
+            'email' => mb_strtolower(self::s($fresh['email'] ?? $email), 'UTF-8'),
+            'noHp' => self::s($fresh['no_hp'] ?? $hp)];
     }
 
     public function saveUsers(array $body): array
@@ -474,7 +526,7 @@ class AccountService
     public function rosterSaveUserCore(array $body): array
     {
         $clean = [];
-        foreach (array_merge(['id', 'name', 'keterangan', 'noHp', 'talentaId', 'active'], array_keys(OfficeAccess::HR_COLUMNS)) as $k) {
+        foreach (array_merge(['id', 'name', 'keterangan', 'noHp', 'email', 'talentaId', 'active'], array_keys(OfficeAccess::HR_COLUMNS)) as $k) {
             if (array_key_exists($k, $body)) {
                 $clean[$k] = $body[$k];
             }
@@ -785,6 +837,7 @@ class AccountService
                 'name' => self::s($u['name']),
                 'keterangan' => self::s($u['keterangan']),
                 'noHp' => self::s($u['no_hp']),
+                'email' => mb_strtolower(self::s($u['email'] ?? ''), 'UTF-8'),
                 'talentaId' => self::s($u['talenta_id']),
                 'username' => self::s($u['username']),
                 'active' => (int) $u['active'] === 1,
@@ -813,6 +866,7 @@ class AccountService
                 'name' => self::s($u['name']),
                 'keterangan' => self::s($u['keterangan']),
                 'noHp' => self::s($u['no_hp']),
+                'email' => mb_strtolower(self::s($u['email'] ?? ''), 'UTF-8'),
                 'talentaId' => self::s($u['talenta_id']),
                 'active' => (int) $u['active'] === 1,
             ]);

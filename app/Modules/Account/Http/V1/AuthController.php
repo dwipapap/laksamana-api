@@ -58,6 +58,8 @@ class AuthController
             'expiresAt' => $token->accessToken->expires_at?->toIso8601String(),
             'user' => $this->access->profile($row) + [
                 'tim' => Tim::of($row['keterangan'] ?? ''),
+                'email' => mb_strtolower(trim((string) ($row['email'] ?? '')), 'UTF-8'),
+                'noHp' => (string) ($row['no_hp'] ?? ''),
                 'ulid' => $this->users->userUlid($row['id']),
             ],
         ]);
@@ -70,6 +72,7 @@ class AuthController
         // `tim` is v1 only: profile() is also the legacy whoami shape, which stays as it was.
         return ApiResponse::ok($this->access->profile($row) + AccountService::hrJson($row) + [
             'tim' => Tim::of($row['keterangan'] ?? ''),
+            'email' => mb_strtolower(trim((string) ($row['email'] ?? '')), 'UTF-8'),
             'noHp' => (string) ($row['no_hp'] ?? ''),
             'talentaId' => (string) ($row['talenta_id'] ?? ''),
             'ulid' => $this->users->userUlid((string) $row['id']),
@@ -108,5 +111,25 @@ class AuthController
         return empty($r['ok'])
             ? ApiResponse::error($r['error'], 'Username not accepted.', 422)
             : ApiResponse::ok(['username' => $r['username']]);
+    }
+
+    public function updateContact(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'email' => ['nullable', 'string', 'email', 'max:190', 'lowercase'],
+            'noHp' => ['nullable', 'string', 'max:32'],
+        ]);
+        $r = $this->account->applyContact((string) $request->user()->getKey(),
+            $data['email'] ?? null, $data['noHp'] ?? null);
+        if (empty($r['ok'])) {
+            $code = (string) ($r['error'] ?? 'error');
+            if ($code === 'email_taken') {
+                return ApiResponse::error($code, 'Email not accepted.', 422, ['takenBy' => $r['takenBy'] ?? '']);
+            }
+
+            return ApiResponse::error($code, 'Contact not accepted.', 422);
+        }
+
+        return ApiResponse::ok(['email' => $r['email'], 'noHp' => $r['noHp']]);
     }
 }

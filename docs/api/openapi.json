@@ -109,6 +109,12 @@
             "type": "string",
             "maxLength": 32
           },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 190,
+            "description": "Lowercase, unique when filled; empty clears it."
+          },
           "talentaId": {
             "type": "string",
             "maxLength": 64
@@ -256,6 +262,9 @@
             "type": "string"
           },
           "noHp": {
+            "type": "string"
+          },
+          "email": {
             "type": "string"
           },
           "talentaId": {

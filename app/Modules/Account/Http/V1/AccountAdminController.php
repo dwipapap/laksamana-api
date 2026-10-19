@@ -61,6 +61,7 @@ class AccountAdminController
             'active' => ['sometimes', 'boolean'],
             'keterangan' => ['nullable', 'string', 'max:255'],
             'noHp' => ['nullable', 'string', 'max:32'],
+            'email' => ['nullable', 'string', 'email', 'max:190', 'lowercase'],
             'talentaId' => ['nullable', 'string', 'max:64'],
             'username' => ['sometimes', 'nullable', 'string', 'max:40'],
             'branch' => ['sometimes', 'nullable', 'string'],
@@ -201,7 +202,7 @@ class AccountAdminController
 
     public function rosterSave(Request $request, ?string $id = null): JsonResponse
     {
-        $body = $request->only(['name', 'keterangan', 'noHp', 'talentaId', 'active',
+        $body = $request->only(['name', 'keterangan', 'noHp', 'email', 'talentaId', 'active',
             'branch', 'organization', 'jobPosition', 'jobLevel', 'employmentStatus', 'joinDate']);
         // `active` goes through the rosterSetActive rules below, so a PATCH cannot
         // deactivate the caller or a superadmin (the shared rosterSaveUserCore is
