@@ -88,7 +88,7 @@ it('serves one row per day with the summary over HTTP', function () {
         ->and($hari['2026-09-09']['pulang'])->toBeNull();
 });
 
-it('validates the month and forces HR to name a user', function () {
+it('validates the month, and HR without a filter reads their own log', function () {
     hrisSettings([]);
     hrisMakeHr('u-admin');
     $ht = hrisToken('u-admin');
@@ -99,19 +99,29 @@ it('validates the month and forces HR to name a user', function () {
         ->assertStatus(422);
     test()->getJson('/api/v1/hris/riwayat', ['Authorization' => 'Bearer '.$ht])
         ->assertStatus(422);
-    test()->getJson('/api/v1/hris/riwayat?bulan=2026-09', ['Authorization' => 'Bearer '.$ht])
-        ->assertStatus(422)->assertJsonPath('error.code', 'validation_failed');
+    // No filter always means the caller's own log, whatever the lingkup.
+    $r = test()->getJson('/api/v1/hris/riwayat?bulan=2026-09', ['Authorization' => 'Bearer '.$ht])
+        ->assertOk()->json('data');
+    expect($r['bulan'])->toBe('2026-09')
+        ->and(count($r['hari']))->toBe(30);
 });
 
-it('forces crew to their own log', function () {
+it('refuses crew readers of another log', function () {
+    hrisSettings([]);
+    $t = hrisToken('u-dwipa');
+
+    test()->getJson('/api/v1/hris/riwayat?bulan=2026-09&user=u-admin', ['Authorization' => 'Bearer '.$t])
+        ->assertStatus(403)->assertJsonPath('error.code', 'forbidden');
+});
+
+it('serves crew their own log without a filter', function () {
     hrisSettings([]);
     hrisEnrolOnce('u-dwipa');
     hrisRiwayatBulan();
     hrisRiwayatPunch(hrisMe('u-dwipa'), hrisWajahPunch('u-dwipa', 'MASUK'), hrisMs(2026, 9, 3, 8, 0));
     $t = hrisToken('u-dwipa');
 
-    // Crew asking for someone else still gets their own month.
-    $r = test()->getJson('/api/v1/hris/riwayat?bulan=2026-09&user=u-admin', ['Authorization' => 'Bearer '.$t])
+    $r = test()->getJson('/api/v1/hris/riwayat?bulan=2026-09', ['Authorization' => 'Bearer '.$t])
         ->assertOk()->json('data');
     expect($r['hari'][2]['masuk']['user_id'])->toBe('u-dwipa');
 });

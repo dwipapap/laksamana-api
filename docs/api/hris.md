@@ -24,7 +24,7 @@ Code: `app/Modules/Hris`.
 | GET | `/hris/me/today` | all | Punch-screen bootstrap: shift today, MASUK/PULANG rows, nearest locations, server time, enrolment flag + face count (`wajahJumlah`), `perhatian[]` |
 | POST | `/hris/punches` | self | Punch in/out. Repeated MASUK → `200 {duplikat:true}`; repeated PULANG overwrites. `201` otherwise |
 | GET | `/hris/punches?from&to&user` | scoped | History. Crew are forced to their own rows; heads to their divisions |
-| GET | `/hris/riwayat?bulan&user` | scoped | Monthly log for one user: daily rows + summary (Riwayat screen). `bulan` is `YYYY-MM`; `user` defaults to self, HR without it is `422` |
+| GET | `/hris/riwayat?bulan&user` | scoped | Monthly log for one user: daily rows + summary (Riwayat screen). `bulan` is `YYYY-MM`; `user` defaults to self |
 | GET | `/hris/punches/{id}/photo` | scoped | Audit photo (self, HR, head of division) |
 | GET | `/hris/queue` | HR + head | Queued punches, longest-waiting first (rows carry `nama` + `divisi`; no server filters — filter client-side) |
 | POST | `/hris/punches/{id}/decision` | HR (own punch too) + head (division, not own) | `{status: VALID\|DITOLAK, nota?, berubah}` — the seen version; stale → `409 version_conflict`, decided → `409 already_decided` |
@@ -147,9 +147,8 @@ so the PWA needs no `jadwal` module grant for the log screen:
 - `masuk`/`pulang` are the punch item shape above (latest non-DITOLAK per
   direction). `shift` is the `shiftFor` answer (`JADWAL`, `BAWAAN`, `null`,
   never `false` — unreadable days set `rosterTakTerbaca` instead).
-- `user` defaults to the token holder; heads without it read their own log.
-  HR without `user` is `422 validation_failed` (`details` carries nothing
-  extra). Bad `bulan` is `422`.
+- `user` defaults to the token holder; heads and HR may pass `user` for
+  someone in scope (outside it is `403`). Bad `bulan` is `422`.
 
 ### me/today item
 

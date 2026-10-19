@@ -7,7 +7,6 @@ namespace App\Modules\Hris\Http\V1;
 use App\Auth\OfficeAccess;
 use App\Modules\Hris\Models\HrisKetukan;
 use App\Modules\Hris\Services\HrisAttendanceService;
-use App\Modules\Hris\Services\HrisError;
 use App\Modules\Hris\Services\HrisLingkup;
 use App\Modules\Hris\Services\HrisPerhatianService;
 use App\Support\Api\ApiResponse;
@@ -95,14 +94,12 @@ final class HrisMeController extends HrisBaseController
 
         return $this->run(function () use ($me, $d) {
             $req = self::s($d['user'] ?? '');
-            $scope = $this->lingkup->scopeUsers($me, $req === '' ? null : $req);
-            if ($scope === null || $scope === []) {
-                throw new HrisError('validation_failed', 'Parameter user wajib diisi.', 422);
-            }
-            $uid = $scope[0];
-            if ($req === '' && count($scope) > 1) {
-                // A head without a filter reads their own log; the queue
-                // stays the place for watching the division.
+            if ($req !== '') {
+                $this->lingkup->assertCanSee($me, $req);
+                $uid = $req;
+            } else {
+                // No filter always means the caller's own log, whatever
+                // the lingkup: the screen is "my log", not the queue.
                 $uid = self::s($me['id'] ?? '');
             }
 
