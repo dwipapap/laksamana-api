@@ -273,9 +273,34 @@ final class HrisAttendanceService
         if ($this->faceEnrolled($uid)) {
             throw new HrisError('already_enrolled', 'Wajah sudah terdaftar dan langsung aktif. Minta HR mereset untuk daftar ulang.', 409);
         }
+        // Signed proof (S3): an optional `buktiWajah` array parallel to the
+        // descriptors. While the flag is on, enrolment without a proof is
+        // refused outright.
+        $bukti = $in['buktiWajah'] ?? null;
+        $adaBukti = is_array($bukti) && $bukti !== [];
+        if (! $adaBukti && BuktiWajah::wajib()) {
+            throw new HrisError('bukti_wajah_tidak_valid', 'Bukti wajah wajib disertakan saat daftar. Ambil ulang foto wajah.', 422);
+        }
         $set = $this->settings->all();
         $ambang = FaceMatcher::ambangUntuk($model, is_array($set['wajahAmbang'] ?? null) ? $set['wajahAmbang'] : []);
         $baru = self::cleanDescriptorSet($in['descriptors'] ?? null, $in['descriptor'] ?? null);
+        $sumberWajah = 'klien';
+        if ($adaBukti) {
+            // One proof per descriptor; the straight enrolment photo binds
+            // the first proof.
+            if (count($bukti) !== count($baru)) {
+                throw new HrisError('bukti_wajah_tidak_valid', 'Jumlah bukti wajah harus sama dengan jumlah sidik yang didaftarkan.', 422);
+            }
+            $dariBukti = [];
+            foreach (array_values($bukti) as $i => $satu) {
+                if (! is_string($satu) || trim($satu) === '') {
+                    throw new HrisError('bukti_wajah_tidak_valid', 'Bukti wajah tidak valid. Ambil ulang foto wajah.', 422);
+                }
+                $dariBukti[] = BuktiWajah::verifikasi($satu, $model, $i === 0 && is_string($in['foto'] ?? null) ? $in['foto'] : null);
+            }
+            $baru = $dariBukti;
+            $sumberWajah = 'server';
+        }
         foreach ($baru as $i => $satu) {
             foreach (array_slice($baru, $i + 1) as $lain) {
                 $jarak = ($ambang['metric'] === 'euclidean'
@@ -298,7 +323,8 @@ final class HrisAttendanceService
                 $m = FaceMatcher::match(array_values($other->descriptor), $satu, $ambang);
                 if ($m['ok']) {
                     $this->audit->record($nama, 'wajah_duplikat_ditolak', 'hris_wajah', $uid,
-                        ['model' => $model, 'skor' => $m['skor'], 'cocok_dengan' => (string) $other->user_id]);
+                        ['model' => $model, 'skor' => $m['skor'], 'cocok_dengan' => (string) $other->user_id,
+                            'sumber_wajah' => $sumberWajah]);
                     throw new HrisError('wajah_milik_orang_lain',
                         'Wajah ini cocok dengan data orang lain. Pendaftaran ditolak dan HR akan menindaklanjuti.', 409);
                 }
@@ -322,7 +348,8 @@ final class HrisAttendanceService
             'descriptor' => $tersimpan, 'foto_path' => $fotoPath,
             'consent_at' => now(), 'status' => 'AKTIF', 'dibuat_oleh' => mb_substr($nama, 0, 120),
         ]);
-        $this->audit->record($nama, 'wajah_didaftarkan', 'hris_wajah', $uid, ['model' => $model]);
+        $this->audit->record($nama, 'wajah_didaftarkan', 'hris_wajah', $uid,
+            ['model' => $model, 'sumber_wajah' => $sumberWajah]);
 
         return $row;
     }
@@ -342,10 +369,23 @@ final class HrisAttendanceService
         if ($uid === '') {
             throw new HrisError('unauthenticated', 'Login required.', 401);
         }
-        $descriptor = self::bersihkanSatu($in['descriptor'] ?? null);
         $model = mb_substr(self::s($in['model'] ?? ''), 0, 64);
         if ($model === '') {
             throw new HrisError('validation_failed', 'Model wajah wajib diisi (mis. sface-2021dec-int8).', 422);
+        }
+        // Signed proof (S3): a valid `buktiWajah` replaces the client
+        // descriptor. While the flag is on, a top-up without a proof is
+        // refused before any other check.
+        $bukti = is_string($in['buktiWajah'] ?? null) ? trim($in['buktiWajah']) : '';
+        $sumberWajah = 'klien';
+        if ($bukti !== '') {
+            $descriptor = BuktiWajah::verifikasi($bukti, $model);
+            $sumberWajah = 'server';
+        } else {
+            if (BuktiWajah::wajib()) {
+                throw new HrisError('bukti_wajah_tidak_valid', 'Bukti wajah wajib disertakan. Ambil ulang foto wajah.', 422);
+            }
+            $descriptor = self::bersihkanSatu($in['descriptor'] ?? null);
         }
         $row = HrisWajah::query()->where('user_id', $uid)->where('status', 'AKTIF')->first();
         if (! $row || ! is_array($row->descriptor)) {
@@ -371,7 +411,8 @@ final class HrisAttendanceService
             $m = FaceMatcher::match(array_values($other->descriptor), $descriptor, $ambang);
             if ($m['ok']) {
                 $this->audit->record($nama, 'wajah_duplikat_ditolak', 'hris_wajah', $uid,
-                    ['model' => $model, 'skor' => $m['skor'], 'cocok_dengan' => (string) $other->user_id]);
+                    ['model' => $model, 'skor' => $m['skor'], 'cocok_dengan' => (string) $other->user_id,
+                        'sumber_wajah' => $sumberWajah]);
                 throw new HrisError('wajah_milik_orang_lain',
                     'Wajah ini cocok dengan data orang lain. Penambahan ditolak dan HR akan menindaklanjuti.', 409);
             }
@@ -379,7 +420,7 @@ final class HrisAttendanceService
         $set[] = $descriptor;
         $row->fill(['descriptor' => $set])->save();
         $this->audit->record($nama, 'wajah_dilengkapi', 'hris_wajah', $uid,
-            ['model' => $model, 'jumlah_descriptor' => count($set)]);
+            ['model' => $model, 'jumlah_descriptor' => count($set), 'sumber_wajah' => $sumberWajah]);
 
         return ['user_id' => $uid, 'jumlah_descriptor' => count($set)];
     }
@@ -583,6 +624,17 @@ final class HrisAttendanceService
         // for a missing descriptor lets anyone through as "unenrolled".
         $stored = $this->storedFace($uid);
         $probeModel = mb_substr(self::s($in['model'] ?? ''), 0, 64);
+        // Signed proof (S3): a valid `buktiWajah` replaces the client
+        // descriptor (bound to the request model and photo). While the flag
+        // is on, a punch without a proof ignores the client descriptor, so
+        // it queues like a face mismatch instead of validating.
+        $bukti = is_string($in['buktiWajah'] ?? null) ? trim($in['buktiWajah']) : '';
+        if ($bukti !== '') {
+            $in['descriptor'] = BuktiWajah::verifikasi($bukti, $probeModel,
+                is_string($in['foto'] ?? null) ? $in['foto'] : null);
+        } elseif (BuktiWajah::wajib()) {
+            $in['descriptor'] = null;
+        }
         if ($stored && $probeModel !== '' && $stored['model'] !== '' && $stored['model'] !== $probeModel) {
             // A descriptor of another model proves nothing either way.
             $w = ['skor' => null, 'ok' => false, 'terdaftar' => true];
@@ -706,22 +758,35 @@ final class HrisAttendanceService
         if ($uid === '') {
             throw new HrisError('unauthenticated', 'Login required.', 401);
         }
-        $descriptor = self::cleanDescriptor($in['descriptor'] ?? null);
         $model = mb_substr(self::s($in['model'] ?? ''), 0, 64);
         if ($model === '') {
             throw new HrisError('validation_failed', 'Model wajah wajib diisi (mis. sface-2021dec-int8).', 422);
         }
+        // Signed proof (S3): a valid `buktiWajah` replaces the client
+        // descriptor. While the flag is on, a check without a proof is
+        // refused before any other check.
+        $bukti = is_string($in['buktiWajah'] ?? null) ? trim($in['buktiWajah']) : '';
+        $sumberWajah = 'klien';
+        if ($bukti !== '') {
+            $descriptor = BuktiWajah::verifikasi($bukti, $model);
+            $sumberWajah = 'server';
+        } else {
+            if (BuktiWajah::wajib()) {
+                throw new HrisError('bukti_wajah_tidak_valid', 'Bukti wajah wajib disertakan. Ambil ulang foto wajah.', 422);
+            }
+            $descriptor = self::cleanDescriptor($in['descriptor'] ?? null);
+        }
         $stored = $this->storedFace($uid);
         if ($stored === null) {
             $this->audit->record(self::s($me['name'] ?? ''), 'wajah_dicek', 'hris_wajah', $uid,
-                ['skor' => null, 'cocok' => false, 'model' => $model]);
+                ['skor' => null, 'cocok' => false, 'model' => $model, 'sumber_wajah' => 'tanpa']);
 
             return ['terdaftar' => false, 'cocok' => false];
         }
         if ($stored['model'] !== '' && $stored['model'] !== $model) {
             // A descriptor of another model proves nothing either way.
             $this->audit->record(self::s($me['name'] ?? ''), 'wajah_dicek', 'hris_wajah', $uid,
-                ['skor' => null, 'cocok' => false, 'model' => $model]);
+                ['skor' => null, 'cocok' => false, 'model' => $model, 'sumber_wajah' => 'tanpa']);
 
             return ['terdaftar' => true, 'cocok' => false];
         }
@@ -730,7 +795,7 @@ final class HrisAttendanceService
             is_array($set['wajahAmbang'] ?? null) ? $set['wajahAmbang'] : []);
         $m = FaceMatcher::match($stored['descriptor'], $descriptor, $ambang);
         $this->audit->record(self::s($me['name'] ?? ''), 'wajah_dicek', 'hris_wajah', $uid,
-            ['skor' => $m['skor'], 'cocok' => $m['ok'], 'model' => $model]);
+            ['skor' => $m['skor'], 'cocok' => $m['ok'], 'model' => $model, 'sumber_wajah' => $sumberWajah]);
 
         return ['terdaftar' => true, 'cocok' => $m['ok']];
     }
@@ -1171,6 +1236,18 @@ final class HrisAttendanceService
 
     /** @return array<int,float> */
     private static function cleanDescriptor(mixed $d): array
+    {
+        return self::bersihkanSatu($d);
+    }
+
+    /**
+     * Public alias of the descriptor cleaner for the signed proof
+     * (BuktiWajah verifies through the same rules; its failures surface as
+     * bukti_wajah_tidak_valid instead of validation_failed).
+     *
+     * @return array<int,float>
+     */
+    public static function bersihkanDeskriptor(mixed $d): array
     {
         return self::bersihkanSatu($d);
     }

@@ -39,6 +39,8 @@ final class HrisFaceController extends HrisBaseController
             'descriptor' => ['nullable', 'array', 'min:32', 'max:1024'],
             'descriptors' => ['nullable', 'array', 'min:1', 'max:3'],
             'descriptors.*' => ['array', 'min:32', 'max:1024'],
+            'buktiWajah' => ['nullable', 'array', 'max:3'],
+            'buktiWajah.*' => ['string', 'max:32768'],
             'model' => ['required', 'string', 'max:64'],
             'foto' => ['nullable', 'string', 'max:7000000'],
             'consent' => ['required', 'accepted'],
@@ -64,6 +66,7 @@ final class HrisFaceController extends HrisBaseController
     {
         $d = $r->validate([
             'descriptor' => ['required', 'array', 'min:32', 'max:1024'],
+            'buktiWajah' => ['nullable', 'string', 'max:32768'],
             'model' => ['required', 'string', 'max:64'],
         ]);
         $me = $this->me($r);
@@ -88,6 +91,7 @@ final class HrisFaceController extends HrisBaseController
     {
         $d = $r->validate([
             'descriptor' => ['required', 'array', 'min:32', 'max:1024'],
+            'buktiWajah' => ['nullable', 'string', 'max:32768'],
             'model' => ['required', 'string', 'max:64'],
         ]);
         $me = $this->me($r);
