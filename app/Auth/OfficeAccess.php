@@ -196,11 +196,12 @@ class OfficeAccess
         if (isset($this->builtinCache[$uid])) {
             return $this->builtinCache[$uid];
         }
-        // radar for every account, OUTSIDE the try: it depends on nothing that
-        // can fail below, so an error there must not take it away (legacy
-        // modul_bawaan_untuk). An explicit per-user access=0 grant still removes
-        // it, since grants are applied after built-ins in modules().
-        $out = ['radar'];
+        // radar and hris for every account, OUTSIDE the try: they depend on
+        // nothing that can fail below, so an error there must not take them
+        // away (legacy modul_bawaan_untuk; hris because every crew member
+        // punches, #299). An explicit per-user access=0 grant still removes
+        // them, since grants are applied after built-ins in modules().
+        $out = ['radar', 'hris'];
         try {
             $u = $this->userById($uid);
             $ket = $u ? self::s($u['keterangan']) : '';
@@ -216,7 +217,7 @@ class OfficeAccess
                 $out[] = 'dw';
             }
         } catch (Throwable) {
-            $out = ['radar'];
+            $out = ['radar', 'hris'];
         }
 
         return $this->builtinCache[$uid] = $out;
