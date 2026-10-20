@@ -20,8 +20,8 @@ use stdClass;
  * frontend uses but that is not listed here vanishes on the next reload
  * (happened on 2 Sept 2026 with `mutasi`).
  *
- * JSON is decoded as assoc arrays like legacy, so an empty `setting` object
- * comes back as `[]` once it has been round-tripped — kept as is.
+ * JSON is decoded as assoc arrays like legacy, so an empty `setting` read
+ * back comes out as `[]` (as legacy); every write stores it as `{}` again.
  */
 class Brankas
 {
@@ -43,23 +43,29 @@ class Brankas
         return Modules::db('finance');
     }
 
-    /** brankas_baca — {data, akses, peran, updated_at}; a complete empty shape when nothing is stored. */
-    public function read(bool $lock = false): array
+    /**
+     * brankas_baca — {data, akses, peran, updated_at, ver}; a complete empty
+     * shape when nothing is stored. `_ver` is guard metadata: it is stripped
+     * from `data` and returned as `ver` ({lain, bayar}).
+     */
+    public function read(): array
     {
-        $db = $this->db();
         $data = null;
         $ts = 0;
-        $row = $db->selectOne('SELECT `data`,`updated_at` FROM `'.KasKecil::t('bk_state').'` WHERE `'.KasKecil::idCol().'`=1'.($lock ? ' FOR UPDATE' : ''));
+        $ver = ['lain' => 0, 'bayar' => 0];
+        $row = $this->db()->selectOne('SELECT `data`,`updated_at` FROM `'.KasKecil::t('bk_state').'` WHERE `'.KasKecil::idCol().'`=1');
         if ($row && (string) $row->data !== '') {
             $d = json_decode((string) $row->data, true);
             if (is_array($d)) {
-                $data = $d;
                 $ts = (int) $row->updated_at;
+                $ver = self::ver($d, $ts);
+                unset($d['_ver']);
+                $data = $d;
             }
         }
         $data ??= ['rekening' => [], 'piutang' => [], 'bayar' => [], 'investor' => [], 'mutasi' => [], 'setting' => new stdClass];
 
-        return ['data' => $data, 'akses' => $this->akses(), 'peran' => $this->peran(), 'updated_at' => $ts];
+        return ['data' => $data, 'akses' => $this->akses(), 'peran' => $this->peran(), 'updated_at' => $ts, 'ver' => $ver];
     }
 
     /**
@@ -191,62 +197,99 @@ class Brankas
         return (object) $out;
     }
 
-    /**
-     * brankas_simpan — write the WHOLE state, filtered to the kept keys (lists
-     * are re-indexed; `setting` must be a map). The client must send the full state.
-     *
-     * @return array{saved:true,updated_at:int}
-     */
-    public function save(mixed $data, mixed $oleh, ?int $ts = null): array
+    // ───────────────────────────── writing the blob ──
+    //
+    // Port of brankas_tulis() (legacy ff6a774, 1 Oct 2026): ONE writer for both
+    // panels. Before it, brankasSave wrote the whole blob including `bayar`, so
+    // a Brankas tab opened in the morning wiped the Payment Planning rows typed
+    // in Kas Kecil since then, and two tabs of one panel overwrote each other —
+    // all without an error. Now:
+    //  - each panel writes ONLY its own keys; the rest come from the blob on the
+    //    server (Brankas never writes `bayar`);
+    //  - versions are kept per owner (`_ver.lain` = Brankas, `_ver.bayar` = Kas
+    //    Kecil), so a save in one panel never makes the other one conflict;
+    //  - a baseVer that differs from the server's is REJECTED, never overwritten.
+    //    No baseVer = an old cached client: let through (it can no longer touch
+    //    `bayar` anyway), as legacy does;
+    //  - read-modify-write runs in one transaction under SELECT … FOR UPDATE.
+
+    /** The keys each owner writes. */
+    private const OWNER_KEYS = [
+        'lain' => ['rekening', 'piutang', 'investor', 'mutasi', 'setting'],
+        'bayar' => ['bayar'],
+    ];
+
+    /** brankas_ver — {lain, bayar}; a blob without `_ver` counts as its row's updated_at for both. */
+    public static function ver(mixed $data, int $ts): array
     {
-        if (! is_array($data)) {
-            throw new RuntimeException('data brankas kosong');
+        $v = is_array($data) && isset($data['_ver']) && is_array($data['_ver']) ? $data['_ver'] : [];
+        $out = [];
+        foreach (['lain', 'bayar'] as $j) {
+            $out[$j] = isset($v[$j]) ? (int) $v[$j] : $ts;
         }
+
+        return $out;
+    }
+
+    /**
+     * brankas_saring — only the kept keys survive (lists re-indexed). An empty
+     * `setting` MUST become {}: the blob is decoded as assoc arrays, and an empty
+     * map would otherwise be written back as [].
+     */
+    public static function filter(array $data): array
+    {
         $clean = [];
         foreach (self::KEPT_KEYS as $k) {
             $clean[$k] = isset($data[$k]) && is_array($data[$k]) ? array_values($data[$k]) : [];
         }
-        $clean['setting'] = isset($data['setting']) && is_array($data['setting']) ? $data['setting'] : new stdClass;
+        $clean['setting'] = isset($data['setting']) && is_array($data['setting']) && $data['setting'] ? $data['setting'] : new stdClass;
 
-        $by = $oleh === null ? '' : substr(trim(KasKecil::s($oleh)), 0, 80);
-        $ts ??= (int) round(microtime(true) * 1000);
-        if (KasKecil::onCore()) {
-            // the singleton keeps legacy id 1; created_at is set once (not in the ODKU)
-            $this->db()->insert('INSERT INTO `'.KasKecil::t('bk_state').'` (`id`,`legacy_id`,`data`,`created_at`,`updated_at`,`diubah_oleh`,`version`) VALUES (?,?,?,?,?,?,?)'
-                .' ON DUPLICATE KEY UPDATE `version`=`version`+1, `data`=VALUES(`data`), `updated_at`=VALUES(`updated_at`), `diubah_oleh`=VALUES(`diubah_oleh`)',
-                [KasKecil::ulid(), '1', json_encode($clean, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $ts, $ts, $by, 1]);
-        } else {
-            $this->db()->insert('INSERT INTO `bk_state` (`id`,`data`,`updated_at`,`updated_by`) VALUES (1,?,?,?)
-            ON DUPLICATE KEY UPDATE `data`=VALUES(`data`),`updated_at`=VALUES(`updated_at`),`updated_by`=VALUES(`updated_by`)',
-                [json_encode($clean, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $ts, $by]);
-        }
-
-        return ['saved' => true, 'updated_at' => $ts];
+        return $clean;
     }
 
     /**
-     * brankas_bayar_simpan — the NARROW writer used by Kas Kecil's Payment
-     * Planning: read the blob, replace only `bayar`, write the rest back as is.
-     * (Read and write run under one row lock here; legacy had none.)
+     * brankas_simpan — panel Brankas: writes its own keys, never `bayar`.
+     *
+     * @return array{saved:true,updated_at:int,ver:array}|array{conflict:true,oleh:string,ver:array}
      */
-    public function saveBayar(mixed $rows, mixed $oleh): array
+    public function save(mixed $data, mixed $oleh, mixed $baseVer = null): array
+    {
+        if (! is_array($data)) {
+            throw new RuntimeException('data brankas kosong');
+        }
+
+        return $this->write($data, 'lain', $baseVer, $oleh);
+    }
+
+    /** brankas_bayar_simpan — panel Kas Kecil (Payment Planning): writes only `bayar`. */
+    public function saveBayar(mixed $rows, mixed $oleh, mixed $baseVer = null): array
     {
         if (! is_array($rows)) {
             throw new RuntimeException('daftar pembayaran kosong');
         }
 
-        return $this->db()->transaction(function () use ($rows, $oleh) {
-            $data = $this->read(true)['data'];
-            $data['bayar'] = array_values($rows);
+        return $this->write(['bayar' => array_values($rows)], 'bayar', $baseVer, $oleh);
+    }
 
-            return $this->save($data, $oleh);
+    /** brankas_tulis — merge $owner's keys from $new into the server blob, guarded by that owner's version. */
+    private function write(array $new, string $owner, mixed $baseVer, mixed $oleh): array
+    {
+        return $this->db()->transaction(function () use ($new, $owner, $baseVer, $oleh) {
+            [$old, $ts, $lastBy] = $this->lockRow();
+            $ver = self::ver($old, $ts);
+            if ($baseVer !== null && $baseVer !== '' && (int) $baseVer > 0 && (int) $baseVer !== $ver[$owner]) {
+                return ['conflict' => true, 'oleh' => $lastBy, 'ver' => $ver];
+            }
+
+            return $this->store($old, $new, self::OWNER_KEYS[$owner], $ver, [$owner], $oleh);
         });
     }
 
     /**
-     * v1 write: under the row lock, check the client's version (= updated_at of
-     * the blob it read), apply $fn to the state and save it with a strictly
-     * increasing stamp. Throws FinanceConflict (current state) when stale.
+     * v1 write: under the same row lock and writer, check the client's version
+     * (= updated_at of the blob it read), apply $fn to the state and save it with
+     * a strictly increasing stamp, bumping `_ver` of each owner whose keys changed.
+     * Throws FinanceConflict (current state) when stale.
      *
      * @param  \Closure(array): array  $fn
      * @return array{data:array, version:int}
@@ -254,16 +297,82 @@ class Brankas
     public function mutate(int $base, \Closure $fn, string $by): array
     {
         return $this->db()->transaction(function () use ($base, $fn, $by) {
-            $cur = $this->read(true);
-            if ($cur['updated_at'] !== $base) {
-                throw new FinanceConflict(['data' => $cur['data'], 'version' => $cur['updated_at']]);
+            [$old, $ts] = $this->lockRow();
+            $ver = self::ver($old, $ts);
+            $cur = $old;
+            unset($cur['_ver']);
+            $cur = $old === [] ? self::filter([]) : $cur;
+            if ($ts !== $base) {
+                throw new FinanceConflict(['data' => $cur, 'version' => $ts]);
             }
-            $ts = max((int) round(microtime(true) * 1000), $base + 1);
-            $this->save($fn($cur['data']), $by, $ts);
+            $new = $fn($cur);
+            $owners = [];
+            foreach (self::OWNER_KEYS as $owner => $keys) {
+                foreach ($keys as $k) {
+                    if (($new[$k] ?? null) !== ($cur[$k] ?? null)) {
+                        $owners[] = $owner;
+                        break;
+                    }
+                }
+            }
+            $this->store($old, $new, [...self::KEPT_KEYS, 'setting'], $ver, $owners ?: ['lain'], $by, $base + 1);
             $now = $this->read();
 
             return ['data' => $now['data'], 'version' => $now['updated_at']];
         });
+    }
+
+    /** SELECT … FOR UPDATE of the blob row: [decoded data or [], updated_at, last writer]. */
+    private function lockRow(): array
+    {
+        $by = KasKecil::onCore() ? '`diubah_oleh`' : '`updated_by`';
+        $row = $this->db()->selectOne('SELECT `data`,`updated_at`,'.$by.' AS `oleh` FROM `'.KasKecil::t('bk_state').'` WHERE `'.KasKecil::idCol().'`=1 FOR UPDATE');
+        if (! $row) {
+            return [[], 0, ''];
+        }
+        $d = json_decode((string) $row->data, true);
+
+        return [is_array($d) ? $d : [], (int) $row->updated_at, (string) $row->oleh];
+    }
+
+    /** Merge $keys of $new over $old, filter, bump the owners' versions and upsert. Caller holds the row lock. */
+    private function store(array $old, array $new, array $keys, array $ver, array $owners, mixed $oleh, int $floor = 0): array
+    {
+        $merged = $old;
+        foreach ($keys as $k) {
+            if (array_key_exists($k, $new)) {
+                $merged[$k] = $new[$k];
+            }
+        }
+        $clean = self::filter($merged);
+
+        // the version MUST go up even if the server clock stepped back: an equal
+        // version would let a stale tab pass the check
+        $now = max((int) round(microtime(true) * 1000), $floor);
+        foreach ($owners as $o) {
+            if ($now <= $ver[$o]) {
+                $now = $ver[$o] + 1;
+            }
+        }
+        foreach ($owners as $o) {
+            $ver[$o] = $now;
+        }
+        $clean['_ver'] = $ver;
+
+        $json = json_encode($clean, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $by = substr(trim(KasKecil::s($oleh ?? '')), 0, 80);
+        if (KasKecil::onCore()) {
+            // the singleton keeps legacy id 1; created_at is set once (not in the ODKU)
+            $this->db()->insert('INSERT INTO `'.KasKecil::t('bk_state').'` (`id`,`legacy_id`,`data`,`created_at`,`updated_at`,`diubah_oleh`,`version`) VALUES (?,?,?,?,?,?,?)'
+                .' ON DUPLICATE KEY UPDATE `version`=`version`+1, `data`=VALUES(`data`), `updated_at`=VALUES(`updated_at`), `diubah_oleh`=VALUES(`diubah_oleh`)',
+                [KasKecil::ulid(), '1', $json, $now, $now, $by, 1]);
+        } else {
+            $this->db()->insert('INSERT INTO `bk_state` (`id`,`data`,`updated_at`,`updated_by`) VALUES (1,?,?,?)
+            ON DUPLICATE KEY UPDATE `data`=VALUES(`data`),`updated_at`=VALUES(`updated_at`),`updated_by`=VALUES(`updated_by`)',
+                [$json, $now, $by]);
+        }
+
+        return ['saved' => true, 'updated_at' => $now, 'ver' => $ver];
     }
 
     /** brankas_akses_simpan — replace the whole page × role matrix (clamped 0..2). */

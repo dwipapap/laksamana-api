@@ -61,8 +61,8 @@ class FinanceLegacyController extends LegacyController
 
             // Brankas (#26): the vault blob, its page matrix and roles; bayarSave is Kas Kecil's narrow writer
             'brankasGet' => Envelope::okData($this->brankas->read()),
-            'brankasSave' => Envelope::okData($this->brankas->save($b['data'] ?? null, $b['oleh'] ?? null)),
-            'bayarSave' => Envelope::okData($this->brankas->saveBayar($b['bayar'] ?? null, $b['oleh'] ?? null)),
+            'brankasSave' => self::brankasReply($this->brankas->save($b['data'] ?? null, $b['oleh'] ?? null, $b['baseVer'] ?? null)),
+            'bayarSave' => self::brankasReply($this->brankas->saveBayar($b['bayar'] ?? null, $b['oleh'] ?? null, $b['baseVer'] ?? null)),
             'brankasAkses' => Envelope::okData($this->brankas->saveAkses($b['peta'] ?? null)),
             'brankasPeran' => Envelope::okData($this->brankas->saveRole($b)),
 
@@ -79,6 +79,17 @@ class FinanceLegacyController extends LegacyController
             'invSetting' => Envelope::okData($this->inv->saveSettings(isset($b['data']) && is_array($b['data']) ? $b['data'] : $b)),
             default => Envelope::error('Aksi tidak dikenal: '.$req->action),
         };
+    }
+
+    /**
+     * brankas_balas — a stale baseVer is ok:false (not ok:true with a marker):
+     * an old client that only checks `ok` would read the marker as saved.
+     */
+    private static function brankasReply(array $h): Response
+    {
+        return ! empty($h['conflict'])
+            ? Envelope::error('conflict', 200, ['conflict' => true, 'oleh' => $h['oleh'], 'ver' => $h['ver']])
+            : Envelope::okData($h);
     }
 
     /** Legacy wraps every message in petunjuk_galat() (cPanel hints for 1044/1049/1045). */

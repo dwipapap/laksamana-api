@@ -38,7 +38,7 @@
 | Petty cash — transactions | `simpanTrx` `{id?, tgl, keterangan, kategori_id, input, bon, oleh, baris[{pos_id,debet,kredit}]}`: one DB transaction; an edit deletes and re-inserts the split rows.<br>`hapusTrx` (split rows cascade).<br>`tandai` `{id, field input\|bon, nilai}` |
 | Petty cash — sources & categories | `simpanPos` / `nonaktifPos` / `aktifPos` / `hapusPos` — `hapusPos` is refused if the source is used.<br>Same four actions for Kategori. |
 | Petty cash — access | `simpanAkses {peta}` replaces the whole matrix.<br>`simpanPeran {kunci, peran}`: an empty `peran` deletes the row. |
-| Cash vault | `brankasGet` → `{data, akses, peran, updated_at}`<br>`brankasSave {data, oleh}` writes the WHOLE blob, filtered to the kept keys.<br>`bayarSave {bayar[], oleh}` reads the blob, replaces ONLY `bayar`, writes it back.<br>`brankasAkses` / `brankasPeran` |
+| Cash vault | `brankasGet` → `{data, akses, peran, updated_at, ver}`<br>`brankasSave {data, oleh, baseVer}` writes Brankas' keys (never `bayar`), guarded by `ver.lain`.<br>`bayarSave {bayar[], oleh, baseVer}` writes ONLY `bayar`, guarded by `ver.bayar`. Stale → `ok:false, error:"conflict"`.<br>`brankasAkses` / `brankasPeran` |
 | Invoices & receipts | See the rules below. |
 | Diagnostics | `ping`, `stats` |
 
@@ -70,9 +70,9 @@
 
 ## Port notes (#26: Brankas)
 
-- `brankasGet` / `brankasSave` (whole blob, only `rekening, piutang, bayar, investor, mutasi, setting` survive; the lists are re-indexed) / `bayarSave` (reads the blob, replaces only `bayar`) / `brankasAkses` / `brankasPeran` are served by the compat route, byte-identical (parity).
-- `bayarSave` now reads and writes under one row lock. Legacy had none; the observable behaviour is unchanged.
-- JSON is handled as assoc arrays like legacy, so an empty `setting` `{}` is stored as `[]` once round-tripped (legacy quirk, kept).
+- `brankasGet` / `brankasSave` / `bayarSave` / `brankasAkses` / `brankasPeran` are served by the compat route, byte-identical (parity).
+- #301 (port of legacy `ff6a774`, 1 Oct 2026): ONE writer (`brankas_tulis` → `Brankas::write`) for both panels, read-modify-write under `SELECT … FOR UPDATE`. `brankasSave` writes only `rekening, piutang, investor, mutasi, setting` (never `bayar`); `bayarSave` only `bayar`; every other key comes from the server blob. Versions per owner in the blob's `_ver` (`lain` = Brankas, `bayar` = Kas Kecil), returned by `brankasGet` as `ver` (stripped from `data`). A stale `baseVer` → `{ok:false, error:"conflict", conflict:true, oleh, ver}`; no `baseVer` = old client, let through. Saves return `{saved, updated_at, ver}`. v1 `mutate` uses the same writer.
+- An empty `setting` is written as `{}` (read back as `[]`, as legacy decodes assoc).
 - Kompas reads the vault in-process through `Brankas::read()` (kompas is not ported yet).
 - v1: `/api/v1/finance/vault` (module `brankas`) plus `/api/v1/finance/petty-cash/payment-plan` (module `finance`). See `docs/api/finance.md`.
 
