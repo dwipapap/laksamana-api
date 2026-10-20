@@ -3,9 +3,11 @@
 namespace App\Modules\Dw\Http\V1;
 
 use App\Auth\OfficeAccess;
+use App\Modules\Dw\Services\DwConflict;
 use App\Modules\Dw\Services\DwGuests;
 use App\Modules\Dw\Services\DwService;
 use App\Support\Api\ApiResponse;
+use App\Support\JsonDoc;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use RuntimeException;
@@ -497,7 +499,9 @@ class DwController
      */
     public function settings(): JsonResponse
     {
-        return ApiResponse::ok($this->dw->setting());
+        $v = $this->dw->settingVersion();
+
+        return ApiResponse::ok($this->dw->setting(), ['version' => $v], 200, ['ETag' => '"'.$v.'"']);
     }
 
     /**
@@ -505,17 +509,30 @@ class DwController
      * tariffs, quotas, default hours and position maps. The hr list and the
      * akses matrix are kept from the stored value unless the caller is a
      * module admin — silently keeping them, exactly like the legacy route.
+     * `bayarLunas` is always kept (ticks go through POST /payments/marks).
+     * The version (GET meta.version = updated_at) is REQUIRED as If-Match or
+     * ?version= (428 without, 409 when stale), checked under the row lock (#303).
      */
     public function saveSettings(Request $r): JsonResponse
     {
-        $data = $r->json()->all();
+        $h = $r->header('If-Match');
+        $base = is_string($h) && $h !== '' ? trim($h, ' "W/') : $r->query('version');
+        if (! is_string($base) || ! ctype_digit($base)) {
+            return ApiResponse::error('version_required', 'Send the version you edited as If-Match (or ?version=).', 428);
+        }
+        // decoded keeping {} as objects: the blob's maps must not come back as []
+        $data = JsonDoc::decode($r->getContent());
         $me = $this->me($r);
 
-        return $this->run(function () use ($data, $me) {
-            $this->dw->assertHrd($me, 'Mengubah pengaturan modul');
+        try {
+            return $this->run(function () use ($data, $me, $base) {
+                $this->dw->assertHrd($me, 'Mengubah pengaturan modul');
 
-            return $this->dw->saveSetting($data, $me['name'], DwService::isAdmin($me));
-        });
+                return $this->dw->saveSettingVersioned($data, $me['name'], DwService::isAdmin($me), (int) $base);
+            });
+        } catch (DwConflict $e) {
+            return ApiResponse::error('version_conflict', 'The settings were saved by someone else. Reload and apply your change again.', 409, ['version' => $e->current]);
+        }
     }
 
     // ------------------------------------------------------------ payments

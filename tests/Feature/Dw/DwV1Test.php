@@ -255,18 +255,40 @@ it('refuses replacement for unknown shifts, other divisions and clashes', functi
 
 it('serves settings and lets HRD write them', function () {
     $hrd = loginAs(officeUser('u-rizkiarfan'));
-    $this->withToken($hrd)->getJson('/api/v1/dw/settings')->assertOk()
-        ->assertJsonStructure(['data' => ['tarif']]);
+    $v = $this->withToken($hrd)->getJson('/api/v1/dw/settings')->assertOk()
+        ->assertJsonStructure(['data' => ['tarif'], 'meta' => ['version']])->json('meta.version');
 
-    $this->withToken($hrd)->putJson('/api/v1/dw/settings', ['tarif' => ['Bar Helper' => 7], 'hr' => ['u-rizkiarfan']])
+    $this->withToken($hrd)->putJson("/api/v1/dw/settings?version=$v", ['tarif' => ['Bar Helper' => 7], 'hr' => ['u-rizkiarfan']])
         ->assertOk()->assertJsonPath('data.saved', true);
     $this->withToken($hrd)->getJson('/api/v1/dw/settings')->assertOk()
         ->assertJsonPath('data.tarif.Bar Helper', 7);
 });
 
 it('refuses settings writes to non-HRD', function () {
-    $this->withToken(loginAs(officeUser('u-arif')))->putJson('/api/v1/dw/settings', ['tarif' => []])
+    $this->withToken(loginAs(officeUser('u-arif')))->putJson('/api/v1/dw/settings?version='.dwSvc1()->settingVersion(), ['tarif' => []])
         ->assertStatus(403)->assertJsonPath('error.code', 'forbidden');
+});
+
+it('requires the settings version, refuses a stale one and never drops bayarLunas (#303)', function () {
+    $hrd = loginAs(officeUser('u-rizkiarfan'));
+    $this->withToken($hrd)->putJson('/api/v1/dw/settings', ['tarif' => ['Bar Helper' => 3]])
+        ->assertStatus(428)->assertJsonPath('error.code', 'version_required');
+
+    $old = dwSvc1()->settingVersion();
+    dwSvc1()->tandaiBayar('2031-05-11', 'BANK::9', true, 'Kasir');   // a tick lands after the tab loaded
+    $this->withToken($hrd)->putJson("/api/v1/dw/settings?version=$old", ['tarif' => ['Bar Helper' => 3]])
+        ->assertStatus(409)->assertJsonPath('error.code', 'version_conflict');
+
+    // a fresh tab that sends no bayarLunas (or an old copy) keeps the stored ticks
+    $this->withToken($hrd)->putJson('/api/v1/dw/settings?version='.dwSvc1()->settingVersion(), ['tarif' => ['Bar Helper' => 3], 'bayarLunas' => []])
+        ->assertOk();
+    $raw = dwSvc1()->setting(); // decoded keeping objects, as stored
+    expect($raw->bayarLunas)->toBeObject()
+        ->and(property_exists($raw->bayarLunas, '2031-05-11|BANK::9'))->toBeTrue();
+
+    // unticking the last mark leaves an empty OBJECT, never []
+    dwSvc1()->tandaiBayar('2031-05-11', 'BANK::9', false, 'Kasir');
+    expect(dwSvc1()->setting()->bayarLunas)->toBeObject();
 });
 
 it('keeps hr and akses from the stored value for non-admin HRD over v1', function () {
@@ -274,7 +296,7 @@ it('keeps hr and akses from the stored value for non-admin HRD over v1', functio
     dwSvc1()->saveSetting(['tarif' => ['Bar Helper' => 1], 'hr' => ['u-arif'], 'akses' => ['menu' => 'x']],
         officeUser('u-admin')['name'], true);
 
-    $this->withToken(loginAs(officeUser('u-arif')))->putJson('/api/v1/dw/settings', [
+    $this->withToken(loginAs(officeUser('u-arif')))->putJson('/api/v1/dw/settings?version='.dwSvc1()->settingVersion(), [
         'tarif' => ['Bar Helper' => 2], 'hr' => ['u-nobody'], 'akses' => ['menu' => 'y'],
     ])->assertOk();
 
