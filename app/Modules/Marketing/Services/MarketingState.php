@@ -127,6 +127,157 @@ class MarketingState
         return (int) $this->read()['_versi'];
     }
 
+    // ------------------------------------------------- narrow reads (Radar)
+
+    /** Decode one `data` column value to a row array, or null. */
+    private static function baris(mixed $data): ?array
+    {
+        $r = json_decode((string) $data, true);
+
+        return is_array($r) ? $r : null;
+    }
+
+    /**
+     * Decoded rows of a collection table with `tanggal` in [from, to], in the
+     * same order read() uses. Works on legacy and core (both index `tanggal`).
+     *
+     * @return list<array<string,mixed>>
+     */
+    private function koleksiRentang(string $name, string $from, string $to, string $order): array
+    {
+        $table = MarketingSchema::defs()[$name]['table'];
+        $rows = [];
+        foreach ($this->db()->select(
+            "SELECT `data` FROM `$table` WHERE `tanggal` >= ? AND `tanggal` <= ? ORDER BY $order",
+            [$from, $to]) as $row) {
+            if (($r = self::baris($row->data)) !== null) {
+                $rows[] = $r;
+            }
+        }
+
+        return $rows;
+    }
+
+    /** Events with tanggal in [from, to] (the board's agenda input). @return list<array<string,mixed>> */
+    public function eventsForRange(string $from, string $to): array
+    {
+        $c = MarketingSchema::defs()['events'];
+        $order = ! empty($c['created']) ? MarketingSchema::createdOrder() : MarketingSchema::idOrder();
+
+        return $this->koleksiRentang('events', $from, $to, $order);
+    }
+
+    /** VIP rows with tanggal in [from, to] (legacy: the settings blob, filtered in PHP). @return list<array<string,mixed>> */
+    public function vipForRange(string $from, string $to): array
+    {
+        if (! MarketingSchema::onCore()) {
+            $out = [];
+            foreach ($this->settingRows('vip') as $r) {
+                $t = (string) ($r['tanggal'] ?? '');
+                if ($t >= $from && $t <= $to) {
+                    $out[] = $r;
+                }
+            }
+
+            return $out;
+        }
+
+        return $this->koleksiRentang('vip', $from, $to, 'urutan');
+    }
+
+    /** Events that can still happen, for the Radar file gate (status-filtered in SQL). @return list<array<string,mixed>> */
+    public function eventsWithStatus(array $statuses): array
+    {
+        if ($statuses === []) {
+            return [];
+        }
+        $c = MarketingSchema::defs()['events'];
+        $order = ! empty($c['created']) ? MarketingSchema::createdOrder() : MarketingSchema::idOrder();
+        $table = $c['table'];
+        $tanya = implode(',', array_fill(0, count($statuses), '?'));
+        $rows = [];
+        foreach ($this->db()->select(
+            "SELECT `data` FROM `$table` WHERE `status` IN ($tanya) ORDER BY $order", $statuses) as $row) {
+            if (($r = self::baris($row->data)) !== null) {
+                $rows[] = $r;
+            }
+        }
+
+        return $rows;
+    }
+
+    /** COUNT of events (the board's `n`, which must stay whole-table). */
+    public function countEvents(): int
+    {
+        $table = MarketingSchema::defs()['events']['table'];
+
+        return (int) ($this->db()->selectOne("SELECT COUNT(*) AS c FROM `$table`")?->c ?? 0);
+    }
+
+    /** One settings value without reading the whole settings table. */
+    public function setting(string $k): mixed
+    {
+        $table = MarketingSchema::table('settings');
+        foreach (['extra:'.$k, $k] as $key) {
+            $row = $this->db()->selectOne("SELECT `v` FROM `$table` WHERE `k` = ? LIMIT 1", [$key]);
+            if ($row) {
+                return json_decode((string) $row->v, true);
+            }
+        }
+
+        return null;
+    }
+
+    /** Decoded rows of a settings-held collection (legacy `extra:<name>` blob). @return list<array<string,mixed>> */
+    private function settingRows(string $name): array
+    {
+        $v = $this->setting($name);
+        if (! is_array($v)) {
+            return [];
+        }
+
+        return array_values(array_filter($v, 'is_array'));
+    }
+
+    /** One collection row by legacy id, decoded, or null. */
+    public function rowById(string $name, string $id): ?array
+    {
+        if ($id === '') {
+            return null;
+        }
+        $defs = MarketingSchema::defs();
+        if (! isset($defs[$name])) {
+            return null;
+        }
+        $c = $defs[$name];
+        $idCol = MarketingSchema::idCol();
+        $row = $this->db()->selectOne("SELECT `data` FROM `{$c['table']}` WHERE `$idCol` = ? LIMIT 1", [$id]);
+        if (! $row) {
+            return null;
+        }
+
+        return self::baris($row->data);
+    }
+
+    /** One VIP row by id (legacy: the settings blob). */
+    public function vipById(string $id): ?array
+    {
+        if ($id === '') {
+            return null;
+        }
+        if (! MarketingSchema::onCore()) {
+            foreach ($this->settingRows('vip') as $r) {
+                if ((string) ($r['id'] ?? '') === $id) {
+                    return $r;
+                }
+            }
+
+            return null;
+        }
+
+        return $this->rowById('vip', $id);
+    }
+
     public function saveAll(mixed $state): array
     {
         return NamedLock::run('marketing', 'mkt_save', fn () => $this->saveAllLocked($state));

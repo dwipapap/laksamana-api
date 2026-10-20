@@ -53,12 +53,24 @@ class RadarBoard
     public function board(string $from, string $to, bool $money): array
     {
         $sumber = [];
-        $mkt = $this->try('mkt', fn () => $this->marketing->read(), $sumber);
-        $evt = $this->try('evt', fn () => $this->event->read(), $sumber);
+        // Narrow bundles: agenda inputs for [from, to] plus the whole-table
+        // counts the board reports as `n` — never the full state blobs.
+        $mkt = $this->try('mkt', fn () => [
+            'events' => $this->marketing->eventsForRange($from, $to),
+            'vip' => $this->marketing->vipForRange($from, $to),
+            'fbFormats' => $this->marketing->setting('fbFormats'),
+            'nEvents' => $this->marketing->countEvents(),
+        ], $sumber);
+        $evt = $this->try('evt', fn () => [
+            'events' => $this->event->eventsForRange($from, $to),
+            'nEvents' => $this->event->countEvents(),
+        ], $sumber);
         $rsv = $this->try('rsv', fn () => $this->reservasi->list($from, $to), $sumber);
 
-        $agenda = RadarRules::agenda(
-            self::list($mkt, 'events'), self::list($mkt, 'vip'), self::list($evt, 'events'), $from, $to);
+        $mktEvents = is_array($mkt) ? (is_array($mkt['events'] ?? null) ? $mkt['events'] : []) : [];
+        $mktVip = is_array($mkt) ? (is_array($mkt['vip'] ?? null) ? $mkt['vip'] : []) : [];
+        $evtEvents = is_array($evt) ? (is_array($evt['events'] ?? null) ? $evt['events'] : []) : [];
+        $agenda = RadarRules::agenda($mktEvents, $mktVip, $evtEvents, $from, $to);
 
         $reservations = [];
         foreach (is_array($rsv) ? $rsv : [] as $r) {
@@ -67,8 +79,8 @@ class RadarBoard
             }
         }
 
-        $sumber['mkt']['n'] = count(self::list($mkt, 'events'));
-        $sumber['evt']['n'] = count(self::list($evt, 'events'));
+        $sumber['mkt']['n'] = is_array($mkt) ? (int) ($mkt['nEvents'] ?? 0) : 0;
+        $sumber['evt']['n'] = is_array($evt) ? (int) ($evt['nEvents'] ?? 0) : 0;
         $sumber['rsv']['n'] = count(array_filter($reservations, fn ($r) => ! RadarRules::isCancelled($r)));
 
         $fb = is_array($mkt) && is_array($mkt['fbFormats'] ?? null) ? array_values($mkt['fbFormats']) : null;
@@ -92,8 +104,7 @@ class RadarBoard
     public function detail(string $sumber, string $id, bool $money): ?array
     {
         if ($sumber === 'evt') {
-            $s = $this->event->read();
-            $e = self::find(self::list($s, 'events'), $id);
+            $e = $this->event->emsRow('events', $id);
             if (! $e) {
                 return null;
             }
@@ -102,12 +113,13 @@ class RadarBoard
                 return null;
             }
             $talents = [];
-            foreach (self::list($s, 'schedules') as $sc) {
-                if (is_array($sc) && (string) ($sc['event_id'] ?? '') === $id) {
-                    $t = self::find(self::list($s, 'talents'), (string) ($sc['talent_id'] ?? ''));
-                    $talents[] = ['nama' => (string) ($t ? ($t['name'] ?? $t['nama'] ?? '') : '') ?: '(talent)',
-                        'jam' => (string) ($sc['start_time'] ?? ''), 'tipe' => (string) ($sc['performance_type'] ?? '')];
+            foreach ($this->event->emsRows('schedules', ['event_id' => $id]) as $sc) {
+                if (! is_array($sc)) {
+                    continue;
                 }
+                $t = $this->event->emsRow('talents', (string) ($sc['talent_id'] ?? ''));
+                $talents[] = ['nama' => (string) ($t ? ($t['name'] ?? $t['nama'] ?? '') : '') ?: '(talent)',
+                    'jam' => (string) ($sc['start_time'] ?? ''), 'tipe' => (string) ($sc['performance_type'] ?? '')];
             }
 
             return $a + ['event' => [
@@ -121,8 +133,7 @@ class RadarBoard
             return null;
         }
 
-        $s = $this->marketing->read();
-        $row = self::find(self::list($s, $sumber === 'mkt' ? 'events' : 'vip'), $id);
+        $row = $sumber === 'mkt' ? $this->marketing->rowById('events', $id) : $this->marketing->vipById($id);
         if (! $row) {
             return null;
         }
@@ -132,12 +143,12 @@ class RadarBoard
         if (! $a) {
             return null;
         }
-        $client = self::find(self::list($s, 'clients'), (string) ($row['clientId'] ?? ''));
+        $client = $this->marketing->rowById('clients', (string) ($row['clientId'] ?? ''));
         $klien = $client ? [
             'nama' => (string) ($client['nama'] ?? $client['name'] ?? ''), 'perusahaan' => (string) ($client['perusahaan'] ?? ''),
             'pic' => (string) ($client['pic'] ?? ''), 'hp' => (string) ($client['hp'] ?? ''),
         ] : null;
-        $pic = self::find(self::list($s, 'users'), (string) ($row['mktPIC'] ?? ''));
+        $pic = $this->marketing->rowById('users', (string) ($row['mktPIC'] ?? ''));
         $picNama = $pic ? (string) ($pic['name'] ?? $pic['nama'] ?? '') : (string) ($row['mktPIC'] ?? '');
 
         if ($sumber === 'vip') {
@@ -164,7 +175,7 @@ class RadarBoard
      */
     public function attachmentAllowed(string $key, bool $money): bool
     {
-        foreach (self::list($this->marketing->read(), 'events') as $e) {
+        foreach ($this->marketing->eventsWithStatus(RadarRules::MKT_JALAN) as $e) {
             if (! is_array($e) || ! RadarRules::willHappen(['sumber' => 'mkt', 'status' => $e['status'] ?? ''])) {
                 continue;
             }
@@ -181,9 +192,10 @@ class RadarBoard
     public function promos(string $today): array
     {
         $sumber = [];
-        $bd = $this->try('bd', fn () => $this->bd->read(), $sumber);
+        // Only the `promos` setting is needed — never the whole BD state.
+        $bd = $this->try('bd', fn () => $this->bd->setting('promos', []), $sumber);
 
-        return RadarRules::promos(is_array($bd) && is_array($bd['promos'] ?? null) ? $bd['promos'] : [], $today)
+        return RadarRules::promos(is_array($bd) ? $bd : [], $today)
             + ['sumber' => array_values($sumber)];
     }
 
@@ -200,24 +212,5 @@ class RadarBoard
 
             return null;
         }
-    }
-
-    private static function list(mixed $state, string $key): array
-    {
-        return is_array($state) && is_array($state[$key] ?? null) ? $state[$key] : [];
-    }
-
-    private static function find(array $rows, string $id): ?array
-    {
-        if ($id === '') {
-            return null;
-        }
-        foreach ($rows as $r) {
-            if (is_array($r) && (string) ($r['id'] ?? '') === $id) {
-                return $r;
-            }
-        }
-
-        return null;
     }
 }

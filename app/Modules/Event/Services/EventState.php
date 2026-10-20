@@ -383,6 +383,39 @@ class EventState
         return $this->emsRows($collection, ['id' => $id], '', 1)[0] ?? null;
     }
 
+    /**
+     * Full event rows starting in [from, to] for the Radar board, in read()
+     * order. Dateless rows ride along for the `tanggal` fallback; the caller
+     * still filters, so the output is identical to the full read.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function eventsForRange(string $from, string $to): array
+    {
+        $def = $this->emsDef('events');
+        $key = $def['id'];
+        $order = ! empty($def['created']) ? "created_at ASC, `$key` ASC" : "`$key` ASC";
+        $out = [];
+        foreach ($this->db()->select(
+            "SELECT `data` FROM `{$def['table']}`".
+            ' WHERE (`start_datetime` >= ? AND `start_datetime` < ?) OR `start_datetime` IS NULL OR `start_datetime` = ?'.
+            " ORDER BY $order",
+            [$from.' 00:00:00', date('Y-m-d', strtotime($to.' +1 day')).' 00:00:00', '']) as $r) {
+            $d = json_decode((string) $r->data, true);
+            if (is_array($d)) {
+                $out[] = $d;
+            }
+        }
+
+        return $out;
+    }
+
+    /** COUNT of events (the board's `n`, which must stay whole-table). */
+    public function countEvents(): int
+    {
+        return $this->emsCount('events');
+    }
+
     /** Raw column projection (legacy column names) — for column-only reads. */
     public function emsColumns(string $collection, array $cols, array $where = [], string $order = '', int $limit = 0): array
     {
