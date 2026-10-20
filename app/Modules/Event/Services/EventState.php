@@ -14,17 +14,27 @@ use RuntimeException;
  * stats() from event-mysql/lib_event_mysql.php.
  *
  * Rules kept exactly (see docs/modules/event.md):
- *  - Table collections upsert with the updated_at guard only: no
- *    baseUpdatedAt check, no cap bump, rows stored verbatim (RowSync
- *    'keepBase'). A collection not sent is not touched.
- *  - Deletion of rows missing from the payload is bounded by the newest
- *    updatedAt IN the payload ('maxUpd'): a row another crew created after
- *    this client loaded is never deleted by it. A payload without any stamp
- *    deletes without a bound; an empty list deletes nothing.
+ *  - Stale-tab guards (legacy b0a64d5, 1 Oct 2026; #302): a row carrying
+ *    `baseUpdatedAt` older than the stored updated_at is REFUSED and reported
+ *    in `bentrok` (the device clock used to let a stale tab always win); one
+ *    that passes gets its stamp bumped above the server's when needed, written
+ *    into `data` and returned in `versi`. `baseUpdatedAt` is never stored.
+ *    Rows without it keep the plain updated_at guard. A collection not sent
+ *    is not touched.
+ *  - Deletion: a client that sends `dikenal` (ids it has seen, per
+ *    collection) deletes only dikenal - payload; an empty payload deleting
+ *    more than 3 rows is refused. Old clients without `dikenal` keep the old
+ *    rule: bounded by the newest updatedAt IN the payload ('maxUpd'); a
+ *    payload without any stamp deletes without a bound; an empty list
+ *    deletes nothing.
  *  - checkins are append-only (INSERT IGNORE, never updated or deleted) and
  *    getAll returns only the newest 2000.
- *  - eventDetails is a map event_id => detail; missing entries are deleted
- *    without a bound (legacy passes no max there).
+ *  - eventDetails is a map event_id => detail with the same two guards
+ *    (keys 'ed:<id>' in versi); without `dikenal`, missing entries are
+ *    deleted without a bound (legacy passes no max there).
+ *  - getAll returns each row's updatedAt from the updated_at COLUMN (legacy
+ *    5157c03): ticketing bumps the column without touching the JSON, and the
+ *    guard compares with the column.
  *  - settings: entertainmentRules, role, layoutTemplates (one JSON value each).
  *  - saveAll runs under GET_LOCK('<db>:ems_save') and in one transaction.
  *
@@ -49,7 +59,7 @@ class EventState
         foreach (EventSchema::defs() as $name => $c) {
             $key = $c['id'];
             $order = ! empty($c['created']) ? "created_at ASC, `$key` ASC" : "`$key` ASC";
-            $out[$name] = $this->rows($db->select("SELECT data FROM `{$c['table']}` ORDER BY $order"));
+            $out[$name] = $this->rows($db->select("SELECT data, updated_at FROM `{$c['table']}` ORDER BY $order"), true);
         }
 
         // checkins: append-only, newest first (capped so the blob stays small)
@@ -73,12 +83,16 @@ class EventState
         return $out;
     }
 
-    private function rows(array $result): array
+    private function rows(array $result, bool $stampFromColumn = false): array
     {
         $rows = [];
         foreach ($result as $row) {
             $r = json_decode((string) $row->data, true);
             if (is_array($r)) {
+                // the guard compares with the column, so that is the version returned (5157c03)
+                if ($stampFromColumn && (int) ($row->updated_at ?? 0) > 0) {
+                    $r['updatedAt'] = (int) $row->updated_at;
+                }
                 $rows[] = $r;
             }
         }
@@ -104,9 +118,9 @@ class EventState
     }
 
     /** save_all(): the lock is taken BEFORE the payload is checked, like legacy. */
-    public function saveAll(mixed $state): array
+    public function saveAll(mixed $state, ?array $dikenal = null): array
     {
-        return self::locked(fn () => $this->saveAllLocked($state));
+        return self::locked(fn () => $this->saveAllLocked($state, $dikenal));
     }
 
     /**
@@ -142,7 +156,7 @@ class EventState
         });
     }
 
-    private function saveAllLocked(mixed $state): array
+    private function saveAllLocked(mixed $state, ?array $dikenal): array
     {
         if (! is_array($state)) {
             throw new RuntimeException('Payload data kosong/invalid');
@@ -167,7 +181,7 @@ class EventState
             }
         }
 
-        $hitung = $db->transaction(function () use ($db, $state) {
+        [$hitung, $bentrok, $versi] = $db->transaction(function () use ($db, $state, $dikenal) {
             $hitung = [];
             $bentrok = [];
             $versi = [];
@@ -177,8 +191,14 @@ class EventState
                     continue; // not sent -> untouched
                 }
                 $rows = is_array($state[$name]) ? $state[$name] : [];
-                $ids = RowSync::upsertCollection($db, $c, $rows, $name, ['keepBase' => true], $bentrok, $versi);
-                RowSync::deleteMissing($db, $c['table'], $c['id'], $ids, 'maxUpd', self::maxStamp($rows));
+                $ids = RowSync::upsertCollection($db, $c, $rows, $name,
+                    ['conflict' => true, 'capBump' => true, 'stampOnBump' => true, 'bareBentrok' => true, 'nameKeys' => ['name', 'title']], $bentrok, $versi);
+                $kenal = self::known($dikenal, $name);
+                if ($kenal !== null) {
+                    RowSync::deleteKnown($db, $c['table'], $c['id'], $ids, $kenal);
+                } else {
+                    RowSync::deleteMissing($db, $c['table'], $c['id'], $ids, 'maxUpd', self::maxStamp($rows, $name, $bentrok, $versi));
+                }
                 $hitung[$name] = count($ids);
             }
 
@@ -196,16 +216,48 @@ class EventState
             }
 
             // eventDetails: one row per event
+            // eventDetails used to be deleted without ANY bound: a stale tab removed
+            // details other crews created after it loaded. Same two guards as above.
             if (isset($state['eventDetails']) && is_array($state['eventDetails'])) {
+                $edTable = EventSchema::table('event_details');
+                $verEd = [];
+                $keys = array_map('strval', array_keys($state['eventDetails']));
+                foreach (array_chunk($keys, 500) as $chunk) {
+                    foreach ($db->select("SELECT event_id AS i, updated_at FROM `$edTable` WHERE event_id IN (".implode(',', array_fill(0, count($chunk), '?')).')', $chunk) as $row) {
+                        $verEd[(string) $row->i] = (int) $row->updated_at;
+                    }
+                }
                 $ids = [];
                 foreach ($state['eventDetails'] as $eid => $d) {
                     if (! is_array($d)) {
                         continue;
                     }
-                    $ids[] = (string) $eid;
-                    $this->upsertDetail((string) $eid, $d);
+                    $eid = (string) $eid;
+                    $ids[] = $eid;
+                    $passed = false;
+                    if (array_key_exists('baseUpdatedAt', $d)) {
+                        if (isset($verEd[$eid]) && $verEd[$eid] > RowSync::ms($d['baseUpdatedAt'])) {
+                            $bentrok[] = ['koleksi' => 'eventDetails', 'id' => $eid, 'nama' => 'Rincian event '.$eid];
+
+                            continue;
+                        }
+                        $passed = true;
+                    }
+                    unset($d['baseUpdatedAt']);
+                    $uaSent = RowSync::ms($d['updatedAt'] ?? 0);
+                    $ua = RowSync::capTulis($uaSent, $passed, $verEd[$eid] ?? null);
+                    if ($ua !== $uaSent) {
+                        $d['updatedAt'] = $ua;
+                        $versi['ed:'.$eid] = $ua;
+                    }
+                    $this->upsertDetail($eid, $d);
                 }
-                RowSync::deleteMissing($db, EventSchema::table('event_details'), 'event_id', $ids, 'notIn');
+                $kenal = self::known($dikenal, 'eventDetails');
+                if ($kenal !== null) {
+                    RowSync::deleteKnown($db, $edTable, 'event_id', $ids, $kenal);
+                } else {
+                    RowSync::deleteMissing($db, $edTable, 'event_id', $ids, 'notIn');
+                }
                 $hitung['eventDetails'] = count($ids);
             }
 
@@ -215,19 +267,32 @@ class EventState
                 }
             }
 
-            return $hitung;
+            return [$hitung, $bentrok, $versi];
         });
 
-        return ['saved' => true, 'jumlah' => $hitung, 'backend' => 'laravel', 'ts' => gmdate('c')];
+        return ['saved' => true, 'jumlah' => $hitung, 'bentrok' => $bentrok, 'versi' => (object) $versi, 'backend' => 'laravel', 'ts' => gmdate('c')];
     }
 
-    /** Newest updatedAt among the rows that are actually written (id present). */
-    private static function maxStamp(array $rows): int
+    /** The ids the client has seen for one collection, or null (old client: old delete rule). */
+    private static function known(?array $dikenal, string $name): ?array
     {
+        return isset($dikenal[$name]) && is_array($dikenal[$name]) ? $dikenal[$name] : null;
+    }
+
+    /** Newest updatedAt among the rows that are actually written (id present, not refused). */
+    private static function maxStamp(array $rows, string $name, array $bentrok, array $versi): int
+    {
+        // as legacy: refused rows are not written, and a bumped stamp counts as written
+        $refused = [];
+        foreach ($bentrok as $b) {
+            if ($b['koleksi'] === $name) {
+                $refused[$b['id']] = true;
+            }
+        }
         $max = 0;
         foreach ($rows as $r) {
-            if (is_array($r) && ! empty($r['id'])) {
-                $max = max($max, RowSync::ms($r['updatedAt'] ?? 0));
+            if (is_array($r) && ! empty($r['id']) && ! isset($refused[(string) $r['id']])) {
+                $max = max($max, $versi[$name.':'.$r['id']] ?? RowSync::ms($r['updatedAt'] ?? 0));
             }
         }
 

@@ -47,7 +47,9 @@ use Throwable;
  *   'skipUnchanged' bool  rows not marked edited with the same stamp as stored
  *                         are not rewritten (marketing)
  *   'nameKeys'      list  fields used as the human name in $bentrok (default nama, name)
- *   'keepBase'      bool  store the row verbatim, `baseUpdatedAt` included (event never strips it)
+ *   'keepBase'      bool  store the row verbatim, `baseUpdatedAt` included (event v1 records)
+ *   'bareBentrok'   bool  $bentrok entries are only {koleksi, id, nama} (event saveAll, legacy b0a64d5)
+ *   'stampOnBump'   bool  with 'capBump': write updatedAt into `data` only when the stamp was bumped (event)
  *
  * ─── Delete strategies (deleteMissing) ───────────────────────────────────
  *   'sejak'  : DELETE rows NOT IN ids AND updated_at <= $param; $param<=0 or no ids => nothing (marketing)
@@ -279,6 +281,8 @@ final class RowSync
         $capBump = ! empty($opt['capBump']);
         $skipUnchanged = ! empty($opt['skipUnchanged']);
         $keepBase = ! empty($opt['keepBase']);
+        $bareBentrok = ! empty($opt['bareBentrok']);
+        $stampOnBump = ! empty($opt['stampOnBump']);
         $fit = ! empty($def['coerce']); // core (#97): truncate string columns like non-strict MySQL did
         $createdField = $def['created_field'] ?? 'createdAt';
 
@@ -348,11 +352,13 @@ final class RowSync
 
                         continue; // nothing changed: not a conflict, nothing to write
                     }
-                    $bentrok[] = [
-                        'koleksi' => $name, 'id' => $id,
-                        'nama' => self::rowName($r, $opt, $id),
-                        'versiKamu' => $base, 'versiServer' => $verServer[$id],
-                    ];
+                    $bentrok[] = $bareBentrok
+                        ? ['koleksi' => $name, 'id' => $id, 'nama' => self::rowName($r, $opt, $id)]
+                        : [
+                            'koleksi' => $name, 'id' => $id,
+                            'nama' => self::rowName($r, $opt, $id),
+                            'versiKamu' => $base, 'versiServer' => $verServer[$id],
+                        ];
 
                     continue; // never overwrite someone else's newer work
                 }
@@ -368,7 +374,7 @@ final class RowSync
             if ($ua !== $uaSent) {
                 $versi[$name.':'.$id] = $ua;
             }
-            if ($capBump) {
+            if ($capBump && (! $stampOnBump || $ua !== $uaSent)) {
                 $simpan['updatedAt'] = $ua;
             }
             if ($skipUnchanged && ! $passed && isset($verServer[$id]) && $ua === $verServer[$id]) {
@@ -420,6 +426,21 @@ final class RowSync
         }
 
         return $id;
+    }
+
+    /**
+     * Delete only ids the client KNEW (`dikenal`) and no longer sends (event_hapus_dikenal,
+     * legacy b0a64d5). An empty payload that would delete more than 3 rows at once is
+     * refused: no button removes four rows in one go. Returns the rows deleted.
+     */
+    public static function deleteKnown(ConnectionInterface $db, string $table, string $idCol, array $ids, array $known): int
+    {
+        $gone = array_values(array_diff(array_map(fn ($v) => is_array($v) ? 'Array' : (string) $v, $known), $ids));
+        if (! $gone || (count($ids) === 0 && count($gone) > 3)) {
+            return 0;
+        }
+
+        return $db->delete("DELETE FROM `$table` WHERE `$idCol` IN (".implode(',', array_fill(0, count($gone), '?')).')', $gone);
     }
 
     /** Remove rows missing from the payload according to $strategy (see class doc). */

@@ -50,7 +50,7 @@ it('saves rows with the updated_at guard, verbatim data and WIB datetimes', func
     expect($ev->start_datetime)->toBe('2031-03-04 20:30:00')        // ISO Z -> WIB
         ->and($ev->end_datetime)->toBe('2031-03-05 03:00:00')         // zone-less read as UTC, like legacy strtotime
         ->and((int) $ev->capacity)->toBe(12)->and((int) $ev->is_ticketed)->toBe(1)
-        ->and(json_decode($ev->data, true)['baseUpdatedAt'])->toBe(5);  // stored verbatim
+        ->and(json_decode($ev->data, true))->not->toHaveKey('baseUpdatedAt');  // request metadata, never stored (b0a64d5)
     expect((int) evDb()->selectOne(evSql("SELECT created_at FROM orders WHERE id='or_t1'"))->created_at)->toBe(1927706400000)
         ->and(evDb()->selectOne(evSql("SELECT start_time FROM schedules WHERE id='sc_t1'"))->start_time)->toBe('20:00:00');
 
@@ -72,6 +72,31 @@ it('bounds deletes by the newest stamp in the payload, and deletes unbounded wit
 
     evPost(['action' => 'saveAll', 'data' => ['refunds' => []]])->assertOk();
     expect(array_column($db->select(evSql('SELECT id FROM refunds')), 'id'))->toBe(['r_only']);
+});
+
+it('a stale tab neither deletes rows it never saw nor overwrites newer work (b0a64d5)', function () {
+    $db = evDb();
+    $db->delete(evSql('DELETE FROM refunds'));
+    $db->insert(evSql("INSERT INTO refunds (id, status, updated_at, data) VALUES ('r_mine','x',100,'{}'), ('r_other','x',900,'{\"id\":\"r_other\",\"name\":\"Kru lain\"}'), ('r_gone','x',50,'{}')"));
+
+    // the tab loaded r_mine + r_gone (+ r_other at 100), then a crew saved r_other at 900.
+    // It edits r_mine "now", removes r_gone and still holds the old r_other.
+    $res = evPost(['action' => 'saveAll', 'dikenal' => ['refunds' => ['r_mine', 'r_gone', 'r_other']], 'data' => ['refunds' => [
+        ['id' => 'r_mine', 'updatedAt' => 2000000000000, 'baseUpdatedAt' => 100],
+        ['id' => 'r_other', 'name' => 'Basi', 'updatedAt' => 2000000000000, 'baseUpdatedAt' => 100],
+    ]]])->assertOk();
+    $res->assertJsonPath('data.bentrok', [['koleksi' => 'refunds', 'id' => 'r_other', 'nama' => 'Basi']]);
+    expect(array_column($db->select(evSql('SELECT id FROM refunds ORDER BY id')), 'id'))->toBe(['r_mine', 'r_other'])
+        ->and(json_decode($db->selectOne(evSql("SELECT data FROM refunds WHERE id='r_other'"))->data, true)['name'])->toBe('Kru lain');
+
+    // a row created by another crew after the tab loaded is not in dikenal: never deleted
+    $db->insert(evSql("INSERT INTO refunds (id, status, updated_at, data) VALUES ('r_new','x',1,'{}')"));
+    evPost(['action' => 'saveAll', 'dikenal' => ['refunds' => ['r_mine']], 'data' => ['refunds' => [['id' => 'r_mine', 'updatedAt' => 2000000000001]]]])->assertOk();
+    expect(array_column($db->select(evSql('SELECT id FROM refunds ORDER BY id')), 'id'))->toBe(['r_mine', 'r_new', 'r_other']);
+
+    // an empty payload that would delete more than 3 known rows is refused
+    evPost(['action' => 'saveAll', 'dikenal' => ['refunds' => ['r_mine', 'r_new', 'r_other', 'r_x']], 'data' => ['refunds' => []]])->assertOk();
+    expect($db->selectOne(evSql('SELECT COUNT(*) c FROM refunds'))->c)->toBe(3);
 });
 
 it('keeps checkins append-only and maps eventDetails by event id', function () {

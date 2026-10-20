@@ -66,6 +66,11 @@
     { "name": "saveAll empty lists delete nothing", "body": { "action": "saveAll", "data": {
       "talents": [], "events": [], "checkins": [], "eventDetails": []
     } } },
+    { "name": "saveAll dikenal deletes only known rows missing from the payload", "body": { "action": "saveAll", "dikenal": { "ideas": ["id_par_k1", "id_par_k2"] }, "data": {
+      "ideas": [{ "id": "id_par_k1", "title": "Tetap", "updatedAt": 1790200000000 }] } } },
+    { "name": "saveAll stale baseUpdatedAt is reported in bentrok, not written", "body": { "action": "saveAll", "data": {
+      "ideas": [{ "id": "id_par_k1", "title": "Basi", "updatedAt": 1790300000000, "baseUpdatedAt": 1 }] } } },
+    { "name": "getAll after the stale-tab guard", "method": "GET", "query": { "action": "getAll" } },
     { "name": "saveAll checkin resend is ignored (append-only)", "body": { "action": "saveAll", "data": {
       "checkins": [{ "id": "ci_par1", "ticket_id": "CHANGED", "result": "Invalid" }]
     } } },
