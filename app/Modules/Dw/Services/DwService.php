@@ -5,6 +5,7 @@ namespace App\Modules\Dw\Services;
 use App\Support\Legacy\Sesi;
 use App\Support\Modules;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use RuntimeException;
 use stdClass;
@@ -371,6 +372,28 @@ class DwService
     }
 
     /**
+     * Throttled sweep for readAll(): at most once per 10 minutes (cache
+     * stamp). A dead cache falls back to sweeping every read, like before.
+     */
+    private function sapuKedaluwarsa(): void
+    {
+        try {
+            if (Cache::has('dw:sapu')) {
+                return;
+            }
+        } catch (\Throwable) {
+            $this->tutupKedaluwarsa();
+
+            return;
+        }
+        $this->tutupKedaluwarsa();
+        try {
+            Cache::put('dw:sapu', 1, now()->addMinutes(10));
+        } catch (\Throwable) {
+        }
+    }
+
+    /**
      * The whole screen state: setting, talent pool (ordered by name),
      * assignments (in range OR still MENUNGGU) and head requests (same rule).
      * $penuh = the caller may see phone numbers and payment destinations
@@ -379,7 +402,7 @@ class DwService
      */
     public function readAll(string $dari, string $sampai, bool $penuh = true): array
     {
-        $this->tutupKedaluwarsa();
+        $this->sapuKedaluwarsa();
 
         // Per-person history, computed on the SERVER over the WHOLE table:
         // the ajuan sent to the screen are date-limited, so counting on the
