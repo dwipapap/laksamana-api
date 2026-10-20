@@ -7,6 +7,7 @@ namespace App\Modules\Hris\Services;
 use App\Auth\AccountRepository;
 use App\Modules\Absensi\Services\AbsensiService;
 use App\Modules\Hris\Models\HrisAudit;
+use App\Modules\Hris\Models\HrisKaryawan;
 use App\Modules\Hris\Models\HrisKetukan;
 use App\Modules\Hris\Models\HrisLokasi;
 use App\Modules\Hris\Models\HrisWajah;
@@ -226,8 +227,12 @@ final class HrisAttendanceService
         } catch (\Throwable) {
             return false;
         }
-        $kru = $set['shiftKru'] ?? [];
-        $kode = is_array($kru) ? (string) ($kru[$userId] ?? '') : '';
+        // J8: the Karyawan record first, then the old Jadwal map.
+        $kode = (string) (HrisKaryawan::query()->where('user_id', $userId)->value('shift_bawaan') ?? '');
+        if ($kode === '') {
+            $kru = $set['shiftKru'] ?? [];
+            $kode = is_array($kru) ? (string) ($kru[$userId] ?? '') : '';
+        }
         if ($kode === '') {
             return null;
         }

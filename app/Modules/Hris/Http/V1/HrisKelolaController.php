@@ -204,6 +204,7 @@ final class HrisKelolaController extends HrisBaseController
             'divisi_id' => ['nullable', 'string', 'max:26'],
             'jabatan_id' => ['nullable', 'string', 'max:26'],
             'atasan_user_id' => ['nullable', 'string', 'max:64'],
+            'shift_bawaan' => ['nullable', 'string', 'max:16'],
             'status_kerja' => ['nullable', 'string', 'max:12'],
             'nik' => ['nullable', 'string', 'max:24'],
             'jenis_kelamin' => ['nullable', 'string', 'max:1'],

@@ -10,6 +10,7 @@ use App\Modules\Hris\Models\HrisDivisi;
 use App\Modules\Hris\Models\HrisJabatan;
 use App\Modules\Hris\Models\HrisKaryawan;
 use App\Modules\Hris\Models\HrisKaryawanRiwayat;
+use App\Support\JsonDoc;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -511,6 +512,16 @@ final class HrisKaryawanService
                 $out['jabatan_impor'] = null;
             }
         }
+        if (array_key_exists('shift_bawaan', $in)) {
+            $kode = self::s($in['shift_bawaan']);
+            if ($kode !== '') {
+                $def = JsonDoc::toArray($this->jadwal->setting())['shifts'][$kode] ?? null;
+                if (! is_array($def) || ! empty($def['libur']) || (array_key_exists('aktif', $def) && empty($def['aktif']))) {
+                    throw new HrisError('validation_failed', 'Shift bawaan harus shift kerja yang aktif.', 422);
+                }
+            }
+            $out['shift_bawaan'] = $kode ?: null;
+        }
         if (array_key_exists('atasan_user_id', $in)) {
             $a = self::s($in['atasan_user_id']);
             if ($a !== '') {
@@ -585,7 +596,7 @@ final class HrisKaryawanService
             'jabatan' => $k->jabatan ? ['id' => $k->jabatan->id, 'nama' => $k->jabatan->nama,
                 'level' => $k->jabatan->level?->nama, 'level_urutan' => (int) ($k->jabatan->level?->urutan ?? 0)] : null,
             'jabatan_impor' => $k->jabatan_impor,
-            'atasan_user_id' => $k->atasan_user_id,
+            'atasan_user_id' => $k->atasan_user_id, 'shift_bawaan' => $k->shift_bawaan,
             'atasan' => $atasan !== null ? ['user_id' => $atasan, 'nama' => $this->nama($atasan), 'otomatis' => $otomatis] : null,
             'status_kerja' => $k->status_kerja,
             'tanggal_gabung' => $tgl($k->tanggal_gabung), 'akhir_percobaan' => $tgl($k->akhir_percobaan),
