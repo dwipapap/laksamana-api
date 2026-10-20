@@ -3,6 +3,7 @@
 namespace App\Modules\Kompas\Services;
 
 use App\Support\Modules;
+use App\Support\NamedLock;
 use App\Support\RowSync;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Str;
@@ -676,8 +677,30 @@ class VoidBri
         return ['ok' => true, 'saved' => true, 'id' => $id];
     }
 
-    /** '' = saved, else the reason this row failed. */
+    /**
+     * '' = saved, else the reason this row failed. Check and UPDATE run in one
+     * transaction with the mutation row locked, and a `cocok` under a lock on
+     * its DP (#303): otherwise two staff matching the same DP to two different
+     * mutations both pass the "already matched?" check and the DP counts twice.
+     */
     private function matchOne(array $b, string $oleh, int $now): string
+    {
+        $run = fn () => $this->db()->transaction(fn () => $this->matchOneLocked($b, $oleh, $now));
+        $dp = trim(self::s($b['dpId'] ?? ''));
+        if (trim(self::s($b['cara'] ?? '')) !== 'cocok' || $dp === '') {
+            return $run();
+        }
+        try {
+            return NamedLock::run('kompas', 'bri_dp:'.substr(sha1($dp), 0, 16), $run, 10, KompasState::BUSY);
+        } catch (\RuntimeException $e) {
+            if ($e->getMessage() === KompasState::BUSY) {
+                return KompasState::BUSY;
+            }
+            throw $e;
+        }
+    }
+
+    private function matchOneLocked(array $b, string $oleh, int $now): string
     {
         $id = trim(self::s($b['id'] ?? ''));
         $cara = trim(self::s($b['cara'] ?? ''));
@@ -688,7 +711,7 @@ class VoidBri
         if ($cara === '') {
             return 'Keputusan tidak dikenal (harus cocok / bukan / lepas).';
         }
-        $row = $this->db()->selectOne('SELECT `batal_at` FROM `'.self::t('bri_mutasi').'` WHERE `'.self::idCol().'`=?', [$id]);
+        $row = $this->db()->selectOne('SELECT `batal_at` FROM `'.self::t('bri_mutasi').'` WHERE `'.self::idCol().'`=? FOR UPDATE', [$id]);
         if (! $row) {
             return 'Baris mutasi tidak ditemukan.';
         }
