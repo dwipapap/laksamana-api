@@ -2,6 +2,7 @@
 
 use App\Modules\Konten\Services\CampaignAnalytics;
 use App\Support\Modules;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 require_once __DIR__.'/helpers.php';
@@ -39,6 +40,32 @@ function cgVersionOf(string $table, string $id): int
 
     return (int) ($row->diubah_at ?? $row->dibuat_at ?? 0);
 }
+
+it('runs the cg_* DDL once, not on every read (#304)', function () {
+    $db = Modules::db('konten');
+    $ddl = function () use ($db): int {
+        return collect($db->getQueryLog())->filter(fn ($q) => str_starts_with(ltrim($q['query']), 'CREATE TABLE'))->count();
+    };
+    // a fresh process with an empty app cache
+    (new ReflectionProperty(CampaignAnalytics::class, 'tablesReady'))->setValue(null, []);
+    Cache::flush();
+    $db->flushQueryLog();
+    $db->enableQueryLog();
+
+    $svc = app(CampaignAnalytics::class);
+    $svc->ensureTables();
+    $sekali = $ddl();
+    $svc->ensureTables();
+    $this->withToken(cgToken())->getJson('/api/v1/konten/analytics/state')->assertOk();
+    $this->getJson('/api/v1/konten/analytics/state')->assertOk();
+    expect($sekali)->toBe(10)->and($ddl())->toBe(10);
+
+    // another process (static reset) with the flag cached: no DDL at all
+    (new ReflectionProperty(CampaignAnalytics::class, 'tablesReady'))->setValue(null, []);
+    $svc->ensureTables();
+    expect($ddl())->toBe(10);
+    $db->disableQueryLog();
+});
 
 it('requires login and the konten or campaign module', function () {
     $this->getJson('/api/v1/konten/analytics/state')->assertStatus(401);

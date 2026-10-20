@@ -169,16 +169,54 @@ it('completes google oauth: token, locations, one sync, then redirects', functio
 
         return Http::response([], 404);
     });
+    grDb()->delete('DELETE FROM cg_greview WHERE id = ?', [sha1('accounts/ACCTEST/locations/LOCTEST/reviews/REVCB1')]);
     $this->get('/api/v1/konten/analytics/oauth/google/callback?code=kode-uji&state=uji-state')
         ->assertRedirect()->assertRedirectContains('google=ok')->assertRedirectContains('#greview');
     expect(grDb()->selectOne("SELECT v FROM cg_setting WHERE k = 'google_state'")->v)->toBe('');
     $akun = grDb()->selectOne("SELECT nama, refresh_token FROM cg_akun WHERE platform = 'google'");
     expect($akun->nama)->toBe('pemilik@contoh.id')->and((string) $akun->refresh_token)->toBe('grefbaru');
-    expect(grDb()->selectOne('SELECT penulis FROM cg_greview WHERE id = ?',
-        [sha1('accounts/ACCTEST/locations/LOCTEST/reviews/REVCB1')])->penulis)->toBe('Tamu Callback');
+    // locations are pulled, but no full review sync runs inside the redirect (#304)
+    expect(grDb()->selectOne("SELECT id FROM cg_gtempat WHERE id = 'accounts/ACCTEST/locations/LOCTEST'"))->not->toBeNull()
+        ->and(grDb()->selectOne('SELECT id FROM cg_greview WHERE id = ?', [sha1('accounts/ACCTEST/locations/LOCTEST/reviews/REVCB1')]))->toBeNull();
     putenv('GOOGLE_CLIENT_ID=');
     putenv('GOOGLE_CLIENT_SECRET=');
     putenv('GOOGLE_PLACES_KEY=');
+});
+
+it('continues a long review history from a cursor instead of re-pulling the newest 2,000 (#304)', function () {
+    grSeedAkun(9999999999999, 9999999999999);
+    $loc = 'accounts/ACCBF/locations/LOCBF';
+    grDb()->update("INSERT INTO cg_gtempat (id, sumber, place_id, nama, aktif) VALUES (?, 'gbp', '', 'Riwayat Panjang', 1)
+        ON DUPLICATE KEY UPDATE aktif = 1", [$loc]);
+    grDb()->delete('DELETE FROM cg_setting WHERE k IN (?, ?)', ['gbp_bf_'.sha1($loc), 'gbp_bfc_'.sha1($loc)]);
+    // every location: pages tok1..tok44 after the first, i.e. 45 pages in all
+    Http::fake(function ($request) {
+        $url = (string) $request->url();
+        if (str_contains($url, 'mybusiness.googleapis.com/v4/')) {
+            parse_str((string) parse_url($url, PHP_URL_QUERY), $q);
+            $n = isset($q['pageToken']) ? (int) substr((string) $q['pageToken'], 3) : 0;
+
+            return Http::response(['averageRating' => 4.2, 'totalReviewCount' => 2250, 'reviews' => []]
+                + ($n + 1 <= 44 ? ['nextPageToken' => 'tok'.($n + 1)] : []));
+        }
+
+        return Http::response([], 404);
+    });
+    $svc = app(CampaignAnalytics::class);
+    $halaman = fn () => collect(Http::recorded())->filter(fn ($r) => str_contains((string) $r[0]->url(), 'LOCBF'))->count();
+
+    $svc->googleSync();
+    expect($halaman())->toBe(40)
+        ->and(grDb()->selectOne('SELECT v FROM cg_setting WHERE k = ?', ['gbp_bfc_'.sha1($loc)])->v)->toBe('tok40');
+
+    // next sync: page 1 (new reviews), then straight to the cursor, through to the end
+    $svc->googleSync();
+    $kedua = collect(Http::recorded())->filter(fn ($r) => str_contains((string) $r[0]->url(), 'LOCBF'))->slice(40)->map(fn ($r) => (string) $r[0]->url())->values();
+    expect($kedua)->toHaveCount(6)
+        ->and($kedua[1])->toContain('pageToken=tok40')
+        ->and(grDb()->selectOne('SELECT v FROM cg_setting WHERE k = ?', ['gbp_bf_'.sha1($loc)])->v)->toBe('1')
+        ->and(grDb()->selectOne('SELECT v FROM cg_setting WHERE k = ?', ['gbp_bfc_'.sha1($loc)])->v)->toBe('');
+    grDb()->update('UPDATE cg_gtempat SET aktif = 0 WHERE id = ?', [$loc]);
 });
 
 it('syncs google reviews: dedup place, skips duplicates, keeps pertama_at', function () {

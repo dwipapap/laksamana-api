@@ -448,8 +448,7 @@ class CampaignController
     {
         try {
             $n = $this->analytics->googleCallback((string) $r->query('code', ''), (string) $r->query('state', ''));
-            $pesan = 'Google Business Profile terhubung, '.$n['jumlah'].' review ditarik.'
-                .($n['galat'] ? ' Sebagian gagal: '.implode(' | ', $n['galat']) : '');
+            $pesan = 'Google Business Profile terhubung ('.$n['lokasi'].' lokasi). Tekan Sinkronkan untuk menarik review.';
 
             return redirect()->to(self::vueBase().'/konten/greview?google=ok&pesan='.urlencode($pesan).'#greview');
         } catch (RuntimeException $e) {

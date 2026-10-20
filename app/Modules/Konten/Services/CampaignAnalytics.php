@@ -5,6 +5,7 @@ namespace App\Modules\Konten\Services;
 use App\Support\Modules;
 use App\Support\NamedLock;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -126,8 +127,53 @@ class CampaignAnalytics
 
     // ─────────────────────────── tables ──
 
-    /** CREATE TABLE IF NOT EXISTS for the cg_* tables (same shape as cg_pastikan). */
+    /** Bump when createTables() changes: the cross-request flag is keyed by it. */
+    private const TABLES_VERSION = '2026-10-20';
+
+    /** Databases whose cg_* tables were ensured in this process. */
+    private static array $tablesReady = [];
+
+    /**
+     * Seconds a sync may spend on remote calls before it stops cleanly (#304):
+     * cPanel's PHP/proxy limits otherwise cut a long sync with a 500 halfway.
+     * Every loop it guards resumes on the next sync (cursors / oldest first).
+     */
+    private const SYNC_BUDGET = 40;
+
+    private float $deadline = 0.0;
+
+    private function startBudget(): void
+    {
+        $this->deadline = microtime(true) + self::SYNC_BUDGET;
+    }
+
+    private function overBudget(): bool
+    {
+        return $this->deadline > 0 && microtime(true) > $this->deadline;
+    }
+
+    /**
+     * The runtime DDL (no migrations for module tables: Team B owns those).
+     * It used to run all ten CREATE TABLE IF NOT EXISTS on EVERY call — 36
+     * call sites, state() included — i.e. ten round-trips plus a metadata
+     * lock per screen read (#304). Now once per process per database, and
+     * once per TABLES_VERSION across requests (an app-cache flag).
+     */
     public function ensureTables(): void
+    {
+        $key = 'konten:cg_tables:'.$this->db()->getDatabaseName().':'.self::TABLES_VERSION;
+        if (isset(self::$tablesReady[$key])) {
+            return;
+        }
+        if (! Cache::get($key)) {
+            $this->createTables();
+            Cache::forever($key, true);
+        }
+        self::$tablesReady[$key] = true;
+    }
+
+    /** CREATE TABLE IF NOT EXISTS for the cg_* tables (same shape as cg_pastikan). */
+    private function createTables(): void
     {
         $db = $this->db();
         $db->statement("CREATE TABLE IF NOT EXISTS cg_insight (id VARCHAR(40) PRIMARY KEY, platform VARCHAR(20), kategori VARCHAR(60),
@@ -1275,7 +1321,9 @@ class CampaignAnalytics
         $t = $this->tiktokRequestToken(['code' => $code, 'grant_type' => 'authorization_code', 'redirect_uri' => $this->tiktokRedirectUri()]);
         $this->tiktokSaveToken($t, (string) ($st['by'] ?? ''));
 
-        return $this->tiktokSync();
+        // No full sync inside the OAuth redirect (#304): it ran up to the PHP/proxy
+        // limit and the user landed on a 500. The screen's Sinkronkan pulls it.
+        return ['terhubung' => true];
     }
 
     /** @throws RuntimeException */
@@ -1302,6 +1350,7 @@ class CampaignAnalytics
     public function tiktokSync(): array
     {
         $this->ensureTables();
+        $this->startBudget();
         $now = self::nowMs();
         try {
             $tok = $this->tiktokToken();
@@ -1387,7 +1436,7 @@ class CampaignAnalytics
                 if ($c === null) {
                     $selesai = true;
                 }
-                for ($h = 0; ! $selesai && $h < 5; $h++) {
+                for ($h = 0; ! $selesai && $h < 5 && ! $this->overBudget(); $h++) {
                     $data = $halaman($c);
                     foreach ($data['videos'] ?? [] as $v) {
                         $simpan($v);
@@ -1414,6 +1463,9 @@ class CampaignAnalytics
                 $ids[] = (string) $row->post_id;
             }
             foreach (array_chunk($ids, 20) as $kelompok) {
+                if ($this->overBudget()) {
+                    break; // the rest are the oldest-synced: first in line next time
+                }
                 $r = $this->http('POST', 'https://open.tiktokapis.com/v2/video/query/?fields='.$fields,
                     $auth + ['Content-Type' => 'application/json'], json_encode(['filters' => ['video_ids' => $kelompok]]), 30);
                 $data = $r['data']['data'] ?? null;
@@ -1536,7 +1588,8 @@ class CampaignAnalytics
         $exp = self::nowMs() + (int) ($r2['data']['expires_in'] ?? 5184000) * 1000;
         $this->igSaveToken((string) $r2['data']['access_token'], $exp, $userId, $izin, (string) ($st['by'] ?? ''));
 
-        return $this->igSync();
+        // No full sync inside the OAuth redirect (#304), see tiktokCallback().
+        return ['terhubung' => true];
     }
 
     /** @throws RuntimeException */
@@ -1591,6 +1644,7 @@ class CampaignAnalytics
     public function igSync(): array
     {
         $this->ensureTables();
+        $this->startBudget();
         $now = self::nowMs();
         try {
             $tok = $this->igToken();
@@ -1652,7 +1706,7 @@ class CampaignAnalytics
                 if ($c === '') {
                     $selesai = true;
                 }
-                for ($h = 0; ! $selesai && $h < 3; $h++) {
+                for ($h = 0; ! $selesai && $h < 3 && ! $this->overBudget(); $h++) {
                     $data = $halaman($c);
                     foreach ($data['data'] as $m) {
                         $simpan($m);
@@ -1675,6 +1729,9 @@ class CampaignAnalytics
                 $tua[] = (string) $row->post_id;
             }
             foreach ($tua as $id) {
+                if ($this->overBudget()) {
+                    break; // ordered by insight_at: the rest go first next time
+                }
                 $ix = $this->igInsightMedia($tok, $id);
                 if ($ix === null) {
                     $this->db()->update("UPDATE cg_post SET insight_at=? WHERE platform='instagram' AND post_id=?", [$now, $id]);
@@ -1961,7 +2018,8 @@ class CampaignAnalytics
             (string) ($d['scope'] ?? self::GR_SCOPE), (string) ($st['by'] ?? ''), $email);
         $this->googleLocations();
 
-        return $this->googleSync();
+        // No full sync inside the OAuth redirect (#304), see tiktokCallback().
+        return ['terhubung' => true, 'lokasi' => (int) $this->db()->selectOne("SELECT COUNT(*) c FROM cg_gtempat WHERE sumber='gbp' AND aktif=1")->c];
     }
 
     /** A still-valid access token; renewed via the refresh token under 2 min left. @throws RuntimeException */
@@ -2109,6 +2167,7 @@ class CampaignAnalytics
     public function googleSync(): array
     {
         $this->ensureTables();
+        $this->startBudget();
         $now = self::nowMs();
         $jumlah = 0;
         $galat = [];
@@ -2125,17 +2184,30 @@ class CampaignAnalytics
                     if ((string) $t->place_id !== '') {
                         $dicakup[(string) $t->place_id] = true;
                     }
+                    if ($this->overBudget()) {
+                        continue; // not synced this time (still counted as covered, so Places does not pull it)
+                    }
+                    $kunciKursor = 'gbp_bfc_'.sha1($t->id);
+                    $dariKursor = false;
                     try {
                         $base = 'https://mybusiness.googleapis.com/v4/'.$t->id.'/reviews?pageSize=50&orderBy='.rawurlencode('updateTime desc');
                         $url = $base;
                         $rating = null;
                         $total = null;
-                        /* Full history once (up to 40 pages = 2,000
-                           reviews), then the first page only — new and
-                           newly edited reviews always sort first on
-                           updateTime. */
+                        /* Full history once, then the first page only — new
+                           and newly edited reviews always sort first on
+                           updateTime. The history used to be "up to 40 pages,
+                           done only when the last page is reached": a place
+                           with more than 2,000 reviews never got there and
+                           re-pulled the same newest 2,000 on every sync
+                           (#304). Now the page after the last one read is
+                           kept as a cursor (gbp_bfc_*): each sync reads page
+                           1 (the new reviews), then continues from the cursor. */
                         $penuh = $this->setting('gbp_bf_'.sha1($t->id)) !== '1';
-                        for ($h = 0; $url !== '' && $h < ($penuh ? 40 : 2); $h++) {
+                        $kursor = $penuh ? $this->setting($kunciKursor) : '';
+                        $token = '';
+                        for ($h = 0; $url !== '' && $h < ($penuh ? 40 : 2) && ! ($h > 0 && $this->overBudget()); $h++) {
+                            $dariKursor = $h > 0 && $kursor !== '' && $token === $kursor;
                             $d = $this->googleGet($tok, $url);
                             if (isset($d['averageRating'])) {
                                 $rating = (float) $d['averageRating'];
@@ -2159,15 +2231,27 @@ class CampaignAnalytics
                                     'balasan_at' => $rep && isset($rep['updateTime']) ? self::isoMs($rep['updateTime']) : 0], $now);
                                 $jumlah++;
                             }
-                            $url = ! empty($d['nextPageToken']) ? $base.'&pageToken='.rawurlencode($d['nextPageToken']) : '';
+                            $token = ! empty($d['nextPageToken']) ? (string) $d['nextPageToken'] : '';
+                            if ($h === 0 && $kursor !== '') {
+                                $token = $kursor; // page 1 read: jump to where the history stopped
+                            }
+                            $url = $token !== '' ? $base.'&pageToken='.rawurlencode($token) : '';
                         }
-                        if ($penuh && $url === '') {
-                            $this->saveSetting('gbp_bf_'.sha1($t->id), '1');
+                        if ($penuh) {
+                            if ($url === '') {
+                                $this->saveSetting('gbp_bf_'.sha1($t->id), '1');
+                                $this->saveSetting($kunciKursor, '');
+                            } elseif ($token !== '') {
+                                $this->saveSetting($kunciKursor, $token);
+                            }
                         }
                         $this->db()->update('UPDATE cg_gtempat SET rating = ?, total = ?, sync_at = ?, galat = ? WHERE id = ?',
                             [$rating, $total, $now, '', $t->id]);
                         $this->googleDaily((string) $t->id, $rating, $total);
                     } catch (\Throwable $e) {
+                        if ($dariKursor) {
+                            $this->saveSetting($kunciKursor, ''); // an expired cursor restarts the history instead of failing forever
+                        }
                         $galat[] = $t->nama.': '.$e->getMessage();
                         $this->db()->update('UPDATE cg_gtempat SET galat = ? WHERE id = ?',
                             [self::cut($e->getMessage(), 590), $t->id]);
@@ -2185,7 +2269,7 @@ class CampaignAnalytics
         $key = $this->googlePlacesKey();
         if ($key !== '') {
             foreach ($this->googlePlacesIds() as $pid) {
-                if (isset($dicakup[$pid])) {
+                if (isset($dicakup[$pid]) || $this->overBudget()) {
                     continue;
                 }
                 try {

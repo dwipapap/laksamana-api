@@ -109,6 +109,8 @@ v1 port of `konten-mysql/lib_campaign.php`: the Konten Analytics panel
 (Insight, Kalender, Riset, Bank Konten, Pengaturan, TikTok/Instagram OAuth).
 Base: `/api/v1/konten/analytics`. Gate `konten|campaign` (the Beranda kartu
 holds both keys); settings writes need a campaign module admin; the two
+Every sync (TikTok, Instagram, Google) stops cleanly after ~40 s of remote calls (#304); what it skipped is first in line next time (cursors, oldest `sync_at`/`insight_at` first).
+
 OAuth callbacks are public (the single-use state token is the guard, like
 legacy) and redirect to the Vue app (`OFFICE_VUE_URL`, else `APP_URL`).
 
@@ -141,11 +143,11 @@ success. Validation messages are the legacy Indonesian strings verbatim.
 | DELETE | `/analytics/bank/{id}` | ARSIP only (enforced in SQL); schedules born from the idea stay. |
 | POST | `/analytics/bank/generate` | `{dari*, sampai* (≤62 days), platform, jumlah (3–20), fokus}` → AI planning stored as IDE ideas (≤20). Out-of-range dates and off-list pilars emptied. |
 | POST | `/analytics/oauth/tiktok/start` | → `{url}` (state, 15 min). Needs client key+secret. |
-| GET | `/analytics/oauth/tiktok/callback?code&state` | Public. Exchanges, saves token, syncs once, redirects to Vue `?tiktok=ok\|gagal&pesan=…#insight`. |
+| GET | `/analytics/oauth/tiktok/callback?code&state` | Public. Exchanges and saves the token, redirects to Vue `?tiktok=ok\|gagal&pesan=…#insight`. **No sync inside the redirect** (#304): it could run past the PHP/proxy limit; the screen pulls with `POST …/sync`. |
 | POST | `/analytics/oauth/tiktok/sync` | Profile + 2 newest pages + 5 history pages + 40 oldest refresh (≤9 TikTok calls). Missing videos → `hilang=1`. Errors stored in `sync_galat`. → `{jumlah, total, riwayatSelesai}`. |
 | POST | `/analytics/oauth/tiktok/disconnect` | Clears tokens (posts stay). |
 | POST | `/analytics/oauth/instagram/start` | → `{url}` (business login, `force_authentication=1`). |
-| GET | `/analytics/oauth/instagram/callback?code&state` | Public. Short token → 60-day token, syncs once, redirects `?instagram=ok\|gagal&pesan=…#insight`. |
+| GET | `/analytics/oauth/instagram/callback?code&state` | Public. Short token → 60-day token (no sync inside the redirect, #304), redirects `?instagram=ok\|gagal&pesan=…#insight`. |
 | POST | `/analytics/oauth/instagram/sync` | Profile + 1×50 newest + 3 history pages + 25 media insights (tiered `views,reach,saved,shares` → `reach,saved` → `reach`; missing → null). Token refreshed when <30 days left and older than 24 h. |
 | POST | `/analytics/oauth/instagram/disconnect` | Clears tokens (posts stay). |
 
@@ -181,9 +183,9 @@ verbatim.
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/google` | Full read: `tempat`, `harian` (120 days), `review` (≤3000, newest first), `totalTersimpan`, `akun` (no tokens, with `terhubung`), `ai` (stored analysis or null), `syncAt`, `galat`. |
-| POST | `/google/sync` | GBP reviews (full history once per location, then head pages) + Places top-up for uncovered places. → `{jumlah, galat}`. |
+| POST | `/google/sync` | GBP reviews (full history once per location, then head pages) + Places top-up for uncovered places. → `{jumlah, galat}`. A history longer than 40 pages continues from a stored cursor (`gbp_bfc_*` in `cg_setting`) on the next sync, after page 1 (#304). |
 | POST | `/google/start` | → `{url}` (Google OAuth, offline + consent, state 15 min). Needs client id+secret. |
-| GET | `/oauth/google/callback?code&state` | Public. Exchanges, saves token, pulls locations once, syncs once, redirects to Vue `?google=ok\|gagal&pesan=…#greview`. |
+| GET | `/oauth/google/callback?code&state` | Public. Exchanges, saves token, pulls locations once (no review sync inside the redirect, #304: the message asks to press Sinkronkan), redirects to Vue `?google=ok\|gagal&pesan=…#greview`. |
 | POST | `/google/reply` | `{id*, teks*}` — published on Maps under the business name (`balasan_oleh` = the writer). GBP only (≤4000 chars). |
 | POST | `/google/reply/delete` | `{id*}` — deletes our reply on Google too (confirm in the client). GBP only. |
 | POST | `/google/flag` | `{id*, ditangani, catatan}` — internal follow-up flag (≤1500 chars), separate from the public reply. |
