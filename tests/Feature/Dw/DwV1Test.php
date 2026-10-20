@@ -4,6 +4,7 @@ require_once __DIR__.'/helpers.php';
 
 use App\Modules\Dw\Services\DwService;
 use App\Support\Modules;
+use Illuminate\Support\Facades\Cache;
 
 /*
  * /api/v1/dw — cluster (1): overview & schedule reads, workers, head
@@ -314,4 +315,25 @@ it('clears the module as admin with the keyword', function () {
 it('refuses the admin wipe to non-admins', function () {
     $this->withToken(loginAs(officeUser('u-arif')))->postJson('/api/v1/dw/admin/clear', ['konfirmasi' => 'HAPUS SEMUA'])
         ->assertStatus(403);
+});
+
+it('sweeps expired rows at most once across back-to-back reads', function () {
+    Cache::forget('dw:sapu');
+    $db = Modules::db('dw');
+    $sapu = fn (): int => count(array_filter($db->getQueryLog(),
+        fn ($q) => str_contains(strtoupper((string) ($q['query'] ?? '')), 'KEDALUWARSA')));
+    $db->flushQueryLog();
+    $db->enableQueryLog();
+    dwSvc1()->readAll('2026-09-01', '2026-09-30');
+    expect($sapu())->toBe(2);
+    dwSvc1()->readAll('2026-09-01', '2026-09-30');
+    expect($sapu())->toBe(2);
+    Cache::forget('dw:sapu');
+});
+
+it('defaults the overview range to the current month', function () {
+    $r = $this->withToken(loginAs(officeUser('u-rizkiarfan')))
+        ->getJson('/api/v1/dw/overview')->assertOk()->json();
+    $hariIni = gmdate('Y-m-d', time() + 7 * 3600);
+    expect($r['meta'])->toMatchArray(['from' => substr($hariIni, 0, 7).'-01', 'to' => $hariIni]);
 });
