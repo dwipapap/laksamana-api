@@ -75,6 +75,104 @@ final class HrisAttendanceService
         return $this->divisiCache[$userId];
     }
 
+    /**
+     * Pre-warm the per-request name cache for a batch of user ids in ONE
+     * query, so list shaping does not query once per distinct user.
+     *
+     * @param  array<int,string>  $userIds
+     */
+    public function hangatkanNama(array $userIds): void
+    {
+        $kurang = [];
+        foreach ($userIds as $u) {
+            $u = is_array($u) || is_object($u) ? '' : trim((string) $u);
+            if ($u !== '' && ! isset($this->namaCache[$u])) {
+                $kurang[] = $u;
+            }
+        }
+        if ($kurang === []) {
+            return;
+        }
+        try {
+            foreach ($this->users->namesByIds($kurang) as $id => $nama) {
+                $id = (string) $id;
+                $this->namaCache[$id] = $nama !== '' ? $nama : $id;
+            }
+        } catch (\Throwable) {
+            // Best-effort: unknown names fall back per row in namaUser().
+        }
+        foreach ($kurang as $u) {
+            $this->namaCache[$u] ??= $u;
+        }
+    }
+
+    /**
+     * @var array<string,array<int,array{waktu:int,shift_sumber:string,shift_mulai:string,shift_selesai:string}>>|null
+     * MASUK partners per user, warmed by punches() for one range.
+     */
+    private ?array $masukSiap = null;
+
+    /**
+     * Prefetch MASUK rows for a date range in ONE query, so rows without a
+     * stored info column do not each re-query their MASUK partner.
+     *
+     * @param  array<int,string>|null  $userIds  null = everyone
+     */
+    private function siapkanMasuk(?array $userIds, string $dari, string $sampai): void
+    {
+        $bawah = (int) (strtotime($dari.' 00:00:00') * 1000) - 18 * 3600 * 1000;
+        $atas = (int) (strtotime($sampai.' 00:00:00') * 1000) + 2 * 86400 * 1000;
+        $q = HrisKetukan::query()
+            ->where('arah', 'MASUK')->where('status', '!=', 'DITOLAK')
+            ->where('waktu', '>=', $bawah)->where('waktu', '<=', $atas)
+            ->orderBy('waktu');
+        if ($userIds !== null) {
+            $q->whereIn('user_id', $userIds === [] ? ['__tidak_ada__'] : $userIds);
+        }
+        $peta = [];
+        foreach ($q->get(['user_id', 'waktu', 'shift_sumber', 'shift_mulai', 'shift_selesai']) as $m) {
+            $peta[(string) $m->user_id][] = ['waktu' => (int) $m->waktu,
+                'shift_sumber' => (string) ($m->shift_sumber ?? ''),
+                'shift_mulai' => (string) ($m->shift_mulai ?? ''),
+                'shift_selesai' => (string) ($m->shift_selesai ?? '')];
+        }
+        $this->masukSiap = $peta;
+    }
+
+    /**
+     * Latest MASUK partner for a PULANG row: the prefetched one when warmed,
+     * else one query (single-row shape() calls).
+     *
+     * @return array{waktu:int,shift_sumber:string,shift_mulai:string,shift_selesai:string}|null
+     */
+    private function masukUntuk(HrisKetukan $r): ?array
+    {
+        $bawah = (int) $r->waktu - 18 * 3600 * 1000;
+        if ($this->masukSiap !== null) {
+            $ketemu = null;
+            foreach ($this->masukSiap[(string) $r->user_id] ?? [] as $m) {
+                if ($m['waktu'] >= $bawah && $m['waktu'] <= (int) $r->waktu) {
+                    $ketemu = $m;
+                }
+            }
+
+            return $ketemu;
+        }
+        $m = HrisKetukan::query()
+            ->where('user_id', $r->user_id)->where('arah', 'MASUK')->where('status', '!=', 'DITOLAK')
+            ->where('waktu', '>=', $bawah)
+            ->where('waktu', '<=', (int) $r->waktu)
+            ->orderByDesc('waktu')->first();
+        if ($m === null) {
+            return null;
+        }
+
+        return ['waktu' => (int) $m->waktu,
+            'shift_sumber' => (string) ($m->shift_sumber ?? ''),
+            'shift_mulai' => (string) ($m->shift_mulai ?? ''),
+            'shift_selesai' => (string) ($m->shift_selesai ?? '')];
+    }
+
     private static function s(mixed $v): string
     {
         return is_array($v) || is_object($v) ? '' : trim((string) $v);
@@ -454,7 +552,9 @@ final class HrisAttendanceService
             }
         }
         $out = [];
-        foreach (HrisWajah::query()->where('status', 'AKTIF')->orderBy('user_id')->get() as $r) {
+        $wajah = HrisWajah::query()->where('status', 'AKTIF')->orderBy('user_id')->get();
+        $this->hangatkanNama($wajah->pluck('user_id')->all());
+        foreach ($wajah as $r) {
             $set = is_array($r->descriptor) ? FaceMatcher::storedSet(array_values($r->descriptor)) : null;
             $out[] = ['user_id' => $r->user_id, 'nama' => $this->namaUser($r->user_id),
                 'model' => $r->model,
@@ -865,19 +965,15 @@ final class HrisAttendanceService
         $set = $this->settings->all();
         $kerja = $set['durasiKerja'] ?? ['default' => 540, 'orang' => []];
         if ($r->arah === 'PULANG') {
-            $masuk = HrisKetukan::query()
-                ->where('user_id', $r->user_id)->where('arah', 'MASUK')->where('status', '!=', 'DITOLAK')
-                ->where('waktu', '>=', (int) $r->waktu - 18 * 3600 * 1000)
-                ->where('waktu', '<=', (int) $r->waktu)
-                ->orderByDesc('waktu')->first();
+            $masuk = $this->masukUntuk($r);
             if ($masuk === null) {
                 return ['telat_menit' => null, 'pulang_awal' => false, 'kurang_menit' => 0,
                     'target_menit' => null, 'durasi_menit' => null, 'curiga' => []];
             }
             $target = PunchRules::targetDurasiMenit(
-                $masuk->shift_sumber !== '' ? $masuk->shift_sumber : null,
-                $masuk->shift_mulai, $masuk->shift_selesai, $kerja, (string) $r->user_id);
-            $durasi = (int) floor(((int) $r->waktu - (int) $masuk->waktu) / 60000);
+                $masuk['shift_sumber'] !== '' ? $masuk['shift_sumber'] : null,
+                $masuk['shift_mulai'], $masuk['shift_selesai'], $kerja, (string) $r->user_id);
+            $durasi = (int) floor(((int) $r->waktu - $masuk['waktu']) / 60000);
             $nilai = PunchRules::nilaiPulang($durasi, $target, (int) $set['pulangLewatMenit']);
 
             return ['telat_menit' => null, 'pulang_awal' => $nilai['pulang_awal'],
@@ -938,9 +1034,16 @@ final class HrisAttendanceService
         if ($userIds !== null) {
             $q->whereIn('user_id', $userIds === [] ? ['__tidak_ada__'] : $userIds);
         }
+        $rows = $q->get();
+        $this->hangatkanNama($rows->pluck('user_id')->all());
+        $this->siapkanMasuk($userIds, $dari, $sampai);
         $out = [];
-        foreach ($q->get() as $r) {
-            $out[] = $this->shape($r, $denganCuriga);
+        try {
+            foreach ($rows as $r) {
+                $out[] = $this->shape($r, $denganCuriga);
+            }
+        } finally {
+            $this->masukSiap = null;
         }
 
         return ['dari' => $dari, 'sampai' => $sampai, 'ketukan' => $out];

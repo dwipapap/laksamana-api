@@ -53,9 +53,15 @@ final class HrisSettingsService
         'perhatianPulangMenit' => 60,
     ];
 
+    /** Merged settings, memoized per instance (one query per request, not per row). */
+    private ?array $memo = null;
+
     /** The merged settings map (stored rows over defaults). */
     public function all(): array
     {
+        if ($this->memo !== null) {
+            return $this->memo;
+        }
         $out = self::DEFAULTS;
         foreach (HrisPengaturan::query()->get(['kunci', 'nilai']) as $row) {
             if (array_key_exists($row->kunci, $out)) {
@@ -63,7 +69,13 @@ final class HrisSettingsService
             }
         }
 
-        return $out;
+        return $this->memo = $out;
+    }
+
+    /** Drop the memoized map (after an out-of-band write). */
+    public function lupakan(): void
+    {
+        $this->memo = null;
     }
 
     public function get(string $key, mixed $fallback = null): mixed
@@ -95,6 +107,7 @@ final class HrisSettingsService
         foreach ($bersih as $k => $v) {
             HrisPengaturan::query()->updateOrCreate(['kunci' => $k], ['nilai' => $v, 'berlaku_dari' => $today]);
         }
+        $this->memo = null;
 
         return $this->all();
     }

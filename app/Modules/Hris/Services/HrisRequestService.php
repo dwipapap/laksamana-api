@@ -55,6 +55,37 @@ final class HrisRequestService
         return $this->namaCache[$userId];
     }
 
+    /**
+     * Pre-warm the per-request name cache in ONE query (twin of
+     * HrisAttendanceService::hangatkanNama for the request list).
+     *
+     * @param  array<int,string>  $userIds
+     */
+    private function hangatkanNama(array $userIds): void
+    {
+        $kurang = [];
+        foreach ($userIds as $u) {
+            $u = is_array($u) || is_object($u) ? '' : trim((string) $u);
+            if ($u !== '' && ! isset($this->namaCache[$u])) {
+                $kurang[] = $u;
+            }
+        }
+        if ($kurang === []) {
+            return;
+        }
+        try {
+            foreach ($this->users->namesByIds($kurang) as $id => $nama) {
+                $id = (string) $id;
+                $this->namaCache[$id] = $nama !== '' ? $nama : $id;
+            }
+        } catch (\Throwable) {
+            // Best-effort: unknown names fall back per row in namaUser().
+        }
+        foreach ($kurang as $u) {
+            $this->namaCache[$u] ??= $u;
+        }
+    }
+
     private static function s(mixed $v): string
     {
         return is_array($v) || is_object($v) ? '' : trim((string) $v);
@@ -146,7 +177,9 @@ final class HrisRequestService
             $q->where('jenis', self::assertJenis($jenis));
         }
         $out = [];
-        foreach ($q->limit(500)->get() as $r) {
+        $rows = $q->limit(500)->get();
+        $this->hangatkanNama($rows->pluck('user_id')->all());
+        foreach ($rows as $r) {
             $out[] = $this->shape($r);
         }
 
