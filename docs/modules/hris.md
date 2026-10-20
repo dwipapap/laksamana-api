@@ -101,7 +101,7 @@ tables keyed by the legacy User id, because identity is still legacy.
 | E7 | History | `hris_karyawan_riwayat` records every change of Divisi, Jabatan, atasan and status kerja with its effective date (timeline) |
 | E8 | Org chart | Tree of `atasan_user_id`; empty = the Divisi's Kepala Divisi; cycles and inactive superiors are refused. HR/Superadmin see all, a Kepala Divisi their subtree without personal data, crew nothing |
 | E9 | Exit | HR sets exit date + reason; `hris:harian` deactivates the User on that date, deletes later roster cells; subordinates must be moved first. Never hard-deleted |
-| E10 | Access | Users without a Karyawan record get **no** HRIS access (narrows PR #300), switched on after HR reviews the import report |
+| E10 | Access | Users without a Karyawan record get **no** HRIS access (narrows PR #300), switched on with env `HRIS_HANYA_KARYAWAN=true` after HR reviews the import report |
 | E11 | Import | `php artisan hris:impor-karyawan [--coba]`: active Users with HR data (Talenta Organization, Job Position, Employment Status), a legacy HR employee or a Jadwal Divisi. Idempotent, never overwrites; reports Users it could not place and Users without HR data. Legacy HR violations, KPI and reviews move into the existing HRIS tables in a later PR |
 
 ### Shift and roster (J, ADR-0012)

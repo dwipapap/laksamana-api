@@ -2,6 +2,7 @@
 
 namespace App\Auth;
 
+use App\Modules\Hris\Services\HrisGerbang;
 use App\Support\Divisi;
 use Illuminate\Contracts\Auth\Factory as AuthFactory;
 use Throwable;
@@ -220,7 +221,10 @@ class OfficeAccess
         // away (legacy modul_bawaan_untuk; hris because every crew member
         // punches, #299). An explicit per-user access=0 grant still removes
         // them, since grants are applied after built-ins in modules().
-        $out = ['radar', 'hris'];
+        // hris narrows to Karyawan once HRIS_HANYA_KARYAWAN is on (E10,
+        // ADR-0012); HrisGerbang fails open.
+        $hris = app(HrisGerbang::class)->bolehBawaan($uid) ? ['hris'] : [];
+        $out = ['radar', ...$hris];
         try {
             $u = $this->userById($uid);
             $ket = $u ? self::s($u['keterangan']) : '';
@@ -236,7 +240,7 @@ class OfficeAccess
                 $out[] = 'dw';
             }
         } catch (Throwable) {
-            $out = ['radar', 'hris'];
+            $out = ['radar', ...$hris];
         }
 
         return $this->builtinCache[$uid] = $out;

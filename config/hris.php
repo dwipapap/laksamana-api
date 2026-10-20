@@ -27,4 +27,12 @@ return [
     'face_secret_lama' => env('HRIS_FACE_SECRET_LAMA', ''),
     'face_kid_lama' => env('HRIS_FACE_KID_LAMA', ''),
     'face_bukti_wajib' => filter_var(env('HRIS_FACE_BUKTI_WAJIB', false), FILTER_VALIDATE_BOOL),
+
+    /*
+    | E10 (ADR-0012): HRIS as Akses Bawaan only for Users with a Karyawan
+    | record. An env switch, not an HR setting, so the per-request auth path
+    | costs no query while it is off. Turn on after HR has reviewed the
+    | `hris:impor-karyawan` report.
+    */
+    'hanya_karyawan' => filter_var(env('HRIS_HANYA_KARYAWAN', false), FILTER_VALIDATE_BOOL),
 ];
