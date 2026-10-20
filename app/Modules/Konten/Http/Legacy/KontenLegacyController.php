@@ -36,7 +36,7 @@ class KontenLegacyController extends LegacyController
             'ping' => Envelope::okData(['pong' => true, 'backend' => 'laravel', 'ts' => gmdate('c')]),
             'receipt' => $this->files->stream($q('key')),
             'uploadReceipt' => Envelope::okData($this->files->save($b)),
-            'saveAll' => Envelope::okData($this->state->saveAll($b['data'] ?? null)),
+            'saveAll' => Envelope::okData($this->state->saveAll($b['data'] ?? null, isset($b['dikenal']) && is_array($b['dikenal']) ? $b['dikenal'] : null)),
             default => Envelope::error('Aksi tidak dikenal: '.$req->action),
         };
     }

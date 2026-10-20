@@ -13,20 +13,25 @@ use stdClass;
 /**
  * The whole konten state S — port of baca_state() and save_all().
  *
- * Konten is an OLDER variant of marketing's saveAll, so two of its quirks
- * are kept exactly (see docs/modules/konten.md):
+ * Konten is an OLDER variant of marketing's saveAll (see docs/modules/konten.md):
  *
- *  - NO `_sejak` bound. hapus_yang_hilang deletes every row missing from the
- *    payload, including rows created after the client loaded. RowSync can
- *    express this as deleteMissing(..., 'notIn'), which is used.
- *  - NO `versi` map and NO identical-content escape. A stale baseUpdatedAt
- *    is always a conflict, even when the content is the same.
+ *  - Deletion (legacy c13be99, 1 Oct 2026; #302): a client that sends
+ *    `dikenal` (ids it has seen, per collection) deletes only dikenal −
+ *    payload, and an empty payload deleting more than 3 rows is refused — the
+ *    module never reloads, so a stale tab used to delete content, ads and KOLs
+ *    other crews created that day. Old clients without `dikenal` keep
+ *    hapus_yang_hilang: every row missing from the payload is deleted, no
+ *    `_sejak` bound (deleteMissing 'notIn').
+ *  - NO identical-content escape. A stale baseUpdatedAt is always a conflict,
+ *    even when the content is the same.
  *  - The cap bump (+1 above the server version for a legit edit whose stamp
- *    is not newer) applies to the `updated_at` COLUMN only; `data.updatedAt`
- *    keeps the client-sent value. RowSync::upsertCollection writes the bump
- *    back into `data`, so the per-collection loop below is a line-by-line
- *    port of upsert_collection() instead — reusing RowSync only for the
- *    value helpers (ambil/ms/enc), putSetting and deleteMissing.
+ *    is not newer) is written into `data.updatedAt` and returned in `versi`
+ *    (legacy eaef657). The per-collection loop below is a line-by-line port
+ *    of upsert_collection() — reusing RowSync for the value helpers
+ *    (ambil/ms/enc), putSetting, deleteMissing and deleteKnown.
+ *  - NOT ported: legacy's partial-save mode (`hapus`, advertised by getAll as
+ *    `_fitur:['delta']`). This backend never advertises it, so clients keep
+ *    sending the whole state.
  *
  * saveAll runs under GET_LOCK('<db>:konten_save'), in one transaction, with
  * the receipt GC after commit (deleting files cannot be rolled back).
@@ -91,10 +96,10 @@ class KontenState
         return $out;
     }
 
-    public function saveAll(mixed $state): array
+    public function saveAll(mixed $state, ?array $dikenal = null): array
     {
         try {
-            return NamedLock::run('konten', 'konten_save', fn () => $this->saveAllLocked($state));
+            return NamedLock::run('konten', 'konten_save', fn () => $this->saveAllLocked($state, $dikenal));
         } catch (RuntimeException $e) {
             // Same lock, same serialisation as the old backend — but its
             // busy message is part of the compat contract.
@@ -134,7 +139,7 @@ class KontenState
     }
 
     /** saveAll body; caller must hold the konten_save lock. */
-    public function saveAllLocked(mixed $state): array
+    public function saveAllLocked(mixed $state, ?array $dikenal = null): array
     {
         if (! is_array($state)) {
             throw new RuntimeException('Payload data kosong/invalid');
@@ -142,9 +147,10 @@ class KontenState
         $db = $this->db();
         $hitung = [];
         $bentrok = [];
+        $versi = [];
 
-        $db->transaction(function () use ($db, $state, &$hitung, &$bentrok) {
-            $known = ['logs', '_rev'];
+        $db->transaction(function () use ($db, $state, $dikenal, &$hitung, &$bentrok, &$versi) {
+            $known = ['logs', '_rev', '_fitur'];
             $defs = KontenSchema::defs();
             $idCol = KontenSchema::idCol();
 
@@ -154,7 +160,8 @@ class KontenState
                     continue; // not sent -> skip
                 }
                 $rows = is_array($state[$name]) ? $state[$name] : [];
-                $hitung[$name] = $this->upsertCollection($db, $c, $rows, $bentrok, $name);
+                $kenal = isset($dikenal[$name]) && is_array($dikenal[$name]) ? $dikenal[$name] : null;
+                $hitung[$name] = $this->upsertCollection($db, $c, $rows, $bentrok, $name, $kenal, $versi);
             }
 
             // ---- logs: append-only (the audit trail is never overwritten/deleted) ----
@@ -203,6 +210,9 @@ class KontenState
             // went in. The app must tell the user when this is filled — staying
             // silent would let them believe their change was saved.
             'bentrok' => $bentrok,
+            // Stamps the server bumped, keyed <collection>:<id> — the client
+            // applies them so its next conflict reference is not stale.
+            'versi' => (object) $versi,
             'backend' => 'laravel',
             'ts' => gmdate('c'),
         ];
@@ -211,10 +221,11 @@ class KontenState
     /**
      * Port of upsert_collection(): per-row conflict guard via baseUpdatedAt,
      * ordering guard via updated_at (bumped to server+1 for a legit edit),
-     * then the LEGACY unbounded delete (no _sejak). Returns the payload row
-     * count — conflicting rows count as "present" so they are never deleted.
+     * then the delete (dikenal − payload, or the legacy unbounded one for old
+     * clients). Returns the payload row count — conflicting rows count as
+     * "present" so they are never deleted.
      */
-    private function upsertCollection(ConnectionInterface $db, array $def, array $rows, array &$bentrok, string $name): int
+    private function upsertCollection(ConnectionInterface $db, array $def, array $rows, array &$bentrok, string $name, ?array $kenal, array &$versi): int
     {
         $table = $def['table'];
         $idCol = $def['id'] ?? 'id';
@@ -293,14 +304,18 @@ class KontenState
             $simpan = $r;
             unset($simpan['baseUpdatedAt']);
 
-            $ua = RowSync::ms($simpan['updatedAt'] ?? 0);
+            $uaKirim = RowSync::ms($simpan['updatedAt'] ?? 0);
             // A row that passed the check must not be blocked by the ordering
             // guard: raise the stamp at least 1 above the server version.
-            // NOTE: unlike the newer marketing variant, the bumped stamp goes
-            // into the `updated_at` column ONLY — `data.updatedAt` keeps the
-            // client-sent value.
+            $ua = $uaKirim;
             if ($lolosBentrok && isset($verServer[$id]) && $ua <= $verServer[$id]) {
                 $ua = $verServer[$id] + 1;
+            }
+            // The stamp actually used goes into `data` and back to the client:
+            // otherwise every next edit of this row reports a false conflict.
+            if ($ua !== $uaKirim) {
+                $simpan['updatedAt'] = $ua;
+                $versi[$name.':'.$id] = $ua;
             }
 
             $core = KontenSchema::onCore();
@@ -323,11 +338,15 @@ class KontenState
             $db->statement($sql, $args);
         }
 
-        // LEGACY BUG, reproduced exactly: no _sejak bound — every row missing
-        // from the payload is deleted, including rows created after the client
-        // loaded. An empty payload never empties a table (guard against an
-        // accidentally empty state, e.g. the app failed to load then saved).
-        RowSync::deleteMissing($db, $table, $idCol, $ids, 'notIn');
+        // Only rows this tab has SEEN may be deleted (c13be99): a row born
+        // elsewhere is not in its `dikenal`. Old clients without the list keep
+        // the legacy rule: no _sejak bound, every row missing from the payload
+        // is deleted; an empty payload never empties a table.
+        if ($kenal !== null) {
+            RowSync::deleteKnown($db, $table, $idCol, $ids, $kenal);
+        } else {
+            RowSync::deleteMissing($db, $table, $idCol, $ids, 'notIn');
+        }
 
         return count($ids);
     }
