@@ -67,6 +67,30 @@ it('never deletes when _sejak is missing, and only deletes rows the client could
         ->and(mktClient('c_keep'))->not->toBeNull();
 });
 
+it('a client sending dikenal deletes only rows it has seen, whatever their stamps (95e4c20)', function () {
+    $post = fn (array $body) => test()->legacyPost('/marketing-api-mysql/api.php', ['action' => 'saveAll'] + $body)->assertOk();
+    mktSave(['clients' => [
+        ['id' => 'c_k1', 'nama' => 'mine', 'updatedAt' => 100],
+        ['id' => 'c_k2', 'nama' => 'gone', 'updatedAt' => 100],
+        ['id' => 'c_k3', 'nama' => 'late clock', 'updatedAt' => 50], // born elsewhere, stamp below this tab's _sejak
+    ]]);
+
+    $post(['dikenal' => ['clients' => ['c_k1', 'c_k2']], 'data' => ['clients' => [['id' => 'c_k1', 'nama' => 'mine', 'updatedAt' => 100]], '_sejak' => 500]]);
+    expect(mktClient('c_k1'))->not->toBeNull()
+        ->and(mktClient('c_k2'))->toBeNull()
+        ->and(mktClient('c_k3'))->not->toBeNull(); // _sejak alone would have deleted it
+
+    // settings collections (vip) follow the same rule
+    mktSave(['vip' => [['id' => 'vip_k1', 'nama' => 'A', 'updatedAt' => 1], ['id' => 'vip_k2', 'nama' => 'B', 'updatedAt' => 1]]]);
+    $post(['dikenal' => ['vip' => ['vip_k1', 'vip_k2']], 'data' => ['vip' => [['id' => 'vip_k1', 'nama' => 'A', 'updatedAt' => 1]]]]);
+    $ids = array_column(mktVipList(), 'id');
+    expect($ids)->toContain('vip_k1')->and($ids)->not->toContain('vip_k2');
+
+    // an empty payload that would delete more than 3 known rows is refused
+    $post(['dikenal' => ['clients' => ['c_k1', 'c_k3', 'x1', 'x2']], 'data' => ['clients' => []]]);
+    expect(mktClient('c_k1'))->not->toBeNull()->and(mktClient('c_k3'))->not->toBeNull();
+});
+
 it('merges Reservasi VIP per row instead of overwriting the whole list', function () {
     $before = count(mktVipList());
     mktSave(['vip' => [['id' => 'vip_t1', 'nama' => 'New VIP', 'updatedAt' => 1]]]);

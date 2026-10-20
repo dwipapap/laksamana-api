@@ -278,13 +278,19 @@ class MarketingState
         return $this->rowById('vip', $id);
     }
 
-    public function saveAll(mixed $state): array
+    public function saveAll(mixed $state, ?array $dikenal = null): array
     {
-        return NamedLock::run('marketing', 'mkt_save', fn () => $this->saveAllLocked($state));
+        return NamedLock::run('marketing', 'mkt_save', fn () => $this->saveAllLocked($state, $dikenal));
+    }
+
+    /** The ids the client has seen for one collection, or null (old client: _sejak rule). */
+    private static function known(?array $dikenal, string $name): ?array
+    {
+        return isset($dikenal[$name]) && is_array($dikenal[$name]) ? $dikenal[$name] : null;
     }
 
     /** saveAll body; caller must hold the mkt_save lock. */
-    public function saveAllLocked(mixed $state): array
+    public function saveAllLocked(mixed $state, ?array $dikenal = null): array
     {
         if (! is_array($state)) {
             throw new RuntimeException('Payload data kosong/invalid');
@@ -294,9 +300,9 @@ class MarketingState
         $bentrok = [];
         $versi = [];
 
-        $db->transaction(function () use ($db, $state, &$hitung, &$bentrok, &$versi) {
+        $db->transaction(function () use ($db, $state, $dikenal, &$hitung, &$bentrok, &$versi) {
             $sejak = isset($state['_sejak']) ? RowSync::ms($state['_sejak']) : 0;
-            $known = ['activities', '_rev', '_sejak', '_versi'];
+            $known = ['activities', '_rev', '_sejak', '_versi', '_fitur'];
             $defs = MarketingSchema::defs();
             $idCol = MarketingSchema::idCol();
 
@@ -307,7 +313,13 @@ class MarketingState
                 }
                 $rows = is_array($state[$name]) ? $state[$name] : [];
                 $ids = RowSync::upsertCollection($db, $c, $rows, $name, MarketingSchema::SYNC, $bentrok, $versi);
-                RowSync::deleteMissing($db, $c['table'], $idCol, $ids, 'sejak', $sejak);
+                // `dikenal` (95e4c20): delete only rows this tab has seen; old clients keep _sejak
+                $kenal = self::known($dikenal, $name);
+                if ($kenal !== null) {
+                    RowSync::deleteKnown($db, $c['table'], $idCol, $ids, $kenal);
+                } else {
+                    RowSync::deleteMissing($db, $c['table'], $idCol, $ids, 'sejak', $sejak);
+                }
                 $hitung[$name] = count($ids);
             }
 
@@ -318,14 +330,19 @@ class MarketingState
                     continue;
                 }
                 $rows = is_array($state[$name]) ? $state[$name] : [];
+                $kenal = self::known($dikenal, $name);
                 if (MarketingSchema::onCore()) {
                     $def = MarketingSchema::settingsDef($name);
                     $ids = RowSync::upsertCollection($db, $def, $rows, $name, MarketingSchema::SYNC, $bentrok, $versi);
-                    RowSync::deleteMissing($db, $def['table'], $idCol, $ids, 'sejak', $sejak);
+                    if ($kenal !== null) {
+                        RowSync::deleteKnown($db, $def['table'], $idCol, $ids, $kenal);
+                    } else {
+                        RowSync::deleteMissing($db, $def['table'], $idCol, $ids, 'sejak', $sejak);
+                    }
                     // Like the legacy settings merge: the stored row count, not the sent one.
                     $hitung[$name] = (int) ($db->selectOne("SELECT COUNT(*) c FROM `{$def['table']}`")->c ?? 0);
                 } else {
-                    $hitung[$name] = RowSync::upsertSettingsCollection($db, $name, $rows, MarketingSchema::SYNC, $bentrok, $versi, $sejak);
+                    $hitung[$name] = RowSync::upsertSettingsCollection($db, $name, $rows, MarketingSchema::SYNC, $bentrok, $versi, $sejak, $kenal);
                 }
             }
 
