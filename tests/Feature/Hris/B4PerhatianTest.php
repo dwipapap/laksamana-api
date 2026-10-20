@@ -8,6 +8,7 @@ use App\Modules\Hris\Services\HrisBalanceService;
 use App\Modules\Hris\Services\HrisOnboardingService;
 use App\Modules\Hris\Services\HrisPerhatianService;
 use App\Modules\Hris\Services\HrisRequestService;
+use App\Modules\Hris\Services\HrisShiftService;
 use App\Modules\Hris\Services\PunchRules;
 use App\Support\Modules;
 
@@ -81,6 +82,77 @@ it('warns belum_pulang after shift end, not before or after punching out', funct
     app(HrisAttendanceService::class)->recordPunch($me,
         ['arah' => 'PULANG', 'alasan' => 'uji'], hrisMs(2026, 10, 20, 18, 0));
     expect(hrisKode($me, hrisMs(2026, 10, 20, 19, 0)))->not->toContain('belum_pulang');
+});
+
+/** SPLIT as two blocks: 11:00–15:00 and 18:00–23:00 (J4). */
+function hrisSplitDuaBlok(): void
+{
+    app(HrisShiftService::class)->update('SPLIT', ['blok' => [
+        ['mulai' => '11:00', 'selesai' => '15:00'], ['mulai' => '18:00', 'selesai' => '23:00']]], 'test');
+}
+
+/** A punch at a fixed WIB instant on 2026-10-20. */
+function hrisPunchJam(string $uid, string $arah, int $h, int $mi): void
+{
+    app(HrisAttendanceService::class)->recordPunch(hrisMe($uid),
+        ['arah' => $arah, 'alasan' => 'uji'], hrisMs(2026, 10, 20, $h, $mi));
+}
+
+it('warns belum_masuk for block 2 at its own start, not block 1 hours', function () {
+    hrisSettings();
+    hrisSplitDuaBlok();
+    hrisPlantShift('u-dwipa', hrisDate(2026, 10, 20), 'SPLIT', '11:00', '23:00');
+    $me = hrisMe('u-dwipa');
+
+    // Block 1 is complete, so only block 2 can be missing.
+    hrisPunchJam('u-dwipa', 'MASUK', 10, 58);
+    hrisPunchJam('u-dwipa', 'PULANG', 15, 1);
+
+    expect(hrisKode($me, hrisMs(2026, 10, 20, 18, 10)))->not->toContain('belum_masuk');
+    $items = app(HrisPerhatianService::class)->untuk($me, hrisMs(2026, 10, 20, 18, 20));
+    $kodes = array_column($items, 'kode');
+    expect($kodes)->toContain('belum_masuk');
+    $item = $items[array_search('belum_masuk', $kodes, true)];
+    expect($item['judul'])->toContain('blok 2')
+        ->and($item['pesan'])->toContain('18:00');
+
+    hrisPunchJam('u-dwipa', 'MASUK', 18, 5);
+    expect(hrisKode($me, hrisMs(2026, 10, 20, 18, 30)))->not->toContain('belum_masuk');
+});
+
+it('warns belum_pulang for block 1 and keeps warning after block 2 starts', function () {
+    hrisSettings();
+    hrisSplitDuaBlok();
+    hrisPlantShift('u-dwipa', hrisDate(2026, 10, 20), 'SPLIT', '11:00', '23:00');
+    $me = hrisMe('u-dwipa');
+
+    hrisPunchJam('u-dwipa', 'MASUK', 11, 0);
+    // Block 1 ends 15:00; the default 60-minute grace ends at 16:00.
+    expect(hrisKode($me, hrisMs(2026, 10, 20, 15, 30)))->not->toContain('belum_pulang');
+    expect(hrisKode($me, hrisMs(2026, 10, 20, 16, 20)))->toContain('belum_pulang');
+
+    // Block 2 starts and gets its MASUK; block 1 is still open.
+    hrisPunchJam('u-dwipa', 'MASUK', 18, 5);
+    $items = app(HrisPerhatianService::class)->untuk($me, hrisMs(2026, 10, 20, 18, 20));
+    $kodes = array_column($items, 'kode');
+    expect($kodes)->toContain('belum_pulang');
+    $item = $items[array_search('belum_pulang', $kodes, true)];
+    expect($item['judul'])->toContain('blok 1')
+        ->and($item['pesan'])->toContain('15:00');
+});
+
+it('keeps the plain shift message free of block wording', function () {
+    hrisSettings();
+    hrisPlantShift('u-dwipa', hrisDate(2026, 10, 20), 'PAGI', '08:00', '17:00');
+    $me = hrisMe('u-dwipa');
+
+    hrisPunchJam('u-dwipa', 'MASUK', 8, 0);
+    $items = app(HrisPerhatianService::class)->untuk($me, hrisMs(2026, 10, 20, 18, 30));
+    $kodes = array_column($items, 'kode');
+    expect($kodes)->toContain('belum_pulang');
+    $item = $items[array_search('belum_pulang', $kodes, true)];
+    expect($item['judul'])->toBe('Belum absen pulang')
+        ->and($item['pesan'])->toBe('Shift selesai 17:00. Absen pulang sekarang.');
 });
 
 it('warns about PH expiring within 14 days', function () {

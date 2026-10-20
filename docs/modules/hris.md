@@ -172,9 +172,13 @@ tingkat: 'info'|'penting'}`, computed by the server when asked. Beranda
 renders it as a "Perlu perhatian" box. The kinds:
 
 1. No MASUK X minutes after the shift starts (`perhatianTelatMenit`,
-   default 15).
+   default 15). On a block shift the check follows the block the clock is
+   in: "Belum absen masuk blok 2" starts at block 2's own start.
 2. MASUK without PULANG X minutes after the shift ends
-   (`perhatianPulangMenit`, default 60).
+   (`perhatianPulangMenit`, default 60). On a block shift every block keeps
+   its own pair, so a missed PULANG of block 1 still warns after block 2
+   has started. Blocks that cross midnight follow the next day's log, same
+   as the existing night-shift guard.
 3. PH expiring within 14 days.
 4. Requests waiting for your approval (Kepala Divisi or HR only).
 5. Your request or queue decisions from the last 3 days.
