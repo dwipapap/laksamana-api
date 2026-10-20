@@ -5,6 +5,7 @@ namespace App\Modules\Reservasi\Http\V1;
 use App\Auth\OfficeAccess;
 use App\Modules\Reservasi\Services\DanaMasukGate;
 use App\Modules\Reservasi\Services\HapusReservasiGate;
+use App\Modules\Reservasi\Services\ReservasiAnalytics;
 use App\Modules\Reservasi\Services\ReservasiBrowse;
 use App\Modules\Reservasi\Services\ReservasiConflict;
 use App\Modules\Reservasi\Services\ReservasiGuests;
@@ -29,15 +30,18 @@ class ReservasiController
         private readonly ReservasiRecords $records,
         private readonly ReservasiGuests $guests,
         private readonly ReservasiBrowse $browse,
+        private readonly ReservasiAnalytics $ringkas,
         private readonly OfficeAccess $access,
     ) {}
 
     /**
      * Reservations in range, in `created_at` order. `q` (name/phone/table)
      * and `status` (normalised; Cancelled rows drop out unless asked for)
-     * narrow it; `page`/`perPage` cut it in Recap display order (date+time,
-     * stable) with `meta.total` counting every match. Without the new params
-     * the answer is exactly what it always was: every row.
+     * narrow it; `vip=1` keeps only VIP rows and `idPrefix=` only ids
+     * starting with it (the Marketing VIP orphan sweep); `page`/`perPage`
+     * cut it in Recap display order (date+time, stable) with `meta.total`
+     * counting every match. Without the new params the answer is exactly
+     * what it always was: every row.
      */
     public function index(Request $r): JsonResponse
     {
@@ -45,20 +49,31 @@ class ReservasiController
             'from' => ['nullable', 'date_format:Y-m-d'], 'to' => ['nullable', 'date_format:Y-m-d'],
             'page' => ['nullable', 'integer', 'min:1'], 'perPage' => ['nullable', 'integer', 'min:1', 'max:100'],
             'q' => ['nullable', 'string', 'max:200'], 'status' => ['nullable', 'string', 'max:32'],
+            'vip' => ['nullable', 'boolean'], 'idPrefix' => ['nullable', 'string', 'max:64'],
         ]);
+        $sempit = ($f['vip'] ?? null) !== null || ($f['idPrefix'] ?? null) !== null;
         if (($f['page'] ?? null) === null && ($f['perPage'] ?? null) === null
-            && ($f['q'] ?? null) === null && ($f['status'] ?? null) === null) {
+            && ($f['q'] ?? null) === null && ($f['status'] ?? null) === null && ! $sempit) {
             $rows = $this->records->list($f['from'] ?? null, $f['to'] ?? null);
 
             return ApiResponse::ok($rows, ['total' => count($rows), 'ver' => $this->state->ver()]);
         }
         $found = $this->browse->filterReservations($f['from'] ?? null, $f['to'] ?? null, $f['q'] ?? null, $f['status'] ?? null);
-        $meta = ['total' => $found['total'], 'ver' => $this->state->ver()];
+        $rows = $found['rows'];
+        if (($f['vip'] ?? null) !== null) {
+            $rows = array_values(array_filter($rows,
+                fn ($x) => is_array($x) && ! empty($x['vip'])));
+        }
+        if (($f['idPrefix'] ?? null) !== null && $f['idPrefix'] !== '') {
+            $rows = array_values(array_filter($rows,
+                fn ($x) => is_array($x) && str_starts_with((string) ($x['id'] ?? ''), (string) $f['idPrefix'])));
+        }
+        $meta = ['total' => count($rows), 'ver' => $this->state->ver()];
         if (($f['status'] ?? null) !== null) {
             $meta['batal'] = $found['batal'];
         }
         if (($f['page'] ?? null) !== null || ($f['perPage'] ?? null) !== null) {
-            $cut = $this->browse->page($this->browse->sortDisplay($found['rows']), $f['page'] ?? null, $f['perPage'] ?? null);
+            $cut = $this->browse->page($this->browse->sortDisplay($rows), $f['page'] ?? null, $f['perPage'] ?? null);
             $meta['total'] = $cut['total'];
             $meta['page'] = $cut['page'];
             $meta['perPage'] = $cut['perPage'];
@@ -66,7 +81,7 @@ class ReservasiController
             return ApiResponse::ok($cut['rows'], $meta);
         }
 
-        return ApiResponse::ok($found['rows'], $meta);
+        return ApiResponse::ok($rows, $meta);
     }
 
     /**
@@ -290,6 +305,52 @@ class ReservasiController
             ['sebelum' => $out['sebelum'], 'tamu' => (object) $out['tamu']],
             ['ver' => $this->state->ver()]
         );
+    }
+
+    /**
+     * Period performance + whole-range summary for the Analitik screen
+     * (api#311): the numbers performaPeriode() + ringkasKeseluruhan()
+     * compute in the browser, so the client no longer pulls the whole table.
+     * harian needs date=YYYY-MM-DD, bulanan date=YYYY-MM. `label` echoes the
+     * input (the client formats it); `meta.ver` is the global version.
+     * READ-ONLY.
+     */
+    public function analytics(Request $r): JsonResponse
+    {
+        $f = $r->validate([
+            'mode' => ['required', 'in:harian,bulanan'],
+            'date' => ['required', 'string', 'max:10'],
+        ]);
+        $mode = $f['mode'];
+        $date = trim($f['date']);
+        $ok = $mode === 'bulanan'
+            ? (bool) preg_match('/^\d{4}-\d{2}$/', $date) && checkdate((int) substr($date, 5, 2), 1, (int) substr($date, 0, 4))
+            : (bool) preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) && strtotime($date) !== false;
+        if (! $ok) {
+            return ApiResponse::error('validation_failed',
+                $mode === 'bulanan' ? 'Send date as YYYY-MM.' : 'Send date as YYYY-MM-DD.', 422);
+        }
+        $out = $this->ringkas->period($mode, $date);
+
+        return ApiResponse::ok($out, ['ver' => $this->state->ver()]);
+    }
+
+    /**
+     * Every DP instalment in range, flattened like the old muatDp (api#311):
+     * KompasBri matches these against the BRI statement without pulling the
+     * whole table. The range picks the transfer date OR the reservation date
+     * and keeps instalments without a transfer date (twin of dpsBulan());
+     * without bounds every instalment counts. READ-ONLY.
+     */
+    public function dps(Request $r): JsonResponse
+    {
+        $f = $r->validate([
+            'tfFrom' => ['nullable', 'date_format:Y-m-d'],
+            'tfTo' => ['nullable', 'date_format:Y-m-d'],
+        ]);
+        $rows = $this->ringkas->dps($f['tfFrom'] ?? null, $f['tfTo'] ?? null);
+
+        return ApiResponse::ok($rows, ['total' => count($rows), 'ver' => $this->state->ver()]);
     }
 
     /** An action that belongs to no reservation row (settings, roles, targets, …). */
