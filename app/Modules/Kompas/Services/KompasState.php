@@ -384,7 +384,7 @@ class KompasState
         // $valueDoc: the same value decoded keeping {} as objects (JsonDoc); what is stored
         $valueDoc ??= $value;
 
-        return NamedLock::run('kompas', 'kompas_save', function () use ($kind, $key, $value, $valueDoc, $baseHash, $by) {
+        return NamedLock::run('kompas', 'kompas_save', function () use ($kind, $key, $valueDoc, $baseHash, $by) {
             $s = $this->assoc();
             if (! $s) {
                 throw new RuntimeException('Data omset belum pernah tersimpan — buka panel Input Omset Harian lebih dulu');
@@ -408,8 +408,8 @@ class KompasState
                     $reports->$key = $valueDoc;
                 }
             } else {
-                $rows = array_values(array_filter(is_array($doc->daily ?? null) ? $doc->daily : [],
-                    fn ($d) => ! ($d instanceof stdClass && ($d->date ?? null) === $key)));
+                $keep = fn ($d) => ! ($d instanceof stdClass && ($d->date ?? null) === $key);
+                $rows = array_values(array_filter(is_array($doc->daily ?? null) ? $doc->daily : [], $keep));
                 foreach (is_array($valueDoc) ? $valueDoc : [] as $row) {
                     if ($row instanceof stdClass || is_array($row)) {
                         $rows[] = (object) (['date' => $key] + (array) $row);
