@@ -75,11 +75,35 @@ final class HrisPerhatianService
         if (! is_array($shift) || ! empty($shift['libur'])) {
             return null;
         }
+        $batas = (int) $this->settings->get('perhatianTelatMenit', 15);
+        $blok = is_array($shift['blok'] ?? null) ? $shift['blok'] : [];
+        // J4: on a block shift the check belongs to the block the clock is
+        // in, not to the whole-day span. The gap boundary is the same one
+        // used when a MASUK is assigned to a block.
+        if (count($blok) >= 2) {
+            $nomor = PunchRules::blokUntuk($blok, $menit);
+            $jam = $blok[$nomor - 1] ?? null;
+            $mulai = PunchRules::jamKeMenit($jam['mulai'] ?? '');
+            if ($mulai < 0 || $menit < $mulai + $batas) {
+                return null;
+            }
+            $masuk = HrisKetukan::query()->where('user_id', $uid)
+                ->where('tanggal_kerja', $tgl)->where('arah', 'MASUK')
+                ->where('blok', $nomor)
+                ->where('status', '!=', 'DITOLAK')->exists();
+            if ($masuk) {
+                return null;
+            }
+
+            return ['kode' => 'belum_masuk', 'judul' => 'Belum absen masuk blok '.$nomor,
+                'pesan' => 'Blok '.$nomor.' shift '.self::s($shift['kode'] ?? '').' mulai '
+                    .self::s($jam['mulai'] ?? '').'. Absen masuk sekarang.',
+                'layar' => '/absen', 'tingkat' => 'penting'];
+        }
         $mulai = PunchRules::jamKeMenit($shift['mulai'] ?? '');
         if ($mulai < 0) {
             return null;
         }
-        $batas = (int) $this->settings->get('perhatianTelatMenit', 15);
         if ($menit < $mulai + $batas) {
             return null;
         }
@@ -95,13 +119,55 @@ final class HrisPerhatianService
             'layar' => '/absen', 'tingkat' => 'penting'];
     }
 
-    /** 2. MASUK without PULANG X minutes after the shift ends. */
+    /** 2. MASUK without PULANG X minutes after the shift (or block) ends. */
     private function belumPulang(string $uid, string $tgl, int $menit): ?array
     {
-        $masuk = HrisKetukan::query()->where('user_id', $uid)
+        // No MASUK at all means there is nothing to close, plain or block.
+        $adaMasuk = HrisKetukan::query()->where('user_id', $uid)
             ->where('tanggal_kerja', $tgl)->where('arah', 'MASUK')
             ->where('status', '!=', 'DITOLAK')->exists();
-        if (! $masuk) {
+        if (! $adaMasuk) {
+            return null;
+        }
+        try {
+            $shift = $this->hadir->shiftFor($uid, $tgl);
+        } catch (\Throwable) {
+            return null;
+        }
+        if (! is_array($shift) || ! empty($shift['libur'])) {
+            return null;
+        }
+        $batas = (int) $this->settings->get('perhatianPulangMenit', 60);
+        $blok = is_array($shift['blok'] ?? null) ? $shift['blok'] : [];
+        // J4: every block keeps its own pair, so a missed PULANG of block 1
+        // still warns after block 2 has started.
+        if (count($blok) >= 2) {
+            $rows = HrisKetukan::query()->where('user_id', $uid)
+                ->where('tanggal_kerja', $tgl)->where('status', '!=', 'DITOLAK')
+                ->get(['blok', 'arah']);
+            $peta = [];
+            foreach ($rows as $r) {
+                $peta[max(1, (int) $r->blok)][(string) $r->arah] = true;
+            }
+            foreach ($blok as $i => $b) {
+                $nomor = $i + 1;
+                if (empty($peta[$nomor]['MASUK']) || ! empty($peta[$nomor]['PULANG'])) {
+                    continue;
+                }
+                $mulai = PunchRules::jamKeMenit($b['mulai'] ?? '');
+                $selesai = PunchRules::jamKeMenit($b['selesai'] ?? '');
+                // A block that crosses midnight belongs to the next day's log,
+                // like the existing lintas_hari guard below.
+                if ($mulai < 0 || $selesai < 0 || $selesai <= $mulai || $menit < $selesai + $batas) {
+                    continue;
+                }
+
+                return ['kode' => 'belum_pulang', 'judul' => 'Belum absen pulang blok '.$nomor,
+                    'pesan' => 'Blok '.$nomor.' shift '.self::s($shift['kode'] ?? '').' selesai '
+                        .self::s($b['selesai'] ?? '').'. Absen pulang sekarang.',
+                    'layar' => '/absen', 'tingkat' => 'penting'];
+            }
+
             return null;
         }
         $pulang = HrisKetukan::query()->where('user_id', $uid)
@@ -110,19 +176,13 @@ final class HrisPerhatianService
         if ($pulang) {
             return null;
         }
-        try {
-            $shift = $this->hadir->shiftFor($uid, $tgl);
-        } catch (\Throwable) {
-            return null;
-        }
-        if (! is_array($shift) || ! empty($shift['libur']) || ! empty($shift['lintas_hari'])) {
+        if (! empty($shift['lintas_hari'])) {
             return null;
         }
         $selesai = PunchRules::jamKeMenit($shift['selesai'] ?? '');
         if ($selesai < 0) {
             return null;
         }
-        $batas = (int) $this->settings->get('perhatianPulangMenit', 60);
         if ($menit < $selesai + $batas) {
             return null;
         }
