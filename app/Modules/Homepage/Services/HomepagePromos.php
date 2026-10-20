@@ -81,6 +81,25 @@ class HomepagePromos
         return Cache::remember('homepage:bd-promos:'.$hash, 3600, fn (): array => self::index($this->bdPromosFull()));
     }
 
+    /** DB hash of the promos setting, memoized per request (one small query). Null when BD cannot be read. */
+    private ?string $hashMemo = null;
+
+    private bool $hashSiap = false;
+
+    private function hashPromos(): ?string
+    {
+        if (! $this->hashSiap) {
+            $this->hashSiap = true;
+            try {
+                $this->hashMemo = $this->bd->settingHash('promos');
+            } catch (Throwable) {
+                $this->hashMemo = null;
+            }
+        }
+
+        return $this->hashMemo;
+    }
+
     /**
      * The full BD `promos` document keyed by promo id, posters included. Only
      * the image routes need it. Throws when BD cannot be read.
@@ -131,18 +150,28 @@ class HomepagePromos
         return array_key_exists('_poster_ok', $p) ? (bool) $p['_poster_ok'] : self::posterBytes($p) !== null;
     }
 
-    /** The poster bytes of one BD promo, read from the full document; null on any failure. @return array{data:string,type:string}|null */
+    /** The poster bytes of one BD promo, cached per promo id + document hash; null on any failure. @return array{data:string,type:string}|null */
     private function bdPoster(string $promoId): ?array
     {
-        try {
-            $p = $this->bdPromosFull()[$promoId] ?? null;
-        } catch (Throwable $e) {
-            report($e);
-
+        $promoId = trim($promoId);
+        if ($promoId === '') {
+            return null;
+        }
+        $hash = $this->hashPromos();
+        if ($hash === null) {
             return null;
         }
 
-        return $p === null ? null : self::posterBytes($p);
+        return Cache::remember('homepage:bd-poster:'.$promoId.':'.$hash, 3600,
+            function () use ($promoId): ?array {
+                try {
+                    return self::posterBytes($this->bdPromosFull()[$promoId] ?? []);
+                } catch (Throwable $e) {
+                    report($e);
+
+                    return null;
+                }
+            });
     }
 
     /**
