@@ -817,12 +817,22 @@ final class HrisAttendanceService
             $row = HrisKetukan::query()->where('user_id', $uid)
                 ->where('tanggal_kerja', $tgl)->where('arah', 'PULANG')->first();
             if ($row) {
-                self::deletePhoto($row->foto_path);
-                $row->fill($data + [
-                    'diputus_oleh' => '', 'diputus_at' => 0, 'nota' => '',
-                ])->save();
+                $row = self::timpaPulang($row, $data);
             } else {
-                $row = HrisKetukan::query()->create($data);
+                try {
+                    $row = HrisKetukan::query()->create($data);
+                } catch (QueryException $e) {
+                    // Two PULANG taps landing together: UNIQUE(user, date,
+                    // arah) lets one in; the other overwrites it like any
+                    // repeat instead of answering 500.
+                    $row = HrisKetukan::query()->where('user_id', $uid)
+                        ->where('tanggal_kerja', $tgl)->where('arah', 'PULANG')->first();
+                    if (! $row) {
+                        self::deletePhoto($data['foto_path'] ?? null);
+                        throw $e;
+                    }
+                    $row = self::timpaPulang($row, $data);
+                }
             }
         } else {
             try {
@@ -1335,6 +1345,31 @@ final class HrisAttendanceService
         if ($key) {
             Storage::disk('local')->delete('hris-faces/'.$key);
         }
+    }
+
+    /**
+     * Overwrite a PULANG row. The replaced photo is deleted only after the
+     * save lands, so a failed save keeps the old evidence; a newly stored
+     * photo of a failed save is removed instead of orphaned.
+     */
+    private static function timpaPulang(HrisKetukan $row, array $data): HrisKetukan
+    {
+        $lama = $row->foto_path;
+        try {
+            $row->fill($data + [
+                'diputus_oleh' => '', 'diputus_at' => 0, 'nota' => '',
+            ])->save();
+        } catch (\Throwable $e) {
+            if (($data['foto_path'] ?? null) !== $lama) {
+                self::deletePhoto($data['foto_path'] ?? null);
+            }
+            throw $e;
+        }
+        if ($lama && $lama !== $row->foto_path) {
+            self::deletePhoto($lama);
+        }
+
+        return $row;
     }
 
     /** @return array<int,float> */

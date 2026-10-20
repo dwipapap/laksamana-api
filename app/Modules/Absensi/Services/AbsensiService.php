@@ -9,6 +9,7 @@ use App\Support\Legacy\Sesi;
 use App\Support\Modules;
 use App\Support\RowSync;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -839,7 +840,25 @@ class AbsensiService
                 '`putus_at`=0,`putus_oleh`="",`putus_nota`=""'.
                 (self::onCore() ? ',`updated_by`=VALUES(`updated_by`),`version`=`version`+1' : '');
         }
-        $this->db()->statement($sql, $row);
+        if ($arah === 'MASUK') {
+            try {
+                $this->db()->statement($sql, $row);
+            } catch (QueryException $e) {
+                // Two MASUK taps landing together: uq_punch lets one in;
+                // the other gets the same duplikat answer as any repeat.
+                $dupe = $this->db()->selectOne(
+                    'SELECT * FROM `abs_punch` WHERE `subjek_tipe` = ? AND `subjek_id` = ? AND `tgl` = ? AND `arah` = "MASUK"',
+                    [$tipe, $id, $tgl]
+                );
+                if (! $dupe) {
+                    throw $e;
+                }
+
+                return ['duplikat' => true, 'punch' => self::bentukPunch((array) $dupe)];
+            }
+        } else {
+            $this->db()->statement($sql, $row);
+        }
 
         $ada = $this->db()->selectOne(
             'SELECT * FROM `abs_punch` WHERE `subjek_tipe` = ? AND `subjek_id` = ? AND `tgl` = ? AND `arah` = ?',
