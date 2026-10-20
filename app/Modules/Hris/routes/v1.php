@@ -157,4 +157,10 @@ Route::middleware(['auth:sanctum', 'module:hris'])->prefix('hris')->group(functi
     Route::post('kelola/jabatan-level', [W::class, 'levelStore']);
     Route::patch('kelola/jabatan-level/{id}', [W::class, 'levelUpdate'])->where('id', $ulid);
     Route::delete('kelola/jabatan-level/{id}', [W::class, 'levelDestroy'])->where('id', $ulid);
+
+    // Master shift (J1–J4), stored in the Jadwal setting.
+    Route::get('kelola/shift', [W::class, 'shiftIndex']);
+    Route::post('kelola/shift', [W::class, 'shiftStore']);
+    Route::patch('kelola/shift/{kode}', [W::class, 'shiftUpdate'])->where('kode', '[A-Za-z0-9_-]+');
+    Route::delete('kelola/shift/{kode}', [W::class, 'shiftDestroy'])->where('kode', '[A-Za-z0-9_-]+');
 });

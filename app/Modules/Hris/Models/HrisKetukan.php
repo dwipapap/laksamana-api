@@ -22,6 +22,7 @@ final class HrisKetukan extends CoreRecord
     {
         return parent::casts() + [
             'waktu' => 'integer',
+            'blok' => 'integer',
             'lat' => 'float',
             'lng' => 'float',
             'akurasi_m' => 'integer',

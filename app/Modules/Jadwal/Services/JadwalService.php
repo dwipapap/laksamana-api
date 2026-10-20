@@ -677,6 +677,12 @@ class JadwalService
         return ['saved' => true, 'isi' => $nIsi, 'hapus' => $nHapus, 'ts' => gmdate('c')];
     }
 
+    /** Whether any roster cell ever used this shift code (HRIS refuses to delete it then). */
+    public function kodeDipakai(string $kode): bool
+    {
+        return $this->db()->selectOne('SELECT 1 AS x FROM `jadwal_sel` WHERE `shift` = ? LIMIT 1', [self::s($kode)]) !== null;
+    }
+
     /** CI write probe: open + commit a transaction without writing anything. */
     public function probe(): array
     {
