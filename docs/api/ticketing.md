@@ -46,6 +46,12 @@ The **Xendit webhook** stays on its legacy path, `POST /ticketing-api/api.php` w
 
 A PAID webhook is confirmed with Xendit's own API before any ticket is issued.
 
+## Payment races (api#306)
+
+- Only the Paid status, the tickets and the seats are written inside the `tix` lock. The e-ticket PDF + SMTP go out **after** the lock is released (they take seconds; holding it blocks every other buyer), and `email_eticket` is saved separately. A failed mail still never undoes a payment.
+- `cancel()` and the sweeps re-read the order **inside** the lock: a sweep never overwrites an order that turned Paid a moment ago, and a busy lock only skips that sweep round.
+- A late payment on a **non-Pending** order (Expired/Failed) re-checks seats and quota first. On a clash **no ticket is issued**: the payment details are still recorded and the order carries `refund_needed: {at, sebab}` for the crew's manual refund instead. When everything is still free the tickets are issued normally. **This diverges from legacy**, which paid whatever the stored status said.
+
 ## Errors
 
 | Status | code | When |
