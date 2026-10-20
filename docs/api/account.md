@@ -17,7 +17,7 @@ The Office screens (`deploy/index.html`: Kelola User / Kelola Akses; `deploy/jad
 | Screen | Endpoints |
 |---|---|
 | Login / logout | `auth/login`, `auth/logout` |
-| Current user | `GET /me`, `PUT /me/pin`, `PUT /me/username`, `PUT /me/contact` |
+| Current user | `GET /me`, `GET /me/badges`, `PUT /me/pin`, `PUT /me/username`, `PUT /me/contact` |
 | Kelola User (list, add, edit, import Excel) | `GET /users`, `POST /users`, `PATCH /users/{id}`, `POST /users/bulk` |
 | Kelola User (activate/deactivate, delete) | `PUT /users/{id}/active`, `DELETE /users/{id}` |
 | Kelola Akses (checkboxes, per Modul) | `GET /users` (`modules`, `grants`, `denies`, `adminModules` per user + `meta.rules`), `PUT /users/{id}/access`, `PUT /users/{id}/admin`, `listAccess` |
@@ -38,6 +38,7 @@ The Office screens (`deploy/index.html`: Kelola User / Kelola Akses; `deploy/jad
 | PUT | `/api/v1/me/pin` | `{currentPin, newPin}`. Unlike legacy `changePin` this verifies the current PIN. Wrong → 422 `invalid_credentials`; bad shape → 422 `validation_failed`. |
 | PUT | `/api/v1/me/username` | `{username}` (may be `null`/empty to clear). → `{username}`. Invalid → 422 `bad_username`; taken → 422 `username_taken`. |
 | PUT | `/api/v1/me/contact` | `{email?, noHp?}` (either may be `null`/empty to clear). `email` must be a lowercase email ≤190 chars and unique when filled; `noHp` is trimmed ≤32 chars. → `{email, noHp}`. Bad shape → 422 `validation_failed`; bad email → 422 `bad_email`; taken → 422 `email_taken`; bad phone → 422 `bad_no_hp`. |
+| GET | `/api/v1/me/badges` | `{modul: {layar: n}}` — the red menu counts of the Beranda "Perlu tindakan" list in one call (api#311), so the home screen no longer opens 8–15 full states for numbers. Each rule twins the client's own `lencana()` (`modul-shell.ts`): `absensi.antrean` (queue length, HR only), `reservasi.dashboard` + `reservasi.lonceng` (today's Pending), `marketing.lonceng` (unread notifications), `konten.approval` (content waiting), `event.approval` + `event.lonceng` (plans awaiting decision + pending refunds), `jadwal.pengajuan` (requests this person can decide now), `dw.antrean` + `dw.permintaan` (desk queue + own-division requests). Only modules the caller may open appear; counts include zeros (the client shows `n > 0`). Read-only. |
 
 ## Users (Superadmin)
 

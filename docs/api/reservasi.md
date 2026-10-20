@@ -4,7 +4,7 @@ This is the contract for **laksamana-office-vue**, the old laksamana-office if i
 
 - **Base URL:** `/api/v1/reservasi`
 - **Auth:** `Authorization: Bearer <token>`, obtained from `POST /api/v1/auth/login {login, pin}`. The account needs the `reservasi` **or** `service_excellent` Modul: they are two Panels of the same Backend and the same master blob. Akses Halaman inside each Panel stays in `master.perms` / `master.sePerms`, as it is in the old client-side matrix.
-- **Dana Masuk door (G-14):** holders of `cashier` or `finance` also reach the endpoints the Dana Masuk (DP) page uses — `GET /reservations`, `GET /reservations/{id}`, `PATCH /reservations/{id}`, `GET /master/{section}`, `POST /audit`, `GET /files/{key}` — as the old Office did through `deploy/reservasi/?embed=finance` (Cashier and Kas Kecil embed that page, with verify/reject rights). When such a User holds **neither** `reservasi` nor `service_excellent`, the API narrows it further:
+- **Dana Masuk door (G-14):** holders of `cashier` or `finance` also reach the endpoints the Dana Masuk (DP) page uses — `GET /reservations`, `GET /reservations/{id}`, `PATCH /reservations/{id}`, `GET /master/{section}`, `POST /audit`, `GET /files/{key}`, plus the compact reads `GET /analytics` and `GET /dps` (api#311) — as the old Office did through `deploy/reservasi/?embed=finance` (Cashier and Kas Kecil embed that page, with verify/reject rights). When such a User holds **neither** `reservasi` nor `service_excellent`, the API narrows it further:
   - `PATCH /reservations/{id}` may only write the DP fields (`dps`, `dpStatus`, `dpMethod`, `dpAmount`, `dpProofData`, `dpProofName`) and the transfer fields (`tf` + an upper-case letter: `tfDate`, `tfStatus`, `tfOcrText`, …), plus `status` for the one move Dana Masuk owns, `Pending` → `Confirmed`. A key sent back with its current value is not a write and passes. Anything else → **403 `forbidden`** with `details.fields` listing the refused keys, and nothing is written.
   - `GET /master/{section}` answers only `dpMethods`; any other section → **403 `module_not_granted`**.
   - Everything else (`POST`/`PUT`/`DELETE /reservations`, `GET /master`, `GET /audit`, master writes, `PUT /files/{key}`) stays **403 `module_not_granted`**.
@@ -26,7 +26,7 @@ Status: complete. The compat core and dual lock are #32; the per-screen completi
 | Input Reservasi | `GET /reservations`, `/master/categories`, `/master/dpMethods`, `/master/infoSources`, `/master/waTargets` | `POST /reservations`, `PUT/PATCH/DELETE /reservations/{id}`, photo `PUT /files/{key}` |
 | Dana Masuk (DP) — also opened to `cashier` / `finance`, see *Dana Masuk door* above | reservations and their `dps[]`, `/master/dpMethods`, `/files/{key}`; the **DP Event** tab reads `GET /api/v1/marketing/dp` (open to `marketing`, `reservasi`, `cashier`, `finance`) | `PATCH /reservations/{id}` with the DP fields (`dps[]`, `dpStatus`, `dpAmount`, `dpProofData`, `tf*`); `POST /audit`. Reservasi holders only: `PUT /reservations/{id}`, and `DELETE /reservations/{id}` (Hapus Data Demo) removes the reservation and its DP files |
 | Riwayat | `GET /reservations` (the page filters past dates, `No-show` and `Cancelled`) | the same reservation writes as Dashboard |
-| Analitik | `GET /reservations` | none; the page derives attendance, pax, source, PIC and monthly figures |
+| Analitik | `GET /analytics?mode=harian|bulanan&date=` — period performance + whole-range summary, computed server-side (api#311) | none; the page renders the returned numbers |
 | Master Data | `/master/tables`, `/dpMethods`, `/infoSources`, `/categories`, `/users`, `/perms`, `/waTargets`, `/dineEstMin`, `/clashLeadMin`, `/layouts`, `/layoutOverrides`, `/layoutOverrides2`, `/layoutTanggal` | `PUT /master/{section}`; `POST /audit` for the action |
 | Audit Log | `GET /audit`, then `GET /reservations/{id}` for a linked row | none |
 
@@ -47,7 +47,7 @@ The waiting list is shared state in `/master/waitlist`; it has no Service Excell
 ### Other Modul
 
 - Dana Masuk (DP) › **Event (Marketing)** is read-only here and stays with Marketing.
-- Cashier and Finance embed this Panel for Dana Masuk. QRIS BRI matching is Kompas's `/bri` contract; the ignored-DP marks are `/bri/ignored` and `/bri/ignored/{dpId}`.
+- Cashier and Finance embed this Panel for Dana Masuk. QRIS BRI matching is Kompas's `/bri` contract; the ignored-DP marks are `/bri/ignored` and `/bri/ignored/{dpId}`. KompasBri reads the instalments through `GET /dps?tfFrom&tfTo` (api#311) instead of the whole table.
 - Kwitansi requests for a reservation are Finance's `POST /api/v1/finance/invoices/requests` (status `/status`, file `/file/{resId}`); Reservasi does not duplicate them.
 
 ## Granular parts of the master blob
@@ -105,12 +105,24 @@ After a successful create/update/delete the server appends one row, in the same 
 
 The old screens page these tables from the server (`halRecap`/`halDana`/`halAudit`, "Muat berjendela") because the whole list is megabytes; the filter rules are twins of the client (`applyFilter`+`recapList`, `auditCocok`).
 
-- `GET /reservations`: `q` matches name, phone or table number (case-insensitive); `status` compares the normalised status (`Checked-in`/`Completed` → `Datang`, `Booking` → `Confirmed`) and, when it is anything but `Cancelled`, hides Cancelled rows while counting them as `meta.batal` (the Recap screen's hidden-cancelled count for that filter set; the key only appears with `status`). Without a `status` every row stays, exactly like the unfiltered answer always did. `page` (from 1) + `perPage` (1–100, default 10) cut the matches in Recap display order (date+time, stable); `meta.total` counts every match. A page past the end is clamped to the last page. **Without `page`/`perPage`/`q`/`status` the answer is exactly what it always was**: every row in `created_at` order.
+- `GET /reservations`: `q` matches name, phone or table number (case-insensitive); `status` compares the normalised status (`Checked-in`/`Completed` → `Datang`, `Booking` → `Confirmed`) and, when it is anything but `Cancelled`, hides Cancelled rows while counting them as `meta.batal` (the Recap screen's hidden-cancelled count for that filter set; the key only appears with `status`). `vip=1` keeps only VIP rows and `idPrefix=` only ids starting with it (the Marketing VIP orphan sweep, api#311: `?vip=1&idPrefix=vip-` replaces the 2020–2100 walk). Without a `status` every row stays, exactly like the unfiltered answer always did. `page` (from 1) + `perPage` (1–100, default 10) cut the matches in Recap display order (date+time, stable); `meta.total` counts every match. A page past the end is clamped to the last page. **Without `page`/`perPage`/`q`/`status`/`vip`/`idPrefix` the answer is exactly what it always was**: every row in `created_at` order.
 - `GET /audit`: `q` searches user, role, action and detail (the guest name lives in Detail, so a cancelled or deleted reservation is still found). `page`/`perPage` cut it the same way with `meta.total`. Audit has no status dimension. Without the new params the answer is unchanged (newest 500, no `meta`).
 - `GET /reservations/export`: the same filter as the list as `text/csv` (`reservasi_laksamana_<today>.csv`, BOM'd for Excel). Columns in the Recap order: Nama, No HP (digits only), Tanggal, Jam, Pax, Pax Aktual, Meja, Lantai, Status, DP, Nominal DP, Metode DP, Rekening DP, Sumber, PIC, Member (Ya/Tidak), No Member, Catatan, Diinput Oleh. Paging is ignored — the export always covers every matching row, in display order. Lantai comes from the custom `layouts` templates in master; tables known only to the browser's built-in templates export an empty Lantai. Read-only.
 
-## Photos and files
+## Analytics (api#311)
 
+`GET /analytics?mode=harian|bulanan&date=` returns the Analitik screen's numbers without pulling the whole table: `data.periode` (the `performaPeriode` shape: `label`, `reservasi`, `walkin`, `hariAktif`, `hadir`, `diharapkan`, `kehadiran`, `tepat`, `telat`, `telatRata`, `tepatPersen`, `durasiRata`, `durasiN`, `masihDuduk`, `paxPesan`, `paxDatang`, `paxRealisasi`, `noShow`, `batal`, `tersibuk`, `trenHarian`, `palingTelat`, `dudukTerlama`) plus `data.ringkasan` (the `ringkasKeseluruhan` shape over the whole table: `total`, `totalPax`, `rataPax`, `noShow`, `dinilai`, `rasioNoShow`, `unik`, `perSumber`, `perPic`, `perJam`, `perHari`, `perBulan`).
+
+- `mode=harian` needs `date=YYYY-MM-DD` (rows with that date); `mode=bulanan` needs `date=YYYY-MM` (rows in that month, with `trenHarian` per day). Anything else → 422.
+- Every formula is the client's twin (punctuality tolerance 10 minutes, wall clock in Asia/Jakarta, peak hour/day counting pax, `rataPax` one decimal as text). `label` echoes the input; the client formats it for display. `meta.ver` is the global version. Read-only.
+
+## DP instalments (api#311)
+
+`GET /dps?tfFrom&tfTo` returns every DP instalment in range, flattened exactly like the old `muatDp` (`resId`, `dpId`, `nama`, `resTgl`, `tfTgl`, `tfJam`, `bank`, `metode`, `status`, `nominal`, `diketik`, `bukti`, `buktiNama`; `nominal` is the transfer amount when positive, else the typed amount; `proofData` travels as stored, `@f:` refs stay refs).
+
+- The range (both bounds `YYYY-MM-DD`, either optional) picks the transfer date **or** the reservation date, and keeps instalments without a transfer date (twin of `dpsBulan()`); without bounds every instalment counts. `meta.total` counts the rows, `meta.ver` is the global version. Read-only, open through the Dana Masuk door.
+
+## Photos and files
 Photos never stay inline. A `data:` URI in a photo field is written to `<RESERVASI_DATA_DIR>/files/<key>.txt` and replaced with `@f:<key>`.
 
 | Owner | Field | Key |
@@ -135,7 +147,9 @@ Photos never stay inline. A `data:` URI in a photo field is written to `<RESERVA
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/reservations?from&to&page&perPage&q&status` | Reservations whose date is in range (either bound optional), in `created_at` order. `q` (name/phone/table), `status` and `page`/`perPage` narrow and cut it — see *Paging, filters and export*. `meta.total`, `meta.ver` |
+| GET | `/reservations?from&to&page&perPage&q&status&vip&idPrefix` | Reservations whose date is in range (either bound optional), in `created_at` order. `q` (name/phone/table), `status`, `vip=1` (VIP rows only) and `idPrefix=` (ids starting with it) narrow it, `page`/`perPage` cut it — see *Paging, filters and export*. `meta.total`, `meta.ver` |
+| GET | `/analytics?mode&date` | Period performance + whole-range summary for the Analitik screen (api#311) — see *Analytics* |
+| GET | `/dps?tfFrom&tfTo` | DP instalments in range, flattened like `muatDp` for KompasBri (api#311) — see *DP instalments* |
 | GET | `/reservations/export?from&to&q&status` | The same filter as the list as CSV (the Recap columns); paging ignored, every match exported |
 | GET | `/reservations/{id}` | One reservation + `meta.version` / `ETag` |
 | POST | `/reservations` | Body = the reservation; `id` optional, `_audit` optional. `updatedAt` is stamped and kept increasing; `createdAt` defaults to the server clock. `201`, or `409 already_exists` |

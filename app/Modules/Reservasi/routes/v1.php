@@ -30,6 +30,8 @@ Route::middleware(['auth:sanctum', 'module:reservasi|service_excellent'])->prefi
 // only `dpMethods`. Everyone else sees no difference.
 Route::middleware(['auth:sanctum', 'module:reservasi|service_excellent|cashier|finance'])->prefix('reservasi')->group(function () {
     Route::get('recap', [Recap::class, 'show']);
+    Route::get('analytics', [C::class, 'analytics']);
+    Route::get('dps', [C::class, 'dps']);
     Route::get('guests/summary', [C::class, 'guestSummary']);
     Route::get('reservations', [C::class, 'index']);
     Route::get('reservations/export', [C::class, 'export']);
