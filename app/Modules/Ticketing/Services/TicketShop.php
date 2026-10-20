@@ -19,8 +19,11 @@ use Throwable;
  *
  * - Prices are ALWAYS computed here, never taken from the browser.
  * - EMS rows are core columns + a `data` JSON that is the source of truth.
- * - Writes that race (holds, checkout, payment) run under GET_LOCK('<db>:tix', 10),
- *   the same lock name as legacy, so old and new serialise together.
+ * - Writes that race (holds, checkout, payment, cancel, sweeps) run under
+ *   GET_LOCK('<db>:tix', 10), the same lock name as legacy, so old and new
+ *   serialise together. Only the Paid status, the tickets and the seats are
+ *   written inside the payment lock — the e-ticket PDF + SMTP go out after
+ *   it is released, and sweeps re-read the order there too.
  * - Expired holds and orders are swept inside normal requests; there is no cron.
  * - No transactions: legacy ran on autocommit, and a paid order must never be rolled
  *   back by a later failure (e.g. mail).
@@ -173,7 +176,11 @@ class TicketShop
                 if (strtotime($o['expires_at']) >= $now) {
                     continue;
                 }
-                $this->cancel($row->id, 'EXPIRED');
+                try {
+                    $this->cancel($row->id, 'EXPIRED');
+                } catch (Throwable) {
+                    // busy or gone: the next sweep retries, the request rides on
+                }
             }
         } catch (Throwable) {
             // a sweep never fails the request it rides on
@@ -204,9 +211,29 @@ class TicketShop
                 if (isset($o['_cek_at']) && ($now - (float) $o['_cek_at']) < 60000) {
                     continue;
                 }
-                $o['_cek_at'] = $now;
-                $this->saveOrder($o);
-                $this->syncXendit($o);
+                // Stamp _cek_at under the lock on a fresh read: an order paid
+                // a moment ago must not be overwritten back to Pending data.
+                try {
+                    $fresh = $this->locked(function () use ($o, $now) {
+                        $r = $this->ems->emsRow('orders', (string) $o['id']);
+                        if (! $r || ($r['payment_status'] ?? '') !== 'Pending') {
+                            return null;
+                        }
+                        if (isset($r['_cek_at']) && ($now - (float) $r['_cek_at']) < 60000) {
+                            return null;
+                        }
+                        $r['_cek_at'] = $now;
+                        $this->saveOrder($r);
+
+                        return $r;
+                    });
+                } catch (Throwable) {
+                    continue; // busy: ask again on a later request
+                }
+                if ($fresh === null) {
+                    continue;
+                }
+                $this->syncXendit($fresh);
                 $n++;
             }
         } catch (Throwable) {
@@ -1062,25 +1089,41 @@ class TicketShop
     /**
      * Pays an order: issues one ticket + QR per guest, marks seats Sold. IDEMPOTENT —
      * Xendit may send the same webhook many times.
+     *
+     * Only the Paid status, the tickets and the seats are written inside the
+     * `tix` lock. The e-ticket PDF + SMTP go out AFTER the lock is released
+     * (they take seconds; holding the lock blocks every other buyer), and
+     * `email_eticket` is saved separately — a failed mail never undoes payment.
+     *
+     * A late payment on a non-Pending order re-checks seats/quota first: on a
+     * clash no ticket is issued and the order is marked for refund instead
+     * (see clashNonPending(); diverges from legacy, documented in
+     * docs/api/ticketing.md).
      */
     public function markPaid(string $oid, array $body = []): array
     {
-        return $this->locked(function () use ($oid, $body) {
+        [$sudah, $refund, $order, $tickets] = $this->locked(function () use ($oid, $body) {
             $o = $this->ems->emsRow('orders', $oid);
             if (! $o) {
                 throw new Exception('Pesanan tidak ditemukan: '.$oid);
             }
             if ($o['payment_status'] === 'Paid') {
-                return ['sudah' => true, 'order_id' => $oid];
+                return [true, null, $o, []];
             }
-            $o['payment_status'] = 'Paid';
-            $o['paid_at'] = gmdate('c');
             $o['payment'] = array_merge($o['payment'] ?? [], [
                 'status' => 'PAID',
                 'payment_method' => $body['payment_method'] ?? '',
                 'channel' => $body['payment_channel'] ?? '',
                 'paid_amount' => isset($body['paid_amount']) ? (int) $body['paid_amount'] : $o['total'],
             ]);
+            if (($o['payment_status'] ?? '') !== 'Pending' && ($sebab = $this->clashNonPending($o)) !== '') {
+                $o['refund_needed'] = ['at' => gmdate('c'), 'sebab' => $sebab];
+                $this->saveOrder($o);
+
+                return [false, $sebab, $o, []];
+            }
+            $o['payment_status'] = 'Paid';
+            $o['paid_at'] = gmdate('c');
 
             $tickets = [];
             $no = $this->ems->emsCount('tickets');
@@ -1115,12 +1158,72 @@ class TicketShop
             }
             $this->raiseSold($o['items']);
             $this->applyUpgrade($o);
-            $o['email_eticket'] = app(TicketMail::class)->sendEticket($o, $tickets);
             $this->saveOrder($o);
             $this->db()->delete('DELETE FROM `'.TicketSchema::table('seat_holds').'` WHERE order_id = ?', [$oid]);
 
-            return ['order_id' => $oid, 'tiket' => count($tickets)];
+            return [false, null, $o, $tickets];
         });
+        if ($sudah) {
+            return ['sudah' => true, 'order_id' => $oid];
+        }
+        if ($refund !== null) {
+            return ['order_id' => $oid, 'status' => $order['payment_status'] ?? '', 'refund_needed' => true, 'sebab' => $refund];
+        }
+        $order['email_eticket'] = app(TicketMail::class)->sendEticket($order, $tickets);
+        $this->saveOrder($order);
+
+        return ['order_id' => $oid, 'tiket' => count($tickets)];
+    }
+
+    /**
+     * Re-check seats + quota for a late payment on a non-Pending order
+     * (Expired/Failed): '' = still free, otherwise the buyer-facing reason.
+     * A live ticket or a foreign hold on the seat, a Sold seat row, or too
+     * little quota left all mean the place went to someone else meanwhile.
+     */
+    private function clashNonPending(array $o): string
+    {
+        $eid = (string) ($o['event_id'] ?? '');
+        $taken = [];
+        foreach ($this->ems->emsColumns('tickets', ['seat_id', 'status'], ['seat_id' => ['notNull' => true]]) as $r) {
+            if (($r->status ?? null) === 'Cancelled') {
+                continue;
+            }
+            $taken[(string) $r->seat_id] = true;
+        }
+        $holds = [];
+        foreach ($this->db()->select('SELECT seat_id, order_id FROM `'.TicketSchema::table('seat_holds').'` WHERE event_id = ?', [$eid]) as $r) {
+            if ((string) ($r->order_id ?? '') === (string) $o['id']) {
+                continue;
+            }
+            $holds[(string) $r->seat_id] = true;
+        }
+        foreach ($o['items'] ?? [] as $it) {
+            $sid = (string) ($it['seat_id'] ?? '');
+            $label = ($it['label'] ?? '') !== '' ? (string) $it['label'] : $sid;
+            if ($sid !== '') {
+                if (isset($taken[$sid])) {
+                    return 'Kursi '.$label.' sudah terjual.';
+                }
+                if (isset($holds[$sid])) {
+                    return 'Kursi '.$label.' sedang ditahan pembeli lain.';
+                }
+                $s = $this->ems->emsRow('seats', $sid);
+                if ($s && ($s['status'] ?? '') === 'Sold') {
+                    return 'Kursi '.$label.' sudah terjual.';
+                }
+
+                continue;
+            }
+            $cid = (string) ($it['class_id'] ?? '');
+            $qty = max(1, (int) ($it['capacity'] ?? 1));
+            $left = $this->remaining($eid);
+            if (($left[$cid] ?? 0) < $qty) {
+                return 'Sisa tiket "'.(($it['tier'] ?? '') !== '' ? (string) $it['tier'] : 'ini').'" tidak cukup.';
+            }
+        }
+
+        return '';
     }
 
     /** Quota counts PEOPLE (EMS sums each object's capacity), not places. */
@@ -1145,18 +1248,22 @@ class TicketShop
 
     public function cancel(string $oid, string $reason): array
     {
-        $o = $this->ems->emsRow('orders', $oid);
-        if (! $o) {
-            return ['order_id' => $oid, 'tidak_ada' => true];
-        }
-        if ($o['payment_status'] === 'Paid') {
-            return ['order_id' => $oid, 'sudah_lunas' => true];
-        }
-        $o['payment_status'] = ($reason === 'EXPIRED') ? 'Expired' : 'Failed';
-        $this->saveOrder($o);
-        $this->db()->delete('DELETE FROM `'.TicketSchema::table('seat_holds').'` WHERE order_id = ?', [$oid]);
+        return $this->locked(function () use ($oid, $reason) {
+            // Re-read inside the lock: a sweep must never overwrite an order
+            // that turned Paid a moment ago.
+            $o = $this->ems->emsRow('orders', $oid);
+            if (! $o) {
+                return ['order_id' => $oid, 'tidak_ada' => true];
+            }
+            if ($o['payment_status'] === 'Paid') {
+                return ['order_id' => $oid, 'sudah_lunas' => true];
+            }
+            $o['payment_status'] = ($reason === 'EXPIRED') ? 'Expired' : 'Failed';
+            $this->saveOrder($o);
+            $this->db()->delete('DELETE FROM `'.TicketSchema::table('seat_holds').'` WHERE order_id = ?', [$oid]);
 
-        return ['order_id' => $oid, 'status' => $o['payment_status']];
+            return ['order_id' => $oid, 'status' => $o['payment_status']];
+        });
     }
 
     /** Dev-only payment (XENDIT_MOCK): through the SAME markPaid() as the Xendit path. */
