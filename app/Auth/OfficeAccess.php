@@ -3,6 +3,7 @@
 namespace App\Auth;
 
 use App\Support\Divisi;
+use Illuminate\Contracts\Auth\Factory as AuthFactory;
 use Throwable;
 
 /**
@@ -44,11 +45,15 @@ class OfficeAccess
     /** @var array<string,array> */
     private array $builtinCache = [];
 
+    /** @var array<string,array<int,string>> */
+    private array $modulesCache = [];
+
     private ?array $activeModules = null;
 
     public function __construct(
         private readonly AccountRepository $users,
         private readonly Divisi $divisi,
+        private readonly AuthFactory $auth,
     ) {}
 
     private static function s(mixed $v): string
@@ -74,13 +79,27 @@ class OfficeAccess
         if (array_key_exists($id, $this->userCache)) {
             return $this->userCache[$id];
         }
+        // The token owner is already loaded by Sanctum from the same legacy
+        // `users` row: reuse it instead of SELECTing it again. Only a
+        // complete row may seed the cache — changePin compares the PIN, me
+        // reads email and the HR columns. On core the shapes differ
+        // (nama/name, ULID keys), so only the legacy table seeds.
+        $me = $this->auth->user();
+        if (! AccountRepository::onCore() && $me instanceof AccountUser && (string) $me->getKey() === $id) {
+            $row = $me->getAttributes();
+            if (isset($row['name'], $row['pin'], $row['keterangan'])) {
+                $row['email'] ??= '';
+
+                return $this->userCache[$id] = $row;
+            }
+        }
 
         return $this->userCache[$id] = $this->users->userById($id);
     }
 
     public function forgetUser(string $id): void
     {
-        unset($this->userCache[$id], $this->adminCache[$id], $this->builtinCache[$id]);
+        unset($this->userCache[$id], $this->adminCache[$id], $this->builtinCache[$id], $this->modulesCache[$id]);
     }
 
     /**
@@ -249,6 +268,16 @@ class OfficeAccess
     public function modules(string $userId): array
     {
         $uid = self::s($userId);
+        if (isset($this->modulesCache[$uid])) {
+            return $this->modulesCache[$uid];
+        }
+
+        return $this->modulesCache[$uid] = $this->resolveModules($uid);
+    }
+
+    /** The rule evaluation, once per user per request (see modules()). */
+    private function resolveModules(string $uid): array
+    {
         $rows = $this->users->grantRows($uid);
 
         $eff = [];
