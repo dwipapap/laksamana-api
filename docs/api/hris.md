@@ -449,6 +449,43 @@ after 12 months (`hris:harian`); HR can delete manually.
   (no invented conventions in Akademi's store). Overdue steps join the
   daily reminders.
 
+## E — Karyawan, org chart, Divisi and Jabatan (ADR-0012)
+
+Who may call:
+
+- **Pengelola**: HR (HRIS admins plus the `hr` list) and Pengelola Roster (admins of `jadwal`, Tim HRD). They read everything, including personal data, and add or change Karyawan.
+- **HR**: Divisi and Jabatan writes.
+- **Kepala Divisi**: reads the Karyawan of the Divisi they head (shift heads in Jadwal, kantor heads in HRIS) without personal data, and their own org subtree. No writes.
+- **Crew**: gets `403` on every route below.
+
+| Method | Path | Body / query | Notes |
+|---|---|---|---|
+| GET | `/hris/kelola/karyawan` | `status=aktif\|keluar\|semua`, `divisi`, `q` | `aktif` (default) includes exits dated today or later |
+| POST | `/hris/kelola/karyawan` | `nama`, `pin?` (4–8 digits, default 1111), `tim?`, `no_hp?`, `email?` + Karyawan fields | Creates the Office User through `AccountService`, then the record. Office errors (`name_taken`, `email_taken`, …) → `422` with that code |
+| GET | `/hris/kelola/karyawan-calon` | — | Active Users without a record |
+| GET | `/hris/kelola/karyawan/{userId}` | — | Detail + `riwayat[]` + `bawahan[]` |
+| PATCH | `/hris/kelola/karyawan/{userId}` | Karyawan fields, `berubah`, `berlaku_dari?`, `catatan?` | Divisi/Jabatan/atasan/status changes write `riwayat`. Stale `berubah` → `409 conflict` |
+| POST | `/hris/kelola/karyawan/{userId}/jadikan` | Karyawan fields | Existing User → Karyawan |
+| POST | `/hris/kelola/karyawan/{userId}/keluar` | `tanggal`, `alasan` (RESIGN, KONTRAK_HABIS, PHK, LAINNYA), `catatan?` | `409 masih_punya_bawahan` (details.bawahan) or `409 masih_kepala_divisi`. A date ≤ today deactivates the User and deletes later roster cells at once; a later date is handled by `hris:harian` |
+| POST | `/hris/kelola/karyawan/{userId}/batal-keluar` | — | Only while the User is still active |
+| GET | `/hris/kelola/struktur` | — | Nodes `{user_id, nama, jabatan, level_urutan, divisi_id, divisi, atasan_user_id, atasan_otomatis}`; a head gets their subtree |
+| GET/POST | `/hris/kelola/divisi` | `nama`, `jenis` (shift/kantor), `urutan?` | `kode` is generated (slug) and never changes |
+| PATCH/DELETE | `/hris/kelola/divisi/{id}` | `nama?`, `jenis?` (only when empty), `urutan?`, `aktif?`, `berubah?` | DELETE = soft delete, `409 divisi_berisi` while members or heads remain |
+| PUT | `/hris/kelola/divisi/{id}/kepala` | `user_ids[]` | Shift Divisi → Jadwal `heads`; kantor → `hris_divisi_kepala`. Heads must be employed Karyawan |
+| POST | `/hris/kelola/divisi/{id}/pindahkan` | `ke`, `berlaku_dari?` | Moves every member (one history row each) |
+| GET | `/hris/kelola/jabatan` | — | `{level[], jabatan[]}` |
+| POST/PATCH/DELETE | `/hris/kelola/jabatan[/{id}]` | `nama`, `level_id`, `divisi_id?`, `urutan?`, `aktif?` | DELETE refused (`409 jabatan_dipakai`) while used |
+| POST/PATCH/DELETE | `/hris/kelola/jabatan-level[/{id}]` | `nama`, `urutan?`, `aktif?` | DELETE refused (`409 level_dipakai`) while a Jabatan uses it |
+
+**Karyawan fields:** `divisi_id`, `jabatan_id`, `atasan_user_id` (empty means the Divisi's Kepala Divisi; self, cycles and non-employees are refused), `status_kerja` (PROBATION/KONTRAK/TETAP/MAGANG), `nik` (16 digits, unique), `jenis_kelamin` (L/P), `tanggal_lahir`, `alamat`, `kontak_darurat_nama`, `kontak_darurat_hp`, `tanggal_gabung`, `akhir_percobaan`, `akhir_kontrak`.
+
+**Karyawan item:** `user_id`, `nama`, `aktif` (Office login), `tim`, `divisi{id,kode,nama,jenis}|null`, `divisi_impor`, `jabatan{id,nama,level,level_urutan}|null`, `jabatan_impor`, `atasan_user_id`, `atasan{user_id,nama,otomatis}|null`, `status_kerja`, dates, `alasan_keluar`, `catatan_keluar`, `berubah`. For Pengelola it also carries `nik`, `jenis_kelamin`, `tanggal_lahir`, `alamat`, `kontak_darurat_*`, `no_hp` and `email`. Write responses add `peringatan[]` when the Jadwal placement or the Office HR columns could not be updated.
+
+**Side effects:**
+- A write keeps the Jadwal Penempatan Divisi in line: a shift Divisi uses its kode, and anything else uses `nonshift`.
+- A write mirrors Jabatan, status kerja (Talenta words), join date and the Divisi name into the Office User's HR columns.
+- The env switch `HRIS_HANYA_KARYAWAN` (default `false`) limits HRIS Akses Bawaan to Users with a record (E10).
+
 ## For laksamana-hris
 
 `packages/api` generates types from `openapi.json` (tag `hris`). Web PWA:

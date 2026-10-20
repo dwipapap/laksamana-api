@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Modules\Hris\Services\HrisHarianService;
+use App\Modules\Hris\Services\HrisKaryawanService;
 use App\Modules\Hris\Services\HrisRekrutmenService;
 use App\Modules\Hris\Services\PunchRules;
 use Illuminate\Console\Command;
@@ -12,7 +13,7 @@ use Illuminate\Console\Command;
 /**
  * `php artisan hris:harian` — the daily HRIS jobs (B2 + B5): PH for holiday
  * work, PH expiry, the CUTI catch-up from the old Jadwal panel, and
- * applicant retention cleanup. Idempotent, so a missed day backfills on the
+ * applicant retention cleanup, and Karyawan exits whose date has come (E9). Idempotent, so a missed day backfills on the
  * next run. Wired to the scheduler in routes/console.php; the owner
  * installs the cPanel cron (`* * * * * php artisan schedule:run`).
  */
@@ -20,9 +21,9 @@ final class HrisHarianCommand extends Command
 {
     protected $signature = 'hris:harian';
 
-    protected $description = 'PH harian, PH hangus, sinkron cuti Jadwal lama, rekonsiliasi sel Jadwal, retensi pelamar';
+    protected $description = 'PH harian, PH hangus, sinkron cuti Jadwal lama, rekonsiliasi sel Jadwal, retensi pelamar, karyawan keluar';
 
-    public function handle(HrisHarianService $harian, HrisRekrutmenService $rekrutmen): int
+    public function handle(HrisHarianService $harian, HrisRekrutmenService $rekrutmen, HrisKaryawanService $karyawan): int
     {
         $ph = $harian->beriPhHarian();
         $this->line('PH diberi: '.$ph['diberi']);
@@ -40,6 +41,8 @@ final class HrisHarianCommand extends Command
         }
         $hapus = $rekrutmen->hapusKedaluwarsa(PunchRules::tglWib(PunchRules::ms()));
         $this->line('Pelamar kedaluwarsa dihapus: '.$hapus);
+        $keluar = $karyawan->prosesKeluar(PunchRules::tglWib(PunchRules::ms()), 'hris:harian');
+        $this->line('Karyawan keluar dinonaktifkan: '.$keluar);
         $this->info('Selesai.');
 
         return self::SUCCESS;

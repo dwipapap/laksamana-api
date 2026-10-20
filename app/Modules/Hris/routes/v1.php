@@ -6,6 +6,7 @@ use App\Modules\Hris\Http\V1\HrisCoordinationController as T;
 use App\Modules\Hris\Http\V1\HrisDesignRequestController as G;
 use App\Modules\Hris\Http\V1\HrisDisiplinController as D;
 use App\Modules\Hris\Http\V1\HrisFaceController as F;
+use App\Modules\Hris\Http\V1\HrisKelolaController as W;
 use App\Modules\Hris\Http\V1\HrisKpiController as P;
 use App\Modules\Hris\Http\V1\HrisMealController as E;
 use App\Modules\Hris\Http\V1\HrisMeController as M;
@@ -129,4 +130,31 @@ Route::middleware(['auth:sanctum', 'module:hris'])->prefix('hris')->group(functi
     Route::post('onboarding/start', [J::class, 'start']);
     Route::post('onboarding/{id}/langkah/{kunci}', [J::class, 'langkah'])
         ->where('id', '[A-Za-z0-9-]+')->where('kunci', '[A-Za-z0-9._-]+');
+    // Karyawan, org chart, Divisi and Jabatan (E1–E9, ADR-0012).
+    $uid = '[A-Za-z0-9._-]+';
+    $ulid = '[A-Za-z0-9]+';
+    Route::get('kelola/karyawan', [W::class, 'index']);
+    Route::post('kelola/karyawan', [W::class, 'store']);
+    Route::get('kelola/karyawan-calon', [W::class, 'calon']);
+    Route::get('kelola/karyawan/{userId}', [W::class, 'show'])->where('userId', $uid);
+    Route::patch('kelola/karyawan/{userId}', [W::class, 'update'])->where('userId', $uid);
+    Route::post('kelola/karyawan/{userId}/jadikan', [W::class, 'jadikan'])->where('userId', $uid);
+    Route::post('kelola/karyawan/{userId}/keluar', [W::class, 'keluar'])->where('userId', $uid);
+    Route::post('kelola/karyawan/{userId}/batal-keluar', [W::class, 'batalKeluar'])->where('userId', $uid);
+    Route::get('kelola/struktur', [W::class, 'struktur']);
+
+    Route::get('kelola/divisi', [W::class, 'divisiIndex']);
+    Route::post('kelola/divisi', [W::class, 'divisiStore']);
+    Route::patch('kelola/divisi/{id}', [W::class, 'divisiUpdate'])->where('id', $ulid);
+    Route::delete('kelola/divisi/{id}', [W::class, 'divisiDestroy'])->where('id', $ulid);
+    Route::put('kelola/divisi/{id}/kepala', [W::class, 'divisiKepala'])->where('id', $ulid);
+    Route::post('kelola/divisi/{id}/pindahkan', [W::class, 'divisiPindahkan'])->where('id', $ulid);
+
+    Route::get('kelola/jabatan', [W::class, 'jabatanIndex']);
+    Route::post('kelola/jabatan', [W::class, 'jabatanStore']);
+    Route::patch('kelola/jabatan/{id}', [W::class, 'jabatanUpdate'])->where('id', $ulid);
+    Route::delete('kelola/jabatan/{id}', [W::class, 'jabatanDestroy'])->where('id', $ulid);
+    Route::post('kelola/jabatan-level', [W::class, 'levelStore']);
+    Route::patch('kelola/jabatan-level/{id}', [W::class, 'levelUpdate'])->where('id', $ulid);
+    Route::delete('kelola/jabatan-level/{id}', [W::class, 'levelDestroy'])->where('id', $ulid);
 });
