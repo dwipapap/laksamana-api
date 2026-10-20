@@ -211,7 +211,7 @@ class KompasLegacyController extends LegacyController
                 return Envelope::okData($this->inv->analytics());
 
             case 'analyticsSave':
-                return self::result($this->inv->saveAnalytics($b['data'] ?? null, $b['oleh'] ?? ''));
+                return self::result($this->inv->saveAnalytics($b['data'] ?? null, $b['oleh'] ?? '', $b['baseTs'] ?? null));
 
             case 'analyticsAkses':
                 return self::result($this->inv->saveAnalyticsAccess($b['akses'] ?? null));
