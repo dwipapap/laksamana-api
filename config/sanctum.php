@@ -55,6 +55,10 @@ return [
     // Lifetime of tokens issued by POST /api/v1/auth/login (set per token as expires_at).
     'token_days' => (int) env('SANCTUM_TOKEN_DAYS', 30),
 
+    // No feature reads personal_access_tokens.last_used_at: tracking it
+    // costs one UPDATE on every authenticated request (api#305).
+    'last_used_at' => false,
+
     /*
     |--------------------------------------------------------------------------
     | Token Prefix

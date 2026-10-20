@@ -66,6 +66,7 @@ DB_LEGACY_PASSWORD=...
 
 # never set DB_<MODULE>_CONNECTION=core here while that Modul's old screens are in use
 
+# file: a cached read (e.g. HeadDirectory) is itself a query on the database store (api#305)
 CACHE_STORE=file
 QUEUE_CONNECTION=sync
 SESSION_DRIVER=array
