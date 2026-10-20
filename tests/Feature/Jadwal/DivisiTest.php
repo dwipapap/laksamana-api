@@ -63,12 +63,19 @@ it('keeps a single copy of the Divisi, office and Tim words', function () {
         'kitchen' => ['kitchen', 'dapur'],
         'floor' => ['floor', 'service', 'waiter', 'waitress', 'host', 'hostess', 'foh'],
         'cashier' => ['cashier', 'kasir'],
+        'cleaning' => ['cleaning', 'cleaner', 'kebersihan'],
     ])->and(Divisi::OFFICE_WORDS)->toBe(['office', 'kantor'])
         ->and(Divisi::NONSHIFT)->toBe('nonshift')
         ->and(Divisi::TIM_BAWAAN_JADWAL)->toContain('hrd', 'bar', 'kasir', 'foh')
         ->and(Divisi::TIM_BOLEH_DW)->toBe(['hrd', 'hr', 'ceo'])
         ->and(Divisi::TIM_ADMIN_ROSTER)->toBe(['hrd', 'hr'])
         ->and(Divisi::MODUL_ADMIN_BAWAAN)->toBe(['jadwal', 'dw']);
+});
+
+it('resolves Tim "Cleaning Staff" to the cleaning Divisi (ADR-0012)', function () {
+    expect(Divisi::resolve('x', [], ['keterangan' => 'Cleaning Staff']))->toBe('cleaning')
+        ->and(Divisi::resolve('x', [], ['keterangan' => 'Cleaning Office']))->toBe(Divisi::NONSHIFT)
+        ->and(Divisi::timCocok('Cleaning Staff', Divisi::TIM_BAWAAN_JADWAL))->toBeTrue();
 });
 
 it('resolves a User whose Tim is FOH to Divisi floor on the jadwal sheet (#3)', function () {

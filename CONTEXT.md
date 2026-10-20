@@ -107,7 +107,7 @@ A User's free-text job label (e.g. "Kitchen Bar", "Kasir Office", "Head Marketin
 _Avoid_: Team, Keterangan, Organization
 
 **Divisi**:
-A unit of the organisation, one list for every Modul (owner, Q2). A **shift** Divisi (bar, kitchen, floor, cashier) is where shift crew work; Jadwal, Penempatan Divisi and Kepala Divisi only ever name these. A **kantor** Divisi (Finance, Event, Marketing & Digital, …) groups office staff for HR, Akademi and KPI. In Jadwal a User belongs to at most one shift Divisi: their Penempatan Divisi if set, otherwise the first Divisi their Tim names, unless the Tim marks them as office staff. Separately, their Karyawan record names the one Divisi they belong to in the organisation.
+A unit of the organisation, one list for every Modul (owner, Q2). A **shift** Divisi (bar, kitchen, floor, cashier, cleaning) is where shift crew work; Jadwal and Penempatan Divisi only ever name these. A Kepala Divisi may head either kind (ADR-0012). A **kantor** Divisi (Finance, Event, Marketing & Digital, …) groups office staff for HR, Akademi and KPI. In Jadwal a User belongs to at most one shift Divisi: their Penempatan Divisi if set, otherwise the first Divisi their Tim names, unless the Tim marks them as office staff. Separately, their Karyawan record names the one Divisi they belong to in the organisation, and HRIS keeps the Penempatan Divisi in line with it (ADR-0012). The list is kept by HRIS (`hris_divisi`); a Divisi's code never changes.
 _Avoid_: Department, Tim, Organization (the Roster field is separate free text)
 
 **Nonshift**:
@@ -127,8 +127,20 @@ A User whose Tim marks them as a head (the word "Head"), which counts for leader
 _Avoid_: Head, Kepala Divisi
 
 **Karyawan**:
-The HR record of a User: their organisational Divisi, their superior, contract and probation dates; one per User. Every Karyawan is a User; a Pekerja Harian, Talent or Klien never is.
+The HR record of a User: their Divisi, Jabatan, superior, status kerja, contract and probation dates and exit; one per User, kept by HRIS (`hris_karyawan`, ADR-0012). Every Karyawan is a User; a Pekerja Harian, Talent or Klien never is.
 _Avoid_: Employee, Pegawai, Staf, Kru
+
+**Jabatan**:
+A Karyawan's job position from one master list (Waiter, Senior Cook, Head Chef, …), each with a Level Jabatan and optionally a Divisi.
+_Avoid_: Job position, Posisi, Tim (the free-text label), Peran (a role inside one Panel)
+
+**Level Jabatan**:
+The seniority step of a Jabatan (Helper/Trainee up to Manajemen), a list HR may rename and reorder; it orders the org chart and later sets meal-allowance grades.
+_Avoid_: Grade, Tingkat (Akses Halaman), Job level
+
+**Status Kerja**:
+A Karyawan's employment status: PROBATION, KONTRAK, TETAP or MAGANG.
+_Avoid_: Employment status, Status (alone)
 
 **People Score**:
 A Karyawan's monthly performance score from seven weighted components (attendance, KPI, training, guest review, discipline, teamwork, initiative); below the completeness threshold it is shown as "data kurang" and not used for ranking. Once a month is closed the score is kept as it was.
@@ -190,6 +202,10 @@ _Avoid_: E-ticket (on screens it is fine), Voucher
 **Jadwal Talent**:
 One performance a Talent is booked for, at the fee agreed then; Talent are paid per month for the performances done.
 _Avoid_: Booking talent, Gig
+
+**Blok Shift**:
+One continuous part of a Shift. Most Shifts have one; a split Shift (SPLIT) has two, with the crew member away in between, and each block has its own clock-in and clock-out.
+_Avoid_: Split (alone), Sesi, Jeda
 
 **Buyer**:
 A member of the public who buys event tickets on the public ticket shop with an email and password. A Buyer is not a User: separate accounts (`tix_users`), their own sessions, no Akses, and never listed on the Roster.

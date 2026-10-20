@@ -27,6 +27,9 @@ use App\Modules\Jadwal\Services\HeadDirectory;
  * so Tim "FOH" resolves to floor on this API while the old jadwal screen may
  * still show those crew as Nonshift until they catch up.
  *
+ * `cleaning` (Cleaning Staff, PAGI CS / SIANG CS) is a shift Divisi added by
+ * the owner on 2026-10-20 (ADR-0012); the old screens do not know it either.
+ *
  * Matching is always WHOLE-WORD on the Tim column ("Barista" is not "bar"),
  * and Office/Kantor wins over every division word ("Kasir Office" is office
  * staff, never Cashier shift crew).
@@ -39,6 +42,7 @@ final class Divisi
         'kitchen' => ['kitchen', 'dapur'],
         'floor' => ['floor', 'service', 'waiter', 'waitress', 'host', 'hostess', 'foh'],
         'cashier' => ['cashier', 'kasir'],
+        'cleaning' => ['cleaning', 'cleaner', 'kebersihan'],
     ];
 
     /** Office/Kantor wins over every division word. */
@@ -48,7 +52,7 @@ final class Divisi
 
     /** Tim words that grant Akses Bawaan to the jadwal Modul. */
     public const TIM_BAWAAN_JADWAL = ['kitchen', 'dapur', 'bar', 'bartender', 'floor', 'service', 'waiter', 'waitress',
-        'host', 'hostess', 'foh', 'cashier', 'kasir', 'hrd', 'hr', 'ceo'];
+        'host', 'hostess', 'foh', 'cashier', 'kasir', 'cleaning', 'cleaner', 'kebersihan', 'hrd', 'hr', 'ceo'];
 
     /** Tim words that grant Akses Bawaan to the dw Modul. */
     public const TIM_BOLEH_DW = ['hrd', 'hr', 'ceo'];
