@@ -108,7 +108,7 @@ final class HrisAttendanceService
 
     /**
      * @var array<string,array<int,array{waktu:int,shift_sumber:string,shift_mulai:string,shift_selesai:string}>>|null
-     * MASUK partners per user, warmed by punches() for one range.
+     *                                                                                                                 MASUK partners per user, warmed by punches() for one range.
      */
     private ?array $masukSiap = null;
 
