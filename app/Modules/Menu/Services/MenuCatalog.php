@@ -151,7 +151,30 @@ class MenuCatalog
             ->join('menu_kategori as k', 'k.id', '=', 'menu_item.kategori_id')
             ->where('menu_item.tampil', true)
             ->where('k.aktif', true)
+            ->with('kategori')
             ->select('menu_item.*');
+    }
+
+    /**
+     * ETag for a filter set WITHOUT building the list: MAX(updated_at) over
+     * exactly the rows list() would project, so a matching If-None-Match
+     * answers 304 before any row is loaded.
+     */
+    public function etagFor(array $filters): string
+    {
+        $q = MenuItem::query()
+            ->from('menu_item')
+            ->join('menu_kategori as k', 'k.id', '=', 'menu_item.kategori_id')
+            ->where('menu_item.tampil', true)
+            ->where('k.aktif', true);
+        $this->applyFilters($q, $filters);
+        $max = $q->max('menu_item.updated_at');
+        if ($max === null) {
+            return '0';
+        }
+        $stamp = $max instanceof \DateTimeInterface ? $max->format('Y-m-d H:i:s') : (string) $max;
+
+        return substr(sha1($stamp), 0, 16);
     }
 
     private function applyFilters($q, array $f): void

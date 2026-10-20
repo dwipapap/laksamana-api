@@ -1,6 +1,8 @@
 <?php
 
 use App\Modules\Bd\Services\BdState;
+use App\Support\Modules;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 
 require_once __DIR__.'/helpers.php';
@@ -206,4 +208,26 @@ it('changes the image URL when the image changes, so the day-long cache never sh
 
     $this->get($after[$bdRow->id])->assertOk();
     expect($this->get($after[$bdRow->id])->getContent())->toBe('POSTER-B');
+});
+
+it('serves a repeated BD poster without rereading the full promos document', function () {
+    $bd = bdPromo();
+    bdSetPromos([$bd]);
+    $row = bannerRow(['sumber' => 'bd', 'promo_id' => $bd['id'], 'tampil' => true]);
+
+    $satu = $this->get('/api/v1/homepage/promos/'.$row->id.'/gambar')->assertOk();
+    expect($satu->getContent())->toBe('JPEGBODY');
+
+    $conn = DB::connection(Modules::connectionName('bd'));
+    $conn->flushQueryLog();
+    $conn->enableQueryLog();
+    $dua = $this->get('/api/v1/homepage/promos/'.$row->id.'/gambar')->assertOk();
+    expect($dua->getContent())->toBe('JPEGBODY');
+    $penuh = 0;
+    foreach ($conn->getQueryLog() as $q) {
+        if (str_contains((string) ($q['query'] ?? ''), 'SELECT `v`')) {
+            $penuh++;
+        }
+    }
+    expect($penuh)->toBe(0);
 });

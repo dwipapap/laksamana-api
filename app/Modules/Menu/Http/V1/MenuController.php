@@ -40,11 +40,19 @@ class MenuController
             'unggulan' => ['nullable', 'boolean'],
         ]);
 
+        if ($this->isNoneMatch($r, $etag = $this->catalog->etagFor($f))) {
+            return $this->notModified($etag);
+        }
+
         return $this->list($this->catalog->list($f), $r);
     }
 
     public function unggulan(Request $r): JsonResponse
     {
+        if ($this->isNoneMatch($r, $etag = $this->catalog->etagFor(['unggulan' => true]))) {
+            return $this->notModified($etag);
+        }
+
         return $this->list($this->catalog->unggulan(), $r);
     }
 
@@ -82,6 +90,25 @@ class MenuController
         if (is_string($ifNoneMatch) && $ifNoneMatch !== '' && trim($ifNoneMatch, ' "W/') === trim($etag, '"')) {
             $response->setStatusCode(304)->setContent('');
         }
+
+        return $response;
+    }
+
+    /** Whether If-None-Match already matches this ETag (same comparison as cached()). */
+    private function isNoneMatch(Request $request, string $version): bool
+    {
+        $ifNoneMatch = $request->header('If-None-Match');
+
+        return is_string($ifNoneMatch) && $ifNoneMatch !== ''
+            && trim($ifNoneMatch, ' "W/') === trim('"'.$version.'"', '"');
+    }
+
+    /** Empty 304 with the same cache headers as a list answer. */
+    private function notModified(string $version): JsonResponse
+    {
+        $response = new JsonResponse(null, 304);
+        $response->headers->set('Cache-Control', self::CACHE);
+        $response->headers->set('ETag', '"'.$version.'"');
 
         return $response;
     }

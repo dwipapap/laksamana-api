@@ -108,3 +108,36 @@ it('sends Cache-Control and ETag, and honours If-None-Match with a 304', functio
 it('400s a traversal photo key and 404s a missing one', function () {
     $this->get('/api/v1/menu/foto/mn_missing.png')->assertStatus(404);
 });
+
+it('loads /menu in a constant number of queries', function () {
+    $hitung = function (): int {
+        DB::connection('core')->flushQueryLog();
+        DB::connection('core')->enableQueryLog();
+        $this->getJson('/api/v1/menu')->assertOk();
+
+        return count(DB::connection('core')->getQueryLog());
+    };
+    foreach (range(1, 2) as $i) {
+        menuVarian(menuRow(['nama' => 'Ukur '.$i, 'slug' => 'ukur-kecil-'.$i]), 'R', 45000);
+    }
+    $kecil = $hitung();
+    foreach (range(3, 8) as $i) {
+        menuVarian(menuRow(['nama' => 'Ukur '.$i, 'slug' => 'ukur-besar-'.$i]), 'R', 45000);
+    }
+
+    expect($hitung())->toBe($kecil)->and($kecil)->toBeLessThanOrEqual(4);
+});
+
+it('answers If-None-Match from the precomputed ETag alone', function () {
+    menuVarian(menuRow(), 'R', 45000);
+    $etag = $this->getJson('/api/v1/menu')->assertOk()->headers->get('ETag');
+    expect($etag)->not->toBeNull();
+
+    DB::connection('core')->flushQueryLog();
+    DB::connection('core')->enableQueryLog();
+    $this->withHeaders(['If-None-Match' => $etag])->getJson('/api/v1/menu')->assertStatus(304);
+    $log = DB::connection('core')->getQueryLog();
+
+    expect(count($log))->toBe(1)
+        ->and((string) ($log[0]['query'] ?? ''))->toContain('max(');
+});

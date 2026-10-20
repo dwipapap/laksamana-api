@@ -121,6 +121,7 @@ class MenuAdmin
     {
         $q = MenuItem::query()->from('menu_item')
             ->join('menu_kategori as k', 'k.id', '=', 'menu_item.kategori_id')
+            ->with('kategori', 'varian')
             ->select('menu_item.*');
         if (($f['jenis'] ?? null) !== null) {
             $q->where('k.jenis', $f['jenis']);
