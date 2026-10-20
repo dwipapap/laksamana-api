@@ -86,7 +86,7 @@ Gated by the **`brankas`** Modul (Panel Brankas). The legacy state is ONE JSON b
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/` | Same as legacy `brankasGet`: `{data: {rekening, piutang, bayar, investor, mutasi, setting}, akses, peran, updated_at}` |
+| GET | `/` | Same as legacy `brankasGet`: `{data: {rekening, piutang, bayar, investor, mutasi, setting}, akses, peran, updated_at, ver}`. `ver` = `{lain, bayar}`, the legacy per-owner versions (`baseVer` of `brankasSave` / `bayarSave`); v1 writes keep using `meta.version` and bump the `ver` of the part they change. |
 | GET | `/{list}` | `list` is one of `rekening` (opening balances), `piutang` (receivables), `bayar` (payment planning), `investor`, `mutasi` (wallet transfers) |
 | GET | `/{list}/{id}` | One record |
 | POST | `/{list}` | Body = the record. `id` is optional (generated). `201`, or `409 already_exists` |
