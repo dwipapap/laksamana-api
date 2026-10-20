@@ -516,6 +516,18 @@ The shift definitions stay in the Jadwal setting (`shifts`), so the old panels k
 
 `masuk`, `pulang`, `targetMenit` and `bolehPulang` now describe `blokAktif`. `shift.blok` lists the blocks, and is `[]` for a plain shift.
 
+### Roster (J6–J8)
+
+| Method | Path | Body / query | Notes |
+|---|---|---|---|
+| GET | `/hris/roster` | `bulan=YYYY-MM`, `divisi` (shift kode) | HR: any Divisi. Kepala Divisi: their own. Returns `{bulan, divisi, hari[], kru[{user_id,nama,jabatan}], sel[{u,d,t,m,s,n}], shift[], aturan, bolehDivisi}`. `shift` = active shifts for this Divisi plus any code already used in the month |
+| PUT | `/hris/roster` | `isi[{u,d,t,m?,s?,n?}]`, `hapus[{u,d}]` | Every row is checked: Divisi (`403`), shift known/active/for this Divisi (`422`); block shifts drop `m`/`s`. Answer `{isi, hapus, peringatan[]}`. Warnings never block |
+| GET | `/hris/roster/rekap` | `bulan`, `divisi` | Per crew member: `per_shift{kode:n}`, `hari_kerja`, `hari_libur`, `kosong` |
+| GET/PUT | `/hris/roster/aturan` | `maksBeruntun` (1–31), `jedaMin` (hours, 0–24) | PUT is HR only; stored in the Jadwal setting |
+| GET | `/hris/me/jadwal` | `dari`, `sampai` (≤ 62 days) | Own cells `{tanggal, kode, nama, warna, mulai, selesai, blok[], libur}` |
+
+**Default shift (J8):** `hris_karyawan.shift_bawaan` (set through `PATCH /hris/kelola/karyawan/{userId}`; it must be an active working shift). Attendance reads it before the old `shiftKru` map. `hris:impor-karyawan` fills empty values from `shiftKru`.
+
 ## For laksamana-hris
 
 `packages/api` generates types from `openapi.json` (tag `hris`). Web PWA:

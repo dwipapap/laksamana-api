@@ -30,6 +30,7 @@ final class HrisShiftService
     public function __construct(
         private readonly JadwalService $jadwal,
         private readonly HrisAuditService $audit,
+        private readonly HrisMasterBawaan $bawaan,
     ) {}
 
     private static function s(mixed $v): string
@@ -220,6 +221,7 @@ final class HrisShiftService
         if ($kode === []) {
             return [];
         }
+        $this->bawaan->pastikan();
         $ada = HrisDivisi::query()->whereIn('kode', $kode)->where('jenis', 'shift')->pluck('kode')->all();
         if ($asing = array_values(array_diff($kode, $ada))) {
             throw new HrisError('validation_failed', 'Bukan Divisi shift: '.implode(', ', $asing).'.', 422);
