@@ -175,3 +175,20 @@ it('uploads and streams a file', function () {
     $this->withToken($token)->get('/api/v1/akademi/files/'.$out['data']['key'])
         ->assertOk()->assertHeader('Content-Type', 'image/png');
 });
+
+it('pages SQL results identically to the whole list', function () {
+    $h = ['Authorization' => 'Bearer '.loginAs(officeUser('u-andry'))];
+    $penuh = $this->getJson('/api/v1/akademi/materials?perPage=1000', $h)->assertOk();
+    $total = $penuh->json('meta.total');
+    expect($total)->toBeGreaterThan(5);
+
+    $rakit = [];
+    $halaman = (int) ceil($total / 2);
+    foreach (range(1, $halaman) as $p) {
+        $r = $this->getJson("/api/v1/akademi/materials?perPage=2&page=$p", $h)->assertOk()
+            ->assertJsonPath('meta.total', $total)
+            ->assertJsonPath('meta.page', $p);
+        array_push($rakit, ...$r->json('data'));
+    }
+    expect($rakit)->toBe($penuh->json('data'));
+});
