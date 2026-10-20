@@ -2,6 +2,7 @@
 
 namespace App\Modules\Dw\Services;
 
+use App\Support\JsonDoc;
 use App\Support\Legacy\Sesi;
 use App\Support\Modules;
 use Illuminate\Database\ConnectionInterface;
@@ -1659,17 +1660,19 @@ class DwService
         $this->db()->transaction(function () use ($k, $nyala, $by) {
             $kid = self::kId();
             $row = $this->db()->selectOne("SELECT `data` FROM `dw_setting` WHERE `$kid` = '1' FOR UPDATE");
-            $data = ($row && $row->data !== null && $row->data !== '') ? json_decode($row->data, true) : [];
-            if (! is_array($data)) {
-                $data = [];
+            // decoded keeping {} as objects (#303): an assoc decode wrote every
+            // empty map of the blob (and bayarLunas itself) back as []
+            $data = JsonDoc::decode($row ? $row->data : null);
+            if (! $data instanceof stdClass) {
+                $data = new stdClass;
             }
-            if (! isset($data['bayarLunas']) || ! is_array($data['bayarLunas'])) {
-                $data['bayarLunas'] = [];
+            if (! isset($data->bayarLunas) || ! $data->bayarLunas instanceof stdClass) {
+                $data->bayarLunas = is_array($data->bayarLunas ?? null) && $data->bayarLunas !== [] ? (object) $data->bayarLunas : new stdClass;
             }
             if ($nyala) {
-                $data['bayarLunas'][$k] = ['at' => self::ms(), 'oleh' => $by];
+                $data->bayarLunas->$k = (object) ['at' => self::ms(), 'oleh' => $by];
             } else {
-                unset($data['bayarLunas'][$k]);
+                unset($data->bayarLunas->$k);
             }
             if (self::onCore()) {
                 $actor = $this->actorUlid($by);
@@ -1734,6 +1737,80 @@ class DwService
         }
 
         return ['saved' => true, 'ts' => gmdate('c')];
+    }
+
+    /** The setting blob's version for v1: its updated_at (ms), 0 when never saved. */
+    public function settingVersion(): int
+    {
+        try {
+            $kid = self::kId();
+            $row = $this->db()->selectOne("SELECT `updated_at` FROM `dw_setting` WHERE `$kid` = '1'");
+        } catch (\Throwable) {
+            return 0;
+        }
+
+        return $row ? (int) $row->updated_at : 0;
+    }
+
+    /**
+     * v1 PUT /settings (#303): the whole blob, but checked against $base (the
+     * updated_at the client read) and written in ONE transaction under SELECT …
+     * FOR UPDATE, so two saves of one version cannot both pass. `bayarLunas` is
+     * ALWAYS kept from the stored blob — the payment ticks have their own path
+     * (tandaiBayar), and an HRD saving tariffs from an old tab used to untick
+     * them. hr/akses are kept for non-admins, as saveSetting. Objects stay
+     * objects ({} is never rewritten as []). Throws DwConflict when stale.
+     *
+     * @return array{saved:true, ts:string, version:int}
+     */
+    public function saveSettingVersioned(mixed $data, string $by, bool $bolehUbahHr, int $base): array
+    {
+        if (! is_array($data) && ! $data instanceof stdClass) {
+            throw new RuntimeException('Payload setting kosong/invalid');
+        }
+
+        return $this->db()->transaction(function () use ($data, $by, $bolehUbahHr, $base) {
+            $kid = self::kId();
+            $row = $this->db()->selectOne("SELECT `data`, `updated_at` FROM `dw_setting` WHERE `$kid` = '1' FOR UPDATE");
+            $cur = $row ? (int) $row->updated_at : 0;
+            if ($cur !== $base) {
+                throw new DwConflict($cur);
+            }
+            $lama = JsonDoc::decode($row ? $row->data : null);
+            $lama = $lama instanceof stdClass ? $lama : new stdClass;
+            $baru = (object) (array) $data;
+            if (! $bolehUbahHr) {
+                $baru->hr = $lama->hr ?? [];
+                $baru->akses = $lama->akses ?? new stdClass;
+            }
+            $baru->bayarLunas = $lama->bayarLunas ?? new stdClass;
+
+            $ts = max(self::ms(), $cur + 1);
+            $this->writeSetting($baru, $by, $ts);
+
+            return ['saved' => true, 'ts' => gmdate('c'), 'version' => $ts];
+        });
+    }
+
+    private function writeSetting(mixed $data, string $by, int $ts): void
+    {
+        $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if (self::onCore()) {
+            $actor = $this->actorUlid($by);
+            $this->db()->statement(
+                'INSERT INTO `dw_setting` (`id`,`legacy_id`,`data`,`updated_at`,`created_by`,`updated_by`,`version`) VALUES (?,?,?,?,?,?,1)
+                 ON DUPLICATE KEY UPDATE `data`=VALUES(`data`), `updated_at`=VALUES(`updated_at`),
+                    `updated_by`=VALUES(`updated_by`), `version`=`version`+1',
+                [self::ulid(), '1', $json, $ts, $actor, $actor]
+            );
+
+            return;
+        }
+        $this->db()->statement(
+            'INSERT INTO `dw_setting` (`id`,`data`,`updated_at`,`updated_by`) VALUES (1,?,?,?)
+             ON DUPLICATE KEY UPDATE `data`=VALUES(`data`), `updated_at`=VALUES(`updated_at`), `updated_by`=VALUES(`updated_by`)',
+            [$json, $ts, self::pot($by, 120)]
+        );
     }
 
     /**

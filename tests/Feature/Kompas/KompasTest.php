@@ -3,6 +3,7 @@
 require_once __DIR__.'/helpers.php';
 
 use App\Modules\Kompas\Services\KompasState;
+use App\Support\Modules;
 use Illuminate\Testing\TestResponse;
 
 /* u-novi holds finance; u-aurel holds marketing (not event, not finance); u-adit none of them. */
@@ -109,6 +110,21 @@ it('v1: omset-pic and performa follow the module gates', function () {
     $this->withToken($token)->getJson('/api/v1/kompas/performa/marketing?from=2026-08-01&to=2026-09-30')->assertOk()->assertJsonStructure(['data' => ['pic', 'days', 'comps']]);
     $this->withToken($token)->getJson('/api/v1/kompas/performa/event?from=2026-08-01&to=2026-09-30')->assertStatus(403);
     $this->withToken($token)->getJson('/api/v1/kompas/state')->assertStatus(403);
+});
+
+it('v1: a part write keeps every empty map of the blob an object (#303)', function () {
+    $token = loginAs(officeUser('u-novi'));
+    $raw = fn () => json_decode((string) Modules::db('kompas')->selectOne('SELECT data FROM `'.KompasState::t('app_state').'` WHERE `'.KompasState::idCol().'`=1')->data);
+    $put = fn (string $section, string $json) => $this->call('PUT', '/api/v1/kompas/sections/'.$section.'?version='
+        .$this->withToken($token)->getJson('/api/v1/kompas/sections/'.$section)->json('meta.version'),
+        [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_AUTHORIZATION' => 'Bearer '.$token], $json);
+
+    $put('ujiPetaA', '{"value":{"kosong":{}}}')->assertOk();
+    expect($raw()->ujiPetaA->kosong)->toBeObject();
+
+    // writing ANOTHER part re-encodes the whole blob: the first map must stay {}
+    $put('ujiPetaB', '{"value":[1]}')->assertOk();
+    expect($raw()->ujiPetaA->kosong)->toBeObject();
 });
 
 it('v1: granular parts are versioned by their own content, so edits to other parts never conflict', function () {

@@ -99,8 +99,8 @@ The request body of `PUT /settings` **is** the setting blob: `tarif{posisi: rupi
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/settings` | The whole blob (any module holder; screens decide what to show from `peran`). |
-| PUT | `/settings` | HRD only (admin-ness decides `hr`/`akses` preservation). Returns `{saved, ts}`. |
+| GET | `/settings` | The whole blob (any module holder; screens decide what to show from `peran`). `meta.version` (+ ETag) = the blob's `updated_at` (ms). |
+| PUT | `/settings` | HRD only (admin-ness decides `hr`/`akses` preservation). **Version required** (#303): `If-Match` or `?version=` = `meta.version` from GET; missing → `428 version_required`, stale → `409 version_conflict` (`details.version` = current), checked and written in one transaction under `SELECT … FOR UPDATE`. `bayarLunas` in the body is **ignored**: the stored ticks are always kept (they change only through `POST /payments/marks`). Empty maps stay objects. Returns `{saved, ts, version}`. |
 | POST | `/admin/clear` | Module admin only (`module:dw,admin`) plus the typed `'HAPUS SEMUA'` confirmation (wrong keyword is `422`). `{pekerja?}` — empties every head request and assignment in one transaction (talent pool only with `pekerja: true`; the setting blob stays). Returns `{cleared, ajuan, permintaan, pekerja, ikutPekerja, oleh, ts}`. |
 
 ## Concurrency

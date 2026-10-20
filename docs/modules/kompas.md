@@ -131,5 +131,6 @@ Response envelope is `{ok,data}`, except that `getAll` adds a top-level `ts`.
 ## Port notes (#31: v1 completion, milestone M14)
 
 - The v1 audit covers all five frontends (Cashier, Finance › Omset, the Kas pages kompas serves, Analytics, Investor); the map is in `docs/api/kompas.md`.
+- #303: `saveTarget` (legacy `simpanTarget` and v1 `PUT /targets`) and v1 part writes patch the STORED blob decoded keeping objects (`JsonDoc`), so an empty map anywhere in the blob stays `{}`. Legacy `simpan_target` decodes assoc and rewrites every `{}` as `[]` — a legacy bug, fixed here (responses unchanged). `bri_cocok` decides each row in its own transaction with the mutation row locked, and a `cocok` under a per-DP named lock, so one DP can no longer be matched to two mutations at once.
 - Legacy screens write the whole blob with `saveAll`. v1 adds granular parts (`/sections/{key}`, `/reports/{date}`, `/days/{date}`), each versioned by its own content hash under the same `kompas_save` lock, so edits to different parts never conflict.
 - Frontend walkthrough: `tools/e2e/kompas.mjs` (`devproxy --laravel account,kompas`).
