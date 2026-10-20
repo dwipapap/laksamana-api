@@ -110,14 +110,13 @@ class InvestorAnalyticsController
         if ($v === null || ! ctype_digit($v)) {
             return self::versionRequired();
         }
-        $cur = $this->svc->analytics()['ts'];
-        if ((int) $v !== $cur) {
-            return ApiResponse::error('version_conflict', 'The analytics data was saved by someone else.', 409, ['version' => $cur]);
+        // checked and written under the row lock (an_simpan), so two PUTs with one version cannot both pass
+        $out = $this->svc->saveAnalytics($r->json('data'), $this->actor($r), (int) $v, true);
+        if (! empty($out['conflict'])) {
+            return ApiResponse::error('version_conflict', 'The analytics data was saved by someone else.', 409, ['version' => $out['ts']]);
         }
-        $ts = max((int) (microtime(true) * 1000), $cur + 1);
-        $out = $this->svc->saveAnalytics($r->json('data'), $this->actor($r), $ts);
 
-        return empty($out['ok']) ? ApiResponse::error('invalid_request', $out['error'], 422) : ApiResponse::ok(['saved' => true], ['version' => $ts]);
+        return empty($out['ok']) ? ApiResponse::error('invalid_request', $out['error'], 422) : ApiResponse::ok(['saved' => true], ['version' => $out['ts']]);
     }
 
     /** Body {matrix: {role: {page: 0|1|2}}} and/or {roles: {'#<userId>': role}} — each replaces its whole map. Admin; If-Match = accessVersion. */

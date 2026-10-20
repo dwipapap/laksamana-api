@@ -529,25 +529,52 @@ class InvestorAnalytics
         return ['data' => $data, 'akses' => (object) $akses, 'peran' => (object) $peran, 'ts' => $ts];
     }
 
-    public function saveAnalytics(mixed $data, mixed $oleh, ?int $ts = null): array
+    /**
+     * an_simpan — stale-write guard (legacy 5f45512, 1 Oct 2026). The blob holds
+     * EVERY POS report ever uploaded plus its settings and used to be overwritten
+     * blind: two people uploading different months — or one tab left open since
+     * morning — made the later save delete the other upload, without an error.
+     * Now, inside one SELECT … FOR UPDATE transaction, a baseTs that differs from
+     * the server's version is REJECTED as a conflict (the client pulls, merges per
+     * month and resends). No baseTs = an old cached client: let through, as legacy.
+     *
+     * $strict (v1): the version is mandatory and compared as is, so a client that
+     * read an empty state (0) conflicts once a row exists.
+     */
+    public function saveAnalytics(mixed $data, mixed $oleh, mixed $baseTs = null, bool $strict = false): array
     {
         if (! is_array($data)) {
             return ['ok' => false, 'error' => 'data bukan objek'];
         }
-        $now = $ts ?? (int) (microtime(true) * 1000);
-        if (KompasState::onCore()) {
-            $this->db()->insert('INSERT INTO `'.self::t('an_state').'` (`id`,`legacy_id`,`data`,`created_at`,`updated_at`,`oleh`,`version`)
-                VALUES (?,1,?,?,?,?,1)
-                ON DUPLICATE KEY UPDATE `version`=`version`+1, `data`=VALUES(`data`), `updated_at`=VALUES(`updated_at`), `oleh`=VALUES(`oleh`)',
-                [self::ulid(), json_encode($data, JSON_UNESCAPED_UNICODE), $now, $now, mb_substr(self::s($oleh), 0, 80)]);
 
-            return ['ok' => true, 'saved' => true];
-        }
-        $this->db()->insert('INSERT INTO `an_state` (`id`,`data`,`updated_at`,`updated_by`) VALUES (1,?,?,?)
-            ON DUPLICATE KEY UPDATE `data`=VALUES(`data`), `updated_at`=VALUES(`updated_at`), `updated_by`=VALUES(`updated_by`)',
-            [json_encode($data, JSON_UNESCAPED_UNICODE), $now, mb_substr(self::s($oleh), 0, 80)]);
+        return $this->db()->transaction(function () use ($data, $oleh, $baseTs, $strict) {
+            $by = KompasState::onCore() ? '`oleh`' : '`updated_by`';
+            $row = $this->db()->selectOne('SELECT `updated_at`,'.$by.' AS `oleh` FROM `'.self::t('an_state').'` WHERE `'.self::idCol().'`=1 FOR UPDATE');
+            $tsNow = $row ? (int) $row->updated_at : 0;
+            $stale = $strict
+                ? (int) $baseTs !== $tsNow
+                : $baseTs !== null && $baseTs !== '' && (int) $baseTs > 0 && $tsNow > 0 && (int) $baseTs !== $tsNow;
+            if ($stale) {
+                return ['ok' => false, 'error' => 'conflict', 'conflict' => true, 'oleh' => $row ? (string) $row->oleh : '', 'ts' => $tsNow];
+            }
+            // the version MUST go up: two saves in the same millisecond would share it
+            $ts = (int) (microtime(true) * 1000);
+            if ($ts <= $tsNow) {
+                $ts = $tsNow + 1;
+            }
+            if (KompasState::onCore()) {
+                $this->db()->insert('INSERT INTO `'.self::t('an_state').'` (`id`,`legacy_id`,`data`,`created_at`,`updated_at`,`oleh`,`version`)
+                    VALUES (?,1,?,?,?,?,1)
+                    ON DUPLICATE KEY UPDATE `version`=`version`+1, `data`=VALUES(`data`), `updated_at`=VALUES(`updated_at`), `oleh`=VALUES(`oleh`)',
+                    [self::ulid(), json_encode($data, JSON_UNESCAPED_UNICODE), $ts, $ts, mb_substr(self::s($oleh), 0, 80)]);
+            } else {
+                $this->db()->insert('INSERT INTO `an_state` (`id`,`data`,`updated_at`,`updated_by`) VALUES (1,?,?,?)
+                    ON DUPLICATE KEY UPDATE `data`=VALUES(`data`), `updated_at`=VALUES(`updated_at`), `updated_by`=VALUES(`updated_by`)',
+                    [json_encode($data, JSON_UNESCAPED_UNICODE), $ts, mb_substr(self::s($oleh), 0, 80)]);
+            }
 
-        return ['ok' => true, 'saved' => true];
+            return ['ok' => true, 'saved' => true, 'ts' => $ts];
+        });
     }
 
     /** an_akses_simpan — replace the whole page × role matrix (tingkat clamped 0..2). */

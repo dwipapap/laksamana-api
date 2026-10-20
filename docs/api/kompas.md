@@ -124,7 +124,7 @@ Figures investors see are **already summed** from the single daily map: no staff
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/analytics` | `{data: {laporan, setting, …}, akses, peran, ts}`: summaries of the uploaded POS reports plus the page × role matrix. `meta.version` = `ts`; `meta.accessVersion` = hash of matrix + roles |
-| PUT | `/analytics` | `{data}` replaces the whole analytics state. **If-Match = version** |
+| PUT | `/analytics` | `{data}` replaces the whole analytics state. **If-Match = version**, checked and written under one row lock (`409` with the current `version` when stale) |
 | PUT | `/analytics/access` | **Analytics admin.** `{matrix?, roles?}`: each one given replaces its whole map (`tingkat` is clamped to 0–2). If-Match = `accessVersion` |
 
 ## Errors

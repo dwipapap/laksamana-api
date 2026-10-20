@@ -1365,6 +1365,32 @@
    }
   },
   {
+   "name": "analyticsSave baseTs 0 is an old client, let through",
+   "body": {
+    "action": "analyticsSave",
+    "oleh": "Parity",
+    "baseTs": 0,
+    "data": {
+     "laporan": {},
+     "setting": {}
+    }
+   }
+  },
+  {
+   "name": "analyticsSave stale baseTs is a conflict",
+   "ignore": [
+    "ts"
+   ],
+   "body": {
+    "action": "analyticsSave",
+    "oleh": "Tab lama",
+    "baseTs": 1,
+    "data": {
+     "laporan": {}
+    }
+   }
+  },
+  {
    "name": "analyticsAkses not an object",
    "body": {
     "action": "analyticsAkses",

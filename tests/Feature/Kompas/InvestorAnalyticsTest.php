@@ -72,6 +72,21 @@ it('analytics: open legacy save/access/roles', function () {
     $this->get('/kompas-api-mysql/api.php?action=analyticsGet')->assertJsonPath('data.akses.staf.harian', 2)->assertJsonPath('data.data.setting.a', 1);
 });
 
+it('analytics: a stale tab cannot overwrite a newer upload (5f45512)', function () {
+    $ts = iaPost(['action' => 'analyticsSave', 'oleh' => 'Tab A', 'data' => ['laporan' => ['2026-08' => ['total' => 1]]]])->assertJsonPath('ok', true)->json('data.ts');
+    $ts2 = iaPost(['action' => 'analyticsSave', 'oleh' => 'Tab B', 'baseTs' => $ts, 'data' => ['laporan' => ['2026-08' => ['total' => 1], '2026-09' => ['total' => 2]]]])
+        ->assertJsonPath('ok', true)->json('data.ts');
+    expect($ts2)->toBeGreaterThan($ts);
+
+    // Tab A still holds $ts: rejected, B's September upload survives
+    iaPost(['action' => 'analyticsSave', 'oleh' => 'Tab A', 'baseTs' => $ts, 'data' => ['laporan' => []]])
+        ->assertExactJson(['ok' => false, 'error' => 'conflict', 'conflict' => true, 'oleh' => 'Tab B', 'ts' => $ts2]);
+    $this->get('/kompas-api-mysql/api.php?action=analyticsGet')->assertJsonPath('data.data.laporan.2026-09.total', 2);
+
+    // an old client without baseTs is still served
+    iaPost(['action' => 'analyticsSave', 'oleh' => 'Lama', 'data' => ['laporan' => []]])->assertJsonPath('data.saved', true);
+});
+
 it('v1: investor summary needs the module; report upload needs the admin', function () {
     $token = loginAs(officeUser('u-dwipa'));
     $this->withToken($token)->getJson('/api/v1/kompas/investor/summary')->assertOk()->assertJsonPath('meta.canUpload', false);

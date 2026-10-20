@@ -61,7 +61,7 @@ Response envelope is `{ok,data}`, except that `getAll` adds a top-level `ts`.
 
 ### Analytics (all OPEN in legacy)
 
-- `analyticsGet`, `analyticsSave {data, oleh}`.
+- `analyticsGet`, `analyticsSave {data, oleh, baseTs}` → `{saved, ts}`. Stale-write guard (port of legacy `5f45512`, #302): checked and written in one `SELECT … FOR UPDATE` transaction; a `baseTs` that differs from the stored `updated_at` → `{ok:false, error:"conflict", conflict:true, oleh, ts}`; no/0 `baseTs` (old client) or no row yet is let through.
 - `analyticsAkses {akses}` and `analyticsPeran {peran}` delete everything and re-insert, inside a transaction.
 
 ### Void log
