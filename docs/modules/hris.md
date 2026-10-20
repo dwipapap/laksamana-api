@@ -16,8 +16,9 @@ Decisions were settled in a grilling session with the owner on 2026-10-15. Items
 
 | HRIS owns (`hris_*`) | Read/written through v1 services |
 |---|---|
-| Punches, faces, attendance locations, decision queue, attendance settings | Identity, login name + PIN, Roster, Akses, Divisi (`account`) |
-| Holiday calendar, leave/PH balance ledger, all requests (CUTI, PH, IZIN; later OFF, TUKAR) | Jadwal cells and shifts (`JadwalService`): read for punches, written when a request is approved |
+| Karyawan, Divisi, Kepala Divisi of kantor Divisi, Jabatan and levels, their history (ADR-0012) | Identity, login name + PIN, Roster, Akses (`account`) |
+| Punches, faces, attendance locations, decision queue, attendance settings | — |
+| Holiday calendar, leave/PH balance ledger, all requests (CUTI, PH, IZIN; later OFF, TUKAR) | Jadwal cells and shifts (`JadwalService`): read for punches, written when a request is approved, and edited from `/kelola/shift` and `/kelola/roster` (ADR-0012) |
 | Meal-allowance recap and locked periods, People Score, team KPI, discipline (pelanggaran/SP) | Akademi materials and progress (onboarding, training) |
 | Contracts ⏳, onboarding checklist, manpower requests, vacancies, applicants/CVs | BD Permintaan Koordinasi (inter-division requests) |
 | — | Marketing → Konten design requests (shown read-only) |
@@ -44,7 +45,7 @@ Decisions were settled in a grilling session with the owner on 2026-10-15. Items
 | A14 | Fix sent | The shown fix (≤ 60 s old) is the sent fix; older → re-acquire and re-show distance + status before sending |
 | A15 | 0,0 | The phone skips the 0,0 placeholder like the server |
 | A16 | Anti-fraud | Server `curiga[]` per punch, flags only (never a queue reason), HR/head eyes only: `KOORDINAT_SAMA`, `TITIK_PUSAT`, `AKURASI_JANGGAL`, `KOORDINAT_KEMBAR` |
-| A17 | Out of scope | Offline punches, break start/end, multi-shift days (one MASUK/PULANG pair; long shifts are one Jadwal shift), live tracking |
+| A17 | Out of scope | Offline punches, break start/end, live tracking. One MASUK/PULANG pair per day, **except block shifts** (SPLIT: one pair per block, J4) — amended by ADR-0012 |
 | A18 | Unenrolled | Punch screen locks until Daftar Wajah. Server: never enrolled → always `WAJAH_KOSONG`. Setting `wajahWajib` removed (old PUTs accepted, ignored) |
 | A19 | Pre-send face check | `POST /hris/faces/me/cek {descriptor, model}` → `{terdaftar, cocok}`; no score served; every check audits `wajah_dicek` (W5); shares the 10-per-5-min-per-user limit with `faces/me/tambah`. Mismatch warns (+ refoto); after 2 failures "Ajukan ke atasan" (queued `WAJAH` with note). The server still matches on punch (the app can be bypassed) |
 | A20 | Early clock-in | VALID up to `awalMenit` before shift start (default 180). Earlier → `LUAR_SHIFT` |
@@ -74,7 +75,7 @@ Owner wording and PWA halves of W1–W8 (map P1–P5 and bottom sheet S1–S3 ar
 
 | # | Decision | Value |
 |---|---|---|
-| L1 | Requests | **All requests move to HRIS.** Phase 1 covers CUTI, PH and IZIN (with attachment); OFF and TUKAR follow. Approval goes Kepala Divisi → HRD. On approval HRIS writes the Jadwal cell. The Jadwal roster (cell planning) stays in the old Jadwal panel |
+| L1 | Requests | **All requests move to HRIS.** Phase 1 covers CUTI, PH and IZIN (with attachment); OFF and TUKAR follow. Approval goes Kepala Divisi → HRD. On approval HRIS writes the Jadwal cell. ~~The Jadwal roster stays in the old Jadwal panel~~ — replaced by J6 (ADR-0012): the roster moves to HRIS |
 | L2 | Balances | One ledger of entries per person (`PH`, `CUTI`): earned, used, expired |
 | L3 | PH earned | A **MASUK VALID** on a holiday in the HRIS calendar gives 1 PH |
 | L4 | PH expiry | 3 months from the holiday date. Used first-to-expire (FIFO). A reminder goes out 14 days before expiry |
@@ -83,6 +84,41 @@ Owner wording and PWA halves of W1–W8 (map P1–P5 and bottom sheet S1–S3 ar
 | L7 | Annual leave | 12 days. Only from the **second** contract. It resets on the contract start date. The remainder expires. Probation is 2 months at the start of the first contract |
 | L8 | Holiday calendar | Entered by HR, with an automatic import of national holidays where possible |
 | L9 | Overtime | **Not counted**, whatever the arrival or leaving time. Crew adjust their shift instead |
+
+### Karyawan, Divisi and Jabatan (E, ADR-0012)
+
+Settled with the owner on 2026-10-20 (grilling Q1–Q42). Stored in `hris_*`
+tables keyed by the legacy User id, because identity is still legacy.
+
+| # | Decision | Value |
+|---|---|---|
+| E1 | Screens | `/kelola/karyawan`, `/kelola/struktur` (org chart), `/kelola/divisi`, `/kelola/jabatan` in the PWA. office-vue `hr/*` is retired |
+| E2 | Record | `hris_karyawan`, one per User: Divisi, Jabatan, atasan, status kerja (PROBATION/KONTRAK/TETAP/MAGANG), NIK, gender, birth date, address, emergency contact, join/probation/contract dates, exit date + reason. Name, PIN, phone and email stay on the Office User. `cabang`, `organisasi` and `level_jabatan` are dropped; bank, NPWP and BPJS wait for payroll phase b |
+| E3 | Add employee | One form creates the Office User (`AccountService`) and the Karyawan row. Pengelola Roster (Tim HRD) may do it. Module Izin Akses stays in Kelola Akses. HRIS mirrors Jabatan, status kerja and join date into the User's HR columns |
+| E4 | Divisi | "Department" is **Divisi**, flat. `kode` is generated and hidden; name, jenis, order, heads and aktif are editable by HR/Superadmin; delete is a soft delete of an empty Divisi, with "move every member to…". Kantor Divisi may have a Kepala Divisi (`hris_divisi_kepala`); shift heads stay in Jadwal |
+| E5 | Divisi is explicit | `hris_karyawan.divisi_id` decides the Jadwal Divisi: HRIS writes Penempatan Divisi (shift) or Nonshift (kantor). Tim words are the fallback for Users without a record. Changing Divisi keeps existing roster cells |
+| E6 | Jabatan | Master `hris_jabatan` + configurable `hris_jabatan_level` (seeded 1 Helper/Trainee, 2 Crew, 3 Senior, 4 Captain/Supervisor, 5 Head/Kepala, 6 Manajemen) |
+| E7 | History | `hris_karyawan_riwayat` records every change of Divisi, Jabatan, atasan and status kerja with its effective date (timeline) |
+| E8 | Org chart | Tree of `atasan_user_id`; empty = the Divisi's Kepala Divisi; cycles and inactive superiors are refused. HR/Superadmin see all, a Kepala Divisi their subtree without personal data, crew nothing |
+| E9 | Exit | HR sets exit date + reason; `hris:harian` deactivates the User on that date, deletes later roster cells; subordinates must be moved first. Never hard-deleted |
+| E10 | Access | Users without a Karyawan record get **no** HRIS access (narrows PR #300), switched on after HR reviews the import report |
+| E11 | Import | `php artisan hris:impor-karyawan [--coba]`: active Users with HR data (Talenta Organization, Job Position, Employment Status), a legacy HR employee or a Jadwal Divisi. Idempotent, never overwrites; reports Users it could not place and Users without HR data. Legacy HR violations, KPI and reviews move into the existing HRIS tables in a later PR |
+
+### Shift and roster (J, ADR-0012)
+
+| # | Decision | Value |
+|---|---|---|
+| J1 | Master shift | `/kelola/shift` edits the Jadwal shift definitions (still stored by `JadwalService`): name, colour, blocks, Divisi, order, libur. Codes are generated and hidden; a used shift is deactivated, never deleted; OFF/IZIN/CUTI/LAIN are locked |
+| J2 | Cleaning Staff | New shift Divisi `cleaning` (Tim words cleaning/cleaner/kebersihan). PAGI CS (08–18) and SIANG CS (15–01) are for Cleaning only; a shift without Divisi is for every Divisi |
+| J3 | MIDDLE | 11:00–21:00 (the stored value; office-vue's 20:00 default is wrong) |
+| J4 | Block shifts | SPLIT has two blocks and the crew member leaves in between. Block times are set by HR; until then SPLIT is one block 11:00–23:00. No per-cell time override on a block shift. Punches: `hris_ketukan.blok`, lateness per block, target = sum of blocks, meal allowance once per day, missed PULANG of block 1 → `pulang_terlewat`, `TANPA_MASUK` per block |
+| J5 | Past punches | Changing a shift's hours never changes recorded punches (they keep their snapshot) |
+| J6 | Roster in HRIS | `/kelola/roster` (monthly grid per Divisi + weekly view), `/kelola/roster/rekap`, and "Jadwal Saya" for crew. HR edits every Divisi, a Kepala Divisi only theirs; the legacy "anyone may write while no head exists" rule is dropped |
+| J7 | Roster rules | `maksBeruntun` (6) and `jedaMin` (10 h) move to `/kelola/pengaturan` and only warn |
+| J8 | Clean-up | `jabatan` in the Jadwal setting is dropped for the master Jabatan; the default shift per crew (`shiftKru`) moves to the Karyawan record; `manajemen`/`template` are dropped if unused |
+| J9 | Cutover | Two weeks of parallel use, then the old Jadwal panel is read-only, then removed. Pekerja Harian stay in the DW module |
+
+PR order: (1) schema + import, (2) kelola karyawan, (3) master shift + block punches, (4) roster, (5) retire the old panels.
 
 ### Payroll
 

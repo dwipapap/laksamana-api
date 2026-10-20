@@ -181,7 +181,8 @@ it('serves the roster with the same Divisi legacy jdw_divisi_user gives every Us
     expect($rows)->not->toBe([]);
 
     // Independent port of jdw_divisi_user (lib_jadwal_mysql.php), plus the
-    // owner-decided #3 fix (Tim "FOH" -> floor, which legacy does not have yet):
+    // owner-decided #3 fix (Tim "FOH" -> floor, which legacy does not have yet)
+    // and the cleaning Divisi (ADR-0012, Tim "Cleaning Staff"):
     // the test guards the endpoint wiring, the anchors below guard the algorithm.
     $override = jadwalSetting()['divOverride'] ?? [];
     $legacyDivisi = function (array $u) use ($override): string {
@@ -196,7 +197,7 @@ it('serves the roster with the same Divisi legacy jdw_divisi_user gives every Us
         }
         $sin = ['bar' => ['bar', 'bartender'], 'kitchen' => ['kitchen', 'dapur'],
             'floor' => ['floor', 'service', 'waiter', 'waitress', 'host', 'hostess', 'foh'],
-            'cashier' => ['cashier', 'kasir']];
+            'cashier' => ['cashier', 'kasir'], 'cleaning' => ['cleaning', 'cleaner', 'kebersihan']];
         foreach ($sin as $kode => $daftar) {
             foreach ($daftar as $x) {
                 if (in_array($x, $kata, true)) {
