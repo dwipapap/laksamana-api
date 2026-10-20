@@ -500,7 +500,7 @@ final class RowSync
      * in PHP. Deletion bounded by $sejak; empty payload never empties the list.
      * Returns the stored row count.
      */
-    public static function upsertSettingsCollection(ConnectionInterface $db, string $name, array $rows, array $opt, array &$bentrok, array &$versi, int $sejak): int
+    public static function upsertSettingsCollection(ConnectionInterface $db, string $name, array $rows, array $opt, array &$bentrok, array &$versi, int $sejak, ?array $known = null): int
     {
         $byId = [];
         foreach (self::settingsRows($db, $name) as $r) {
@@ -550,8 +550,28 @@ final class RowSync
             $byId[$id] = $simpan;
         }
 
-        $mayDelete = $sejak > 0 && count($sent) > 0;
         $out = [];
+        if ($known !== null) {
+            // `dikenal` (marketing 95e4c20): only rows the client has SEEN and no
+            // longer sends are dropped; an empty payload dropping >3 rows keeps them.
+            $knownIds = array_flip(array_map(fn ($v) => is_array($v) ? 'Array' : (string) $v, $known));
+            $gone = 0;
+            foreach ($byId as $id => $r) {
+                if (! isset($sent[$id]) && isset($knownIds[(string) $id])) {
+                    $gone++;
+                }
+            }
+            $hold = count($sent) === 0 && $gone > 3;
+            foreach ($byId as $id => $r) {
+                if (isset($sent[$id]) || ! isset($knownIds[(string) $id]) || $hold) {
+                    $out[] = $r;
+                }
+            }
+            self::putSetting($db, 'extra:'.$name, $out);
+
+            return count($out);
+        }
+        $mayDelete = $sejak > 0 && count($sent) > 0;
         foreach ($byId as $id => $r) {
             if (isset($sent[$id]) || ! $mayDelete || self::ms($r['updatedAt'] ?? 0) > $sejak) {
                 $out[] = $r;

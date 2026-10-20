@@ -74,6 +74,10 @@
     { "name": "saveAll delete bounded by _sejak", "body": { "action": "saveAll", "data": {
       "clients": [{ "id": "c_par1", "nama": "Parity Client 3", "perusahaan": "PT Parity", "status": "Deal", "updatedAt": 1790100000501, "createdAt": 1790100000000 }], "_sejak": 1790068989701
     } } },
-    { "name": "getAll after bounded delete", "method": "GET", "query": { "action": "getAll" } }
+    { "name": "getAll after bounded delete", "method": "GET", "query": { "action": "getAll" } },
+    { "name": "saveAll dikenal deletes only known rows, ignoring _sejak", "body": { "action": "saveAll", "dikenal": { "clients": ["c_par1", "c_par_k2"], "vip": [] }, "data": {
+      "clients": [{ "id": "c_par1", "nama": "Parity Client 3", "perusahaan": "PT Parity", "status": "Deal", "updatedAt": 1790100000501, "createdAt": 1790100000000 }], "_sejak": 1
+    } } },
+    { "name": "getAll after dikenal delete", "method": "GET", "query": { "action": "getAll" } }
   ]
 }

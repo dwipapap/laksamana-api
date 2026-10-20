@@ -54,7 +54,7 @@ Ported: `app/Support/RowSync.php`, `app/Modules/Marketing/Services/{MarketingSch
 | `receipt&key` GET | Streams a file from `<DATA_DIR>/receipts/`. |
 | `uploadReceipt` (`dataBase64`, `mimeType`, `fileName`) POST | Max 40 MB. Returns `{key:'rc_<hex>.<ext>', name}`. |
 | `uploadChunk` (`uploadId`, `seq`, `last`, `dataBase64`, `mimeType`, `fileName`) POST | ~2 MB chunks appended to `receipts_tmp/up_<id>.part`, renamed on the last chunk. |
-| `saveAll` (`data:{…, _sejak}`) POST | Under `GET_LOCK('<db>:mkt_save')`. Returns `{saved, jumlah, berkasDibuang, bentrok[], versi{'<koleksi>:<id>': ts}, …}`. |
+| `saveAll` (`data:{…, _sejak}`, `dikenal?`) POST | Under `GET_LOCK('<db>:mkt_save')`. Returns `{saved, jumlah, berkasDibuang, bentrok[], versi{'<koleksi>:<id>': ts}, …}`. |
 
 ## saveAll rules (the heart of RowSync)
 
@@ -62,12 +62,15 @@ Ported: `app/Support/RowSync.php`, `app/Modules/Marketing/Services/{MarketingSch
    - **Exception:** if `sidik_baris(stored) === sidik_baris(sent)`, it is NOT a conflict. Compare key-sorted deep JSON without `updatedAt`/`baseUpdatedAt`, with lists kept in order. Return the server version in `versi`.
 2. **Cap bump (`cap_tulis`).** If the client timestamp is not above the server's, bump it to server+1 and return it in `versi`. The timestamp actually used is written into `data.updatedAt`. Timestamps come from the CLIENT clock; do not switch to server time (babak 5 explains why).
 3. **Skip unchanged rows.** A row with no `baseUpdatedAt` and the same timestamp as stored is not written. Its id is still recorded as present so it is not deleted.
-4. **Deletes (`hapus_yang_hilang`).**
+4. **Deletes.**
+   - **With `dikenal`** (legacy `95e4c20`, #302): `{<collection>: [ids the client has seen]}`, for tables AND the settings collections (`designreqs`, `vip`). Only `dikenal − payload` is deleted, whatever the stamps (a device with a late clock no longer loses its rows to another tab's `_sejak`). An empty payload that would delete more than 3 rows deletes nothing. `_sejak` is ignored for that collection.
+   - **Without `dikenal`** (old client, `hapus_yang_hilang`):
    - Only rows missing from the payload AND with `updated_at <= _sejak` are deleted.
    - If `_sejak` is 0 or missing, delete nothing.
    - An empty list never deletes.
 5. **Settings keys.** kol_settings names must be in `$known` and merged BEFORE the generic `extra:` branch; otherwise `put_setting` overwrites them blindly.
 6. **Row id required.** Rows without an `id` are not merged.
+7. **Not ported:** the partial-save mode (`hapus`, advertised by getAll as `_fitur:['delta']`, legacy `eaef657`/`2e649df`) — #323. Laravel never advertises it; `_fitur` is a known key (never stored as `extra:`).
 7. **File GC.** Runs on ~1 in 20 saves. Orphans older than 7 days move to `receipts_sampah/`; trash is purged after 60 days.
 
 ## v1 proposal
