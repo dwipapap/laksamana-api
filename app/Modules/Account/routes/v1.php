@@ -2,6 +2,7 @@
 
 use App\Modules\Account\Http\V1\AccountAdminController;
 use App\Modules\Account\Http\V1\AuthController;
+use App\Modules\Account\Http\V1\BadgesController;
 use Illuminate\Support\Facades\Route;
 
 // ---- auth -------------------------------------------------------------
@@ -10,6 +11,7 @@ Route::post('auth/login', [AuthController::class, 'login'])->middleware('throttl
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('auth/logout', [AuthController::class, 'logout']);
     Route::get('me', [AuthController::class, 'me']);
+    Route::get('me/badges', [BadgesController::class, 'show']);
     Route::put('me/pin', [AuthController::class, 'changePin']);
     Route::put('me/username', [AuthController::class, 'setUsername']);
     Route::put('me/contact', [AuthController::class, 'updateContact']);

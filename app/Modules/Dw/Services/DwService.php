@@ -470,6 +470,34 @@ class DwService
             'ajuan' => $ajuan, 'permintaan' => $minta];
     }
 
+    /**
+     * Minimal ajuan + permintaan rows for the /me/badges counts (api#311).
+     * READ-ONLY and range-free: unlike readAll() it never calls
+     * tutupKedaluwarsa(), so no write can happen here.
+     *
+     * @return array{ajuan: list<array{status: string, permintaanId: string}>, permintaan: list<array{id: string, divisi: string, status: string, jumlah: int}>}
+     */
+    public function badgeRows(): array
+    {
+        $idA = self::selId('a');
+        $idM = self::selId('m');
+        $ajuan = [];
+        foreach ($this->db()->select(
+            "SELECT $idA, `a`.`status`, `a`.`permintaan_id` FROM `dw_ajuan` `a` WHERE `a`.`status` IN ('MENUNGGU','DISETUJUI')"
+        ) as $r) {
+            $ajuan[] = ['status' => (string) $r->status, 'permintaanId' => (string) ($r->permintaan_id ?? '')];
+        }
+        $minta = [];
+        foreach ($this->db()->select(
+            "SELECT $idM, `m`.`divisi`, `m`.`status`, `m`.`jumlah` FROM `dw_permintaan` `m`"
+        ) as $r) {
+            $minta[] = ['id' => (string) $r->id, 'divisi' => (string) $r->divisi,
+                'status' => (string) $r->status, 'jumlah' => (int) $r->jumlah];
+        }
+
+        return ['ajuan' => $ajuan, 'permintaan' => $minta];
+    }
+
     public function bentukPermintaan(array $r): array
     {
         return [
