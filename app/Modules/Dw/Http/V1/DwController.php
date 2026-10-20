@@ -74,10 +74,18 @@ class DwController
             'to' => ['nullable', 'date_format:Y-m-d'],
         ]);
         $me = $this->me($r);
-        $data = $this->dw->readAll($d['from'] ?? '', $d['to'] ?? '', $this->dw->bolehLihat($me));
+        // v1 defaults to the current month (WIB); legacy getAll stays
+        // unbounded when the bounds are absent (byte-compatible).
+        $hariIni = gmdate('Y-m-d', time() + 7 * 3600);
+        $from = $d['from'] ?? substr($hariIni, 0, 7).'-01';
+        $to = $d['to'] ?? $hariIni;
+        if ($to < $from) {
+            [$from, $to] = [$to, $from];
+        }
+        $data = $this->dw->readAll($from, $to, $this->dw->bolehLihat($me));
         $data['peran'] = $this->dw->peran($me);
 
-        return ApiResponse::ok($data, ['from' => $d['from'] ?? '', 'to' => $d['to'] ?? '']);
+        return ApiResponse::ok($data, ['from' => $from, 'to' => $to]);
     }
 
     /** Approved shifts in a range (= legacy jadwalDW): {rows, dari, sampai}. */

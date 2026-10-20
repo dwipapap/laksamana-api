@@ -41,7 +41,7 @@ Cell fields are the legacy `jadwal_sel` columns, abbreviated as in the old app:
 |---|---|---|
 | GET | `/requests` | Filters (all optional, combine freely): `mine=1` (caller's own — wins over `user`), `user=<id>`, `status=<a,b>` (comma-separated, uppercase), `from=`/`to=` (`YYYY-MM-DD`; a request matches if it spans at least one day inside the range). Full table, newest first — no row cap. Same visibility as legacy `getAll`: any module holder sees all rows, filters only narrow. |
 | POST | `/requests` | Body `{userId?, jenis, dari, sampai?, alasan?, shift?, jamMulai?, jamSelesai?}`. `userId` is forced to the caller unless an admin. `status` is always `MENUNGGU`. Returns 201 `{saved, id}`. |
-| POST | `/requests/{id}/decision` | Body `{status: MENUNGGU_HRD\|DISETUJUI\|DITOLAK\|MENUNGGU, nota?}`. Two-step approval enforced: Kepala Divisi forwards `MENUNGGU` → `MENUNGGU_HRD`, then HRD (admin) approves → `DISETUJUI`; either step may `DITOLAK`. |
+| POST | `/requests/{id}/decision` | Body `{status: MENUNGGU_HRD\|DISETUJUI\|DITOLAK\|MENUNGGU, nota?}`. Two-step approval enforced: Kepala Divisi forwards `MENUNGGU` → `MENUNGGU_HRD`, then HRD (admin) approves → `DISETUJUI`; either step may `DITOLAK`. The write carries the seen status, so a decision landing on an already-moved row is refused (`422`, "sudah diputus"). |
 | DELETE | `/requests/{id}` | The requester or a head may delete. Returns `{deleted, id}`. |
 
 ## Roster (Divisi + crew read model)

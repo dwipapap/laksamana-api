@@ -961,14 +961,19 @@ class JadwalService
             $actor = $this->actorUlid($by);
             $now = self::now();
             $sql = $status === 'MENUNGGU_HRD'
-                ? 'UPDATE `jadwal_pengajuan` SET `status`=?, `head_at`=?, `head_oleh`=?, `putus_nota`=?, `updated_by`=?, `updated_at`=?, `version`=`version`+1 WHERE `legacy_id`=?'
-                : 'UPDATE `jadwal_pengajuan` SET `status`=?, `putus_at`=?, `putus_oleh`=?, `putus_nota`=?, `updated_by`=?, `updated_at`=?, `version`=`version`+1 WHERE `legacy_id`=?';
-            $this->db()->update($sql, [$status, self::ms(), mb_substr(self::s($by), 0, 120), mb_substr(self::s($nota), 0, 255), $actor, $now, $id]);
+                ? 'UPDATE `jadwal_pengajuan` SET `status`=?, `head_at`=?, `head_oleh`=?, `putus_nota`=?, `updated_by`=?, `updated_at`=?, `version`=`version`+1 WHERE `legacy_id`=? AND `status`=?'
+                : 'UPDATE `jadwal_pengajuan` SET `status`=?, `putus_at`=?, `putus_oleh`=?, `putus_nota`=?, `updated_by`=?, `updated_at`=?, `version`=`version`+1 WHERE `legacy_id`=? AND `status`=?';
+            $n = $this->db()->update($sql, [$status, self::ms(), mb_substr(self::s($by), 0, 120), mb_substr(self::s($nota), 0, 255), $actor, $now, $id, $sebelum]);
         } else {
             $sql = $status === 'MENUNGGU_HRD'
-                ? 'UPDATE `jadwal_pengajuan` SET `status`=?, `head_at`=?, `head_oleh`=?, `putus_nota`=? WHERE `id`=?'
-                : 'UPDATE `jadwal_pengajuan` SET `status`=?, `putus_at`=?, `putus_oleh`=?, `putus_nota`=? WHERE `id`=?';
-            $this->db()->update($sql, [$status, self::ms(), mb_substr(self::s($by), 0, 120), mb_substr(self::s($nota), 0, 255), $id]);
+                ? 'UPDATE `jadwal_pengajuan` SET `status`=?, `head_at`=?, `head_oleh`=?, `putus_nota`=? WHERE `id`=? AND `status`=?'
+                : 'UPDATE `jadwal_pengajuan` SET `status`=?, `putus_at`=?, `putus_oleh`=?, `putus_nota`=? WHERE `id`=? AND `status`=?';
+            $n = $this->db()->update($sql, [$status, self::ms(), mb_substr(self::s($by), 0, 120), mb_substr(self::s($nota), 0, 255), $id, $sebelum]);
+        }
+        if ($n === 0) {
+            // Someone else decided between the read above and this write:
+            // their decision stands, like Absensi::decidePunch (rowCount 0).
+            throw new RuntimeException('Pengajuan ini sudah diputus. Muat ulang dulu.');
         }
 
         return ['saved' => true, 'id' => $id, 'status' => $status];

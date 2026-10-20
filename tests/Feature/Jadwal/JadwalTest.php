@@ -221,3 +221,13 @@ it('serves the roster with the same Divisi legacy jdw_divisi_user gives every Us
         ->and($byId['u-adit'])->toBe('kitchen')->and($byId['u-aurel'])->toBe('nonshift')
         ->and($byId['u-andry'])->toBe('nonshift')->and($byId['u-admin'])->toBe('nonshift');
 });
+
+it('refuses a decision on an already-moved request', function () {
+    jadwalInsertPengajuan('AtestStale', 'u-yuzaalfarel', 'OFF', '2026-10-12', '2026-10-12', 'MENUNGGU_HRD');
+    // HRD rejects first; a stale tab still offering approval is refused
+    // (and the guard keeps a concurrent move from overwriting it).
+    app(JadwalService::class)->decide('AtestStale', 'DITOLAK', 'tolak', 'HRD', true, false);
+    expect(fn () => app(JadwalService::class)->decide('AtestStale', 'DISETUJUI', 'setuju', 'HRD', true, false))
+        ->toThrow(RuntimeException::class);
+    expect(jadwalPengajuan('AtestStale')->status)->toBe('DITOLAK');
+});
