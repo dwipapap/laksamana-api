@@ -100,6 +100,32 @@ class AccountRepository
     }
 
     /**
+     * Display names for many users in ONE query (id → name; unknown ids
+     * are absent). Batch twin of userById() for list shaping.
+     *
+     * @param  array<int,string>  $ids
+     * @return array<string,string>
+     */
+    public function namesByIds(array $ids): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map(
+            fn ($v) => self::s($v), $ids), fn ($v) => $v !== '')));
+        if ($ids === []) {
+            return [];
+        }
+        $rows = $this->db()->select(
+            'SELECT `id`, `name` FROM `users` WHERE `id` IN ('.implode(',', array_fill(0, count($ids), '?')).')',
+            $ids);
+        $out = [];
+        foreach ($rows as $r) {
+            $a = (array) $r;
+            $out[(string) ($a['id'] ?? '')] = (string) ($a['name'] ?? '');
+        }
+
+        return $out;
+    }
+
+    /**
      * Name OR username + PIN, active only. Username first; an empty username
      * never matches (otherwise an empty login would grab the first user
      * without a username).
