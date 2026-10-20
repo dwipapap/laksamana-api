@@ -10,7 +10,7 @@
 
 ## Tables
 
-Each collection is stored as indexed columns plus a `data` column (the source of truth, stored verbatim — even a `baseUpdatedAt` a client sends is kept).
+Each collection is stored as indexed columns plus a `data` column (the source of truth, stored as sent minus the request metadata `baseUpdatedAt`; see `saveAll`).
 
 | collection | table | notes |
 |---|---|---|
@@ -36,14 +36,15 @@ String columns get PHP's `(string)` cast (an array becomes `"Array"`), numbers `
 
 All actions are open unless the optional `API_TOKEN` is set. A GET without `action` is `getAll`; `?action=` (empty) is an unknown action. `tgl` and `key` come from the query string only.
 
-- **`getAll`** (GET, default). Collections in `created_at, id` order (or `id`), then `checkins`, `eventDetails`, the three settings.
-- **`saveAll`** (`data`), under `GET_LOCK('<db>:ems_save', 10)` (busy: `Server sedang sibuk menyimpan, coba lagi sebentar.`), in one transaction. The lock is taken before the payload is checked (`Payload data kosong/invalid`).
-  - Upsert protected only by the `updated_at` guard (`>=` wins); there is no `baseUpdatedAt` check and no cap bump.
+- **`getAll`** (GET, default). Collections in `created_at, id` order (or `id`), then `checkins`, `eventDetails`, the three settings. Each collection row's `updatedAt` comes from the `updated_at` **column** when it is > 0 (legacy `5157c03`): ticketing bumps the column without touching the JSON, and the stale-tab guard compares with the column.
+- **`saveAll`** (`data`, optional `dikenal`), under `GET_LOCK('<db>:ems_save', 10)` (busy: `Server sedang sibuk menyimpan, coba lagi sebentar.`), in one transaction. The lock is taken before the payload is checked (`Payload data kosong/invalid`).
+  - Upsert protected by the `updated_at` guard (`>=` wins). **Stale-tab guard (legacy `b0a64d5`, #302):** a row carrying `baseUpdatedAt` older than the stored `updated_at` is refused and reported in `bentrok` (`{koleksi, id, nama}`, `nama` = name ?? title ?? id); one that passes gets its stamp bumped to server+1 when needed, written into `data` and returned in `versi` (`<collection>:<id>`, `ed:<eventId>` for details). `baseUpdatedAt` is never stored. Rows without it keep the plain guard.
   - **Changed (#100, owner decision 2026-09-27 — fix, not reproduce):** a payload whose ticket `qr_token` already belongs to **another** ticket id refuses the whole save **before anything is written** with `{ok:false,error:"qr_token ganda: <token>"}`. Legacy let the upsert's `ON DUPLICATE KEY UPDATE` fire on the UNIQUE `qr_token`, silently rewriting the other ticket's row — and the bounded delete then removed it (silent ticket loss). v1 already answers 409 `duplicate` for the same case.
-  - Deletes rows whose id is `NOT IN` the payload **and** whose `updated_at <=` the payload's max `updatedAt` (rows without an id do not count). When no row carries a stamp, the delete has **no bound**. An empty list deletes nothing. A collection not sent is untouched. Consequence: deleting the newest-stamped row of a collection is silently undone (#103).
-  - `checkins`: INSERT IGNORE, never updated or deleted. `eventDetails`: upsert with the same guard, missing entries deleted without a bound.
+  - **With `dikenal`** (`{<collection>: [ids the client has seen]}`, also `eventDetails`): deletes only `dikenal − payload`; an empty payload that would delete more than 3 rows deletes nothing. This also fixes #103 for clients that send it.
+  - **Without `dikenal`** (old client): deletes rows whose id is `NOT IN` the payload **and** whose `updated_at <=` the newest stamp actually written (refused rows excluded, bumped stamps counted). When no row carries a stamp, the delete has **no bound**. An empty list deletes nothing. A collection not sent is untouched. Consequence: deleting the newest-stamped row of a collection is silently undone (#103).
+  - `checkins`: INSERT IGNORE, never updated or deleted. `eventDetails`: upsert with the same guards; without `dikenal`, missing entries deleted without a bound.
   - Settings written only when sent and not `null`.
-  - Response `{saved:true, jumlah:{<collection>:n,…}, backend, ts}`.
+  - Response `{saved:true, jumlah:{<collection>:n,…}, bentrok:[…], versi:{…}, backend, ts}`.
   - Ticketing's hold table is deliberately separate so this save cannot wipe seat holds.
 - **`eventsHari`** (`tgl`):
   - Returns events on that date whose status is **not** Planning, Draft or Cancelled (drop list on purpose: old rows still say Today/Finished).
