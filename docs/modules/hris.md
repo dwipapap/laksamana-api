@@ -102,7 +102,37 @@ tables keyed by the legacy User id, because identity is still legacy.
 | E8 | Org chart | Tree of `atasan_user_id`; empty = the Divisi's Kepala Divisi; cycles and inactive superiors are refused. HR/Superadmin see all, a Kepala Divisi their subtree without personal data, crew nothing |
 | E9 | Exit | HR sets exit date + reason; `hris:harian` deactivates the User on that date, deletes later roster cells; subordinates must be moved first. Never hard-deleted |
 | E10 | Access | Users without a Karyawan record get **no** HRIS access (narrows PR #300), switched on with env `HRIS_HANYA_KARYAWAN=true` after HR reviews the import report |
-| E11 | Import | `php artisan hris:impor-karyawan [--coba]`: active Users with HR data (Talenta Organization, Job Position, Employment Status), a legacy HR employee or a Jadwal Divisi. Idempotent, never overwrites; reports Users it could not place and Users without HR data. Legacy HR violations, KPI and reviews move into the existing HRIS tables in a later PR |
+| E11 | Import | `php artisan hris:impor-karyawan [--coba]`: active Users with HR data (Talenta Organization, Job Position, Employment Status), a legacy HR employee or a Jadwal Divisi. Idempotent, never overwrites; reports Users it could not place and Users without HR data. Legacy HR violations, KPI and reviews move with `hris:impor-hr-lama` (see below) |
+
+### Legacy HR import (E11)
+
+`php artisan hris:impor-hr-lama [--coba]` moves what the retired HR panel
+still uses into the HRIS tables (Q22/Q32). `--coba` runs the import and rolls
+it back; it never writes to the legacy databases and must never be run
+against the shared dev or production database (CLAUDE.md §0: import into a
+local copy only).
+
+| Legacy (db `hr`) | HRIS (db `core`) | Mapping |
+|---|---|---|
+| `violations` | `hris_pelanggaran` | `empId` → Talenta employee → `users.talenta_id`; `date` → `tanggal`; `type` → `jenis`; `severity` Ringan/Sedang/Berat → `tingkat`; `sp` (SP1…) → `sp_ke`; `note` → `keterangan`; `Tercatat`/`Dibatalkan` → `AKTIF`/`DIBATALKAN` |
+| `kpi_templates.items[]` | `hris_kpi_template` + `hris_kpi_item` | `divId` → HRIS Divisi kode (same Kantor/Shift mapping as Karyawan); `name` → `nama`; `weight` → `bobot`; `target` → `target`; `dir` up/down → `arah` NAIK/TURUN; `unit` is dropped |
+| `kpi_actuals` | `hris_kpi_realisasi` | `item_id` → the imported item; `bulan` → `bulan`; `nilai` → `nilai` |
+| `reviews.layers.hr` | `hris_penilaian_atasan` | `empId` → Talenta employee; `month` → `bulan`; `by` → `penilai_id`; `aspects` 1–7 → `aspek` 1–5 |
+
+- Identity is `talenta_id`, the same match the Karyawan importer uses. Rows
+  without a matching employee/User are reported, never guessed.
+- Idempotent and never overwrites: violations match on (user, tanggal, jenis,
+  tingkat, sp_ke), KPI templates on (Divisi, `berlaku_dari`
+  `2020-01-01`), items on (template, nama), realisasi on (item, bulan), and
+  reviews on (bulan, user). An existing row always wins.
+- Legacy KPI has no effective date. Imported templates use `2020-01-01` so the
+  historic realisations line up; a newer template written by HR takes over
+  from its own date.
+- Review aspects are mapped from the legacy 1–7 scale to the HRIS 1–5 scale
+  (`1 + (n−1)·4/6`, rounded). A review with a non-numeric value, an empty
+  layer or a value outside 1–7 is skipped and listed in the report.
+- `career_paths` and empty legacy tables are not imported. The review comment
+  has no HRIS column and is not carried over.
 
 ### Shift and roster (J, ADR-0012)
 
