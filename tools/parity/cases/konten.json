@@ -28,7 +28,7 @@
     { "name": "saveAll stale base but identical content -> still bentrok (no sidik escape)", "body": { "action": "saveAll", "data": {
       "brands": [{ "name": "Parity Brand 2", "id": "b_par1", "updatedAt": 1790100000777, "baseUpdatedAt": 1790100000000 }]
     } } },
-    { "name": "saveAll cap bump: column goes server+1, data.updatedAt stays sent", "body": { "action": "saveAll", "data": {
+    { "name": "saveAll cap bump: column and data.updatedAt go server+1, returned in versi", "body": { "action": "saveAll", "data": {
       "brands": [{ "id": "b_par1", "name": "Parity Brand 3", "updatedAt": 1790100000400, "baseUpdatedAt": 1790100000500 }]
     } } },
     { "name": "saveAll unchanged reflection with older stamp is not written", "body": { "action": "saveAll", "data": {
@@ -39,6 +39,9 @@
       "brands": [{ "id": "b_par1", "name": "Parity Brand 3", "updatedAt": 1790100000400 }]
     } } },
     { "name": "getAll after unbounded delete", "method": "GET", "query": { "action": "getAll" } },
+    { "name": "saveAll dikenal deletes only known rows missing from the payload", "body": { "action": "saveAll", "dikenal": { "brands": ["b_par_k1", "b_par_k2"] }, "data": {
+      "brands": [{ "id": "b_par_k1", "name": "Tetap", "updatedAt": 1790200000000 }] } } },
+    { "name": "getAll after dikenal delete", "method": "GET", "query": { "action": "getAll" } },
     { "name": "saveAll empty list deletes nothing", "body": { "action": "saveAll", "data": {
       "brands": []
     } } },

@@ -25,17 +25,19 @@ This is an older variant of marketing's saveAll. Reuse `App\Support\RowSync` (bu
   - max 8 MB;
   - returns `{key,name}`;
   - stores `<DATA_DIR>/receipts/rc_<hex>.<ext>`.
-- `saveAll {data}`:
+- `saveAll {data, dikenal?}`:
   - runs under `GET_LOCK('<db>:konten_save')`;
-  - returns `{saved,jumlah,berkasDibuang,bentrok[],backend,ts}`.
+  - returns `{saved,jumlah,berkasDibuang,bentrok[],versi{},backend,ts}`.
 
 ## saveAll rules (legacy)
 
 - **Conflict check:** if `baseUpdatedAt` is older than the server's `updated_at`, the row goes into `bentrok`.
-- **Upsert guard:** `IF(VALUES(updated_at)>=updated_at,…)`, bumping the timestamp by +1 when needed.
+- **Upsert guard:** `IF(VALUES(updated_at)>=updated_at,…)`, bumping the timestamp by +1 when needed. The bumped stamp is written into `data.updatedAt` and returned in `versi` (`<collection>:<id>`, legacy `eaef657`).
 - **Missing collections** in the payload are skipped.
 - **Empty lists** never delete anything.
-- **LEGACY BUG — reproduce on the compat route:** `hapus_yang_hilang` has NO `_sejak` bound. It deletes every row not in the payload, including rows created after the client loaded. Document this; v1 has no whole-state save.
+- **`dikenal` (legacy `c13be99`, #302):** a client that sends `{<collection>: [ids it has seen]}` deletes only `dikenal − payload`; an empty payload that would delete more than 3 rows deletes nothing. A row another crew created after the tab loaded is never in its list, so it is never deleted by it.
+- **Old clients without `dikenal`:** `hapus_yang_hilang` has NO `_sejak` bound. It deletes every row not in the payload, including rows created after the client loaded (legacy rule, kept). v1 has no whole-state save.
+- **Not ported:** legacy partial-save mode (`hapus`, advertised as `_fitur:['delta']` by getAll). Laravel never advertises it, so clients send the whole state. `_fitur` is a known key (never stored as `extra:`).
 - **GC:** hard-unlinks orphan receipt files after 1 hour (no trash folder).
 - **Strict core (#97):** on `core` the writer truncates each string column to its physical width (and the settings key to 64), as non-strict MySQL did on the legacy connection.
 

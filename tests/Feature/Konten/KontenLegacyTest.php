@@ -38,15 +38,34 @@ it('keeps saveAll ok:true but refuses a stale edit into bentrok', function () {
         ->and(ktBrand('b_t1')['data']['name'])->toBe('B');
 });
 
-it('bumps the column above the server for a legit edit but keeps data.updatedAt as sent', function () {
+it('bumps the stamp above the server for a legit edit, into data and versi (eaef657)', function () {
     ktSave(['brands' => [['id' => 'b_t2', 'name' => 'A', 'updatedAt' => 7000]]]);
     $r = ktSave(['brands' => [['id' => 'b_t2', 'name' => 'B', 'updatedAt' => 6000, 'baseUpdatedAt' => 7000]]]);
 
-    // The older marketing-style `versi` map does not exist here.
     expect($r['data']['bentrok'])->toBe([])
-        ->and($r['data'])->not->toHaveKey('versi')
+        ->and($r['data']['versi'])->toBe(['brands:b_t2' => 7001])
         ->and(ktBrand('b_t2'))->toMatchArray(['v' => 7001])
-        ->and(ktBrand('b_t2')['data']['updatedAt'])->toBe(6000);
+        ->and(ktBrand('b_t2')['data']['updatedAt'])->toBe(7001);
+});
+
+it('a stale tab sending dikenal deletes only rows it has seen (c13be99)', function () {
+    ktSave(['brands' => [
+        ['id' => 'b_k1', 'name' => 'mine', 'updatedAt' => 100],
+        ['id' => 'b_k2', 'name' => 'gone', 'updatedAt' => 100],
+        ['id' => 'b_k3', 'name' => 'other crew', 'updatedAt' => 100],
+    ]]);
+
+    // the tab loaded b_k1 + b_k2; b_k3 was created by another crew afterwards
+    test()->legacyPost('/konten-api-mysql/api.php', ['action' => 'saveAll', 'dikenal' => ['brands' => ['b_k1', 'b_k2']],
+        'data' => ['brands' => [['id' => 'b_k1', 'name' => 'mine', 'updatedAt' => 100]]]])->assertOk();
+    expect(ktBrand('b_k1'))->not->toBeNull()
+        ->and(ktBrand('b_k2'))->toBeNull()
+        ->and(ktBrand('b_k3'))->not->toBeNull();
+
+    // an empty payload that would delete more than 3 known rows is refused
+    test()->legacyPost('/konten-api-mysql/api.php', ['action' => 'saveAll', 'dikenal' => ['brands' => ['b_k1', 'b_k3', 'x1', 'x2']],
+        'data' => ['brands' => []]])->assertOk();
+    expect(ktBrand('b_k1'))->not->toBeNull()->and(ktBrand('b_k3'))->not->toBeNull();
 });
 
 it('reproduces the legacy unbounded delete: missing rows die even when newer than the client', function () {
