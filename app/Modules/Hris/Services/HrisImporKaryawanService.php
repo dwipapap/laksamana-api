@@ -11,6 +11,7 @@ use App\Modules\Hris\Models\HrisJabatanLevel;
 use App\Modules\Hris\Models\HrisKaryawan;
 use App\Modules\Jadwal\Services\JadwalService;
 use App\Support\Divisi;
+use App\Support\JsonDoc;
 use App\Support\Modules;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -74,6 +75,7 @@ final class HrisImporKaryawanService
             $hrOrang = $this->hrEmployeesByTalenta();
             $jadwalDivisi = $this->jadwalDivisi();
             $sudah = array_flip(HrisKaryawan::withTrashed()->pluck('user_id')->all());
+            $shiftKru = $this->shiftKru();
 
             foreach ($this->users->allUsers() as $u) {
                 $uid = self::s($u['id'] ?? '');
@@ -84,6 +86,11 @@ final class HrisImporKaryawanService
                 }
                 if (isset($sudah[$uid])) {
                     $lapor['sudah_ada']++;
+                    // J8 backfill: an empty default shift is filled, never replaced.
+                    if (isset($shiftKru[$uid])) {
+                        HrisKaryawan::query()->where('user_id', $uid)->whereNull('shift_bawaan')
+                            ->update(['shift_bawaan' => $shiftKru[$uid]]);
+                    }
 
                     continue;
                 }
@@ -115,6 +122,7 @@ final class HrisImporKaryawanService
                     'tanggal_lahir' => PunchRules::tglValid($hr->birthDate ?? '') ?: null,
                     'akhir_percobaan' => PunchRules::tglValid($hr->probationEnd ?? '') ?: null,
                     'akhir_kontrak' => PunchRules::tglValid($hr->contractEnd ?? '') ?: null,
+                    'shift_bawaan' => $shiftKru[$uid] ?? null,
                 ]);
                 $lapor['dibuat']++;
             }
@@ -259,6 +267,25 @@ final class HrisImporKaryawanService
         foreach ($rows as $r) {
             $d = json_decode((string) $r->data);
             $out[(string) $r->id] = is_object($d) ? $d : (object) [];
+        }
+
+        return $out;
+    }
+
+    /** @return array<string,string> userId => default shift code (Jadwal `shiftKru`); [] when unreadable */
+    private function shiftKru(): array
+    {
+        try {
+            $kru = JsonDoc::toArray($this->jadwal->setting())['shiftKru'] ?? [];
+        } catch (\Throwable) {
+            return [];
+        }
+        $out = [];
+        foreach (is_array($kru) ? $kru : [] as $uid => $kode) {
+            $kode = mb_substr(self::s($kode), 0, 16);
+            if ($kode !== '') {
+                $out[(string) $uid] = $kode;
+            }
         }
 
         return $out;

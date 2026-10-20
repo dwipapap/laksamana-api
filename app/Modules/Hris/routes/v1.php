@@ -16,6 +16,7 @@ use App\Modules\Hris\Http\V1\HrisPelamarController as A;
 use App\Modules\Hris\Http\V1\HrisPermintaanController as N;
 use App\Modules\Hris\Http\V1\HrisQueueController as Q;
 use App\Modules\Hris\Http\V1\HrisRequestController as R;
+use App\Modules\Hris\Http\V1\HrisRosterController as Y;
 use App\Modules\Hris\Http\V1\HrisScoreController as S;
 use Illuminate\Support\Facades\Route;
 
@@ -157,4 +158,18 @@ Route::middleware(['auth:sanctum', 'module:hris'])->prefix('hris')->group(functi
     Route::post('kelola/jabatan-level', [W::class, 'levelStore']);
     Route::patch('kelola/jabatan-level/{id}', [W::class, 'levelUpdate'])->where('id', $ulid);
     Route::delete('kelola/jabatan-level/{id}', [W::class, 'levelDestroy'])->where('id', $ulid);
+
+    // Master shift (J1–J4), stored in the Jadwal setting.
+    Route::get('kelola/shift', [W::class, 'shiftIndex']);
+    Route::post('kelola/shift', [W::class, 'shiftStore']);
+    Route::patch('kelola/shift/{kode}', [W::class, 'shiftUpdate'])->where('kode', '[A-Za-z0-9_-]+');
+    Route::delete('kelola/shift/{kode}', [W::class, 'shiftDestroy'])->where('kode', '[A-Za-z0-9_-]+');
+
+    // Roster (J6–J7): planned in HRIS, stored by Jadwal.
+    Route::get('roster', [Y::class, 'index']);
+    Route::put('roster', [Y::class, 'simpan']);
+    Route::get('roster/rekap', [Y::class, 'rekap']);
+    Route::get('roster/aturan', [Y::class, 'aturan']);
+    Route::put('roster/aturan', [Y::class, 'simpanAturan']);
+    Route::get('me/jadwal', [Y::class, 'saya']);
 });

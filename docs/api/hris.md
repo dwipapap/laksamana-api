@@ -486,6 +486,48 @@ Who may call:
 - A write mirrors Jabatan, status kerja (Talenta words), join date and the Divisi name into the Office User's HR columns.
 - The env switch `HRIS_HANYA_KARYAWAN` (default `false`) limits HRIS Akses Bawaan to Users with a record (E10).
 
+## J — master shift and block shifts (ADR-0012)
+
+The shift definitions stay in the Jadwal setting (`shifts`), so the old panels keep working. HRIS adds three keys to a definition, and the old screens ignore them:
+
+- `blok` `[{m,s},…]`: two or more blocks. `m`/`s` then span from the first start to the last end.
+- `divisi` `[kode]`: shift Divisi only. When absent, the shift is for every Divisi.
+- `aktif` `0`: hides the shift from new roster cells.
+
+| Method | Path | Body | Notes |
+|---|---|---|---|
+| GET | `/hris/kelola/shift` | — | Any HRIS user. Item: `kode, nama, warna, mulai, selesai, blok[{mulai,selesai}], libur, divisi[], aktif, urutan, terkunci` |
+| POST | `/hris/kelola/shift` | `nama`, `warna` (#RRGGBB), `blok[{mulai,selesai}]` (1–3, in order, only the last may pass midnight), `divisi[]?`, `libur?` | HR. `kode` = the name in upper case without spaces (`Split Malam` → `SPLITMALAM`), suffixed on a clash |
+| PATCH | `/hris/kelola/shift/{kode}` | same keys, plus `urutan?` and `aktif?` | HR. OFF/IZIN/CUTI/LAIN: only name, colour and order (`409 shift_terkunci`) |
+| DELETE | `/hris/kelola/shift/{kode}` | — | HR. Refused for locked shifts and for any code a roster cell ever used (`409 shift_dipakai`: deactivate it instead) |
+
+**Block punches (J4):**
+- Every punch carries `blok` (1-based).
+- A MASUK belongs to the block its time falls in; the boundary is the middle of the gap.
+- A PULANG belongs to the block of the open MASUK it closes. Once a block is closed, a PULANG in a later block is `TANPA_MASUK` for that block instead of overwriting.
+- Each block snapshots its own hours (`shift_mulai`/`shift_selesai`), so lateness and the target are per block. The target is the block's own duration, never a per-person override.
+- A MASUK of block *n* while block *n−1* has no PULANG sets `info.pulang_terlewat` on the MASUK of *n−1*.
+- The meal allowance still counts the day once.
+- A block shift ignores a per-cell time override.
+
+**`GET /hris/me/today`** adds:
+- `blokAktif`: the open block if one exists, else the block the clock is in.
+- `ketukanHariIni[]`: every punch of the day.
+
+`masuk`, `pulang`, `targetMenit` and `bolehPulang` now describe `blokAktif`. `shift.blok` lists the blocks, and is `[]` for a plain shift.
+
+### Roster (J6–J8)
+
+| Method | Path | Body / query | Notes |
+|---|---|---|---|
+| GET | `/hris/roster` | `bulan=YYYY-MM`, `divisi` (shift kode) | HR: any Divisi. Kepala Divisi: their own. Returns `{bulan, divisi, hari[], kru[{user_id,nama,jabatan}], sel[{u,d,t,m,s,n}], shift[], aturan, bolehDivisi}`. `shift` = active shifts for this Divisi plus any code already used in the month |
+| PUT | `/hris/roster` | `isi[{u,d,t,m?,s?,n?}]`, `hapus[{u,d}]` | Every row is checked: Divisi (`403`), shift known/active/for this Divisi (`422`); block shifts drop `m`/`s`. Answer `{isi, hapus, peringatan[]}`. Warnings never block |
+| GET | `/hris/roster/rekap` | `bulan`, `divisi` | Per crew member: `per_shift{kode:n}`, `hari_kerja`, `hari_libur`, `kosong` |
+| GET/PUT | `/hris/roster/aturan` | `maksBeruntun` (1–31), `jedaMin` (hours, 0–24) | PUT is HR only; stored in the Jadwal setting |
+| GET | `/hris/me/jadwal` | `dari`, `sampai` (≤ 62 days) | Own cells `{tanggal, kode, nama, warna, mulai, selesai, blok[], libur}` |
+
+**Default shift (J8):** `hris_karyawan.shift_bawaan` (set through `PATCH /hris/kelola/karyawan/{userId}`; it must be an active working shift). Attendance reads it before the old `shiftKru` map. `hris:impor-karyawan` fills empty values from `shiftKru`.
+
 ## For laksamana-hris
 
 `packages/api` generates types from `openapi.json` (tag `hris`). Web PWA:

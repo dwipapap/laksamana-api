@@ -165,6 +165,48 @@ final class PunchRules
      * stays VALID (see telatMenit); earlier than the window or after
      * `selesai` is LUAR_SHIFT.
      */
+    /**
+     * Blocks of a shift definition (J4, ADR-0012): `blok` [{m, s}, …] with
+     * at least two valid entries, else [] (a plain one-block shift).
+     *
+     * @return array<int,array{mulai:string,selesai:string}>
+     */
+    public static function blokDari(mixed $def): array
+    {
+        $raw = is_array($def) && is_array($def['blok'] ?? null) ? $def['blok'] : [];
+        $out = [];
+        foreach ($raw as $b) {
+            $b = is_array($b) ? $b : [];
+            $m = self::s($b['m'] ?? '');
+            $sl = self::s($b['s'] ?? '');
+            if (self::jamKeMenit($m) < 0 || self::jamKeMenit($sl) < 0) {
+                return [];
+            }
+            $out[] = ['mulai' => $m, 'selesai' => $sl];
+        }
+
+        return count($out) >= 2 ? $out : [];
+    }
+
+    /**
+     * Which block a MASUK at $menit belongs to: the boundary between two
+     * blocks is the middle of the gap between them. 1-based; 1 without blocks.
+     *
+     * @param  array<int,array{mulai:string,selesai:string}>  $blok
+     */
+    public static function blokUntuk(array $blok, int $menit): int
+    {
+        for ($i = 0; $i < count($blok) - 1; $i++) {
+            $akhir = self::jamKeMenit($blok[$i]['selesai']);
+            $mulaiBerikut = self::jamKeMenit($blok[$i + 1]['mulai']);
+            if ($menit < intdiv($akhir + $mulaiBerikut, 2)) {
+                return $i + 1;
+            }
+        }
+
+        return max(1, count($blok));
+    }
+
     public static function masukDalamJendela(int $menitDatang, mixed $mulai, mixed $selesai, int $awalMenit): bool
     {
         $m = self::jamKeMenit($mulai);

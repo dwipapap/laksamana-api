@@ -10,17 +10,19 @@ use App\Modules\Hris\Services\HrisError;
 use App\Modules\Hris\Services\HrisJabatanService;
 use App\Modules\Hris\Services\HrisKaryawanService;
 use App\Modules\Hris\Services\HrisLingkup;
+use App\Modules\Hris\Services\HrisShiftService;
 use App\Modules\Hris\Services\PunchRules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * /api/v1/hris/kelola — Karyawan, org chart, Divisi and Jabatan (E1–E9,
- * ADR-0012).
+ * /api/v1/hris/kelola — Karyawan, org chart, Divisi, Jabatan (E1–E9) and
+ * master shift (J1–J4), ADR-0012.
  *
  *   Pengelola  HR (HRIS admins + `hr` list) and Pengelola Roster (admins of
  *              jadwal, Tim HRD): read everything, add and change Karyawan.
- *   HR         Divisi and Jabatan master data.
+ *   HR         Divisi, Jabatan and shift master data (shifts are readable
+ *              by every HRIS user: they carry no personal data).
  *   Kepala     a Kepala Divisi: their Divisi's Karyawan and their own org
  *              subtree, without personal data; no writes.
  *   Crew       nothing here (Q26).
@@ -33,6 +35,7 @@ final class HrisKelolaController extends HrisBaseController
         private readonly HrisKaryawanService $karyawan,
         private readonly HrisDivisiService $divisi,
         private readonly HrisJabatanService $jabatan,
+        private readonly HrisShiftService $shift,
     ) {
         parent::__construct($access);
     }
@@ -201,6 +204,7 @@ final class HrisKelolaController extends HrisBaseController
             'divisi_id' => ['nullable', 'string', 'max:26'],
             'jabatan_id' => ['nullable', 'string', 'max:26'],
             'atasan_user_id' => ['nullable', 'string', 'max:64'],
+            'shift_bawaan' => ['nullable', 'string', 'max:16'],
             'status_kerja' => ['nullable', 'string', 'max:12'],
             'nik' => ['nullable', 'string', 'max:24'],
             'jenis_kelamin' => ['nullable', 'string', 'max:1'],
@@ -381,5 +385,63 @@ final class HrisKelolaController extends HrisBaseController
 
             return ['dihapus' => true];
         });
+    }
+
+    // ------------------------------------------------------------------- shift
+
+    public function shiftIndex(Request $r): JsonResponse
+    {
+        return $this->run(fn () => $this->shift->list());
+    }
+
+    public function shiftStore(Request $r): JsonResponse
+    {
+        $me = $this->me($r);
+        $d = $r->validate($this->aturanShift() + ['nama' => ['required', 'string', 'max:32']]);
+
+        return $this->run(function () use ($me, $d) {
+            $this->lingkup->assertHr($me, 'Membuat shift');
+
+            return $this->shift->create($d, self::by($me));
+        }, 201);
+    }
+
+    public function shiftUpdate(Request $r, string $kode): JsonResponse
+    {
+        $me = $this->me($r);
+        $d = $r->validate($this->aturanShift() + ['nama' => ['sometimes', 'string', 'max:32'],
+            'urutan' => ['sometimes', 'integer'], 'aktif' => ['sometimes', 'boolean']]);
+
+        return $this->run(function () use ($me, $kode, $d) {
+            $this->lingkup->assertHr($me, 'Mengubah shift');
+
+            return $this->shift->update($kode, $d, self::by($me));
+        });
+    }
+
+    public function shiftDestroy(Request $r, string $kode): JsonResponse
+    {
+        $me = $this->me($r);
+
+        return $this->run(function () use ($me, $kode) {
+            $this->lingkup->assertHr($me, 'Menghapus shift');
+            $this->shift->delete($kode, self::by($me));
+
+            return ['dihapus' => true];
+        });
+    }
+
+    /** @return array<string,array<int,string>> */
+    private function aturanShift(): array
+    {
+        return [
+            'warna' => ['sometimes', 'string', 'max:7'],
+            'libur' => ['sometimes', 'boolean'],
+            'blok' => ['sometimes', 'array', 'max:3'],
+            'blok.*.mulai' => ['required_with:blok', 'string', 'max:5'],
+            'blok.*.selesai' => ['required_with:blok', 'string', 'max:5'],
+            'divisi' => ['sometimes', 'array'],
+            'divisi.*' => ['string', 'max:32'],
+        ];
     }
 }

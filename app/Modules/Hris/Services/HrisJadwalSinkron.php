@@ -27,6 +27,12 @@ final class HrisJadwalSinkron
         return ['id' => '', 'name' => $by, 'adminModules' => ['jadwal']];
     }
 
+    /** The Jadwal setting blob (read-only use outside this class). */
+    public function setting(): mixed
+    {
+        return $this->jadwal->setting();
+    }
+
     /** @return array<string,mixed> */
     private function blob(): array
     {
