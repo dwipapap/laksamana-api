@@ -51,7 +51,7 @@ it('brankasSave keeps only the known keys and bayarSave replaces only bayar', fu
     bkPost('brankasSave', ['oleh' => 'CFO', 'data' => ['mutasi' => $before['mutasi'], 'rekening' => ['k' => ['id' => 'r1']], 'foo' => 1]])
         ->assertOk()->assertJsonPath('data.saved', true);
     $s = bkState();
-    expect(array_keys($s))->toBe(['rekening', 'piutang', 'bayar', 'investor', 'mutasi', 'setting'])
+    expect(array_keys($s))->toBe(['rekening', 'piutang', 'bayar', 'investor', 'mutasi', 'setting', '_ver'])
         ->and($s['rekening'])->toBe([['id' => 'r1']])
         ->and($s['mutasi'])->toBe($before['mutasi']);
 
@@ -64,9 +64,33 @@ it('brankasSave keeps only the known keys and bayarSave replaces only bayar', fu
     bkPost('bayarSave', [])->assertJsonPath('error', 'daftar pembayaran kosong');
 });
 
+it('a stale Brankas tab neither wipes Kas Kecil payment rows nor overwrites a newer save (ff6a774)', function () {
+    $get = $this->get('/finance-api-mysql/api.php?action=brankasGet')->assertOk();
+    $ver = $get->json('data.ver');
+    expect($get->json('data.data'))->not->toHaveKey('_ver');
+
+    // Kas Kecil adds a payment row after the Brankas tab was opened
+    $kas = bkPost('bayarSave', ['oleh' => 'Kasir', 'baseVer' => $ver['bayar'], 'bayar' => [['id' => 'b-kas', 'status' => 'plan']]])
+        ->assertOk()->assertJsonPath('data.saved', true);
+
+    // the Brankas tab still holds the morning copy of bayar: it is not written, and its own part was not stale
+    $res = bkPost('brankasSave', ['oleh' => 'CFO', 'baseVer' => $ver['lain'], 'data' => ['bayar' => [], 'investor' => [['id' => 'i-new']], 'setting' => []]])
+        ->assertOk()->assertJsonPath('data.saved', true);
+    $s = bkState();
+    expect($s['bayar'])->toBe([['id' => 'b-kas', 'status' => 'plan']])
+        ->and($s['investor'])->toBe([['id' => 'i-new']])
+        ->and($s['_ver'])->toBe(['lain' => $res->json('data.ver.lain'), 'bayar' => $kas->json('data.ver.bayar')])
+        ->and(json_decode(Modules::db('finance')->selectOne(finSql('SELECT data FROM bk_state WHERE id=1'))->data)->setting)->toBeObject();
+
+    // a second tab still holding the old version is rejected, not written
+    bkPost('brankasSave', ['oleh' => 'Tab lama', 'baseVer' => $ver['lain'], 'data' => ['investor' => []]])
+        ->assertOk()->assertExactJson(['ok' => false, 'error' => 'conflict', 'conflict' => true, 'oleh' => 'CFO', 'ver' => $s['_ver']]);
+    expect(bkState()['investor'])->toBe([['id' => 'i-new']]);
+});
+
 it('brankasGet returns the complete shape, access matrix and roles', function () {
     $this->get('/finance-api-mysql/api.php?action=brankasGet')->assertOk()
-        ->assertJsonStructure(['data' => ['data' => ['rekening', 'piutang', 'bayar', 'investor', 'mutasi', 'setting'], 'akses', 'peran', 'updated_at']]);
+        ->assertJsonStructure(['data' => ['data' => ['rekening', 'piutang', 'bayar', 'investor', 'mutasi', 'setting'], 'akses', 'peran', 'updated_at', 'ver' => ['lain', 'bayar']]]);
     bkPost('brankasAkses', ['peta' => ['cfo' => ['saldo' => 9]]])->assertExactJson(['ok' => true, 'data' => ['akses' => ['cfo' => ['saldo' => 2]]]]);
 });
 
@@ -106,14 +130,14 @@ it('lets finance users replace the Kas Kecil payment plan without touching the v
 });
 
 it('serves vault-side wallet balances to finance holders without the vault lists', function () {
+    app(Brankas::class)->saveBayar([
+        ['id' => 'b1', 'status' => 'paid', 'dari' => 'bri', 'amount' => 100000],
+        ['id' => 'b2', 'status' => 'scheduled', 'dari' => 'bri', 'amount' => 50000],
+        ['id' => 'b3', 'status' => 'paid', 'dari' => 'dompet-lain', 'amount' => 70000],
+    ], 'Kasir');
     app(Brankas::class)->save([
         'rekening' => [],
         'piutang' => [['id' => 'p1', 'nominal' => 999999]],
-        'bayar' => [
-            ['id' => 'b1', 'status' => 'paid', 'dari' => 'bri', 'amount' => 100000],
-            ['id' => 'b2', 'status' => 'scheduled', 'dari' => 'bri', 'amount' => 50000],
-            ['id' => 'b3', 'status' => 'paid', 'dari' => 'dompet-lain', 'amount' => 70000],
-        ],
         'investor' => [
             ['id' => 'i1', 'returns' => [['dari' => 'mandiri', 'amount' => 20000]], 'tambahan' => [['ke' => 'bca', 'amount' => 300000]]],
         ],
