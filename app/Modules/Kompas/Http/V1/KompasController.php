@@ -7,6 +7,7 @@ use App\Modules\Kompas\Services\KompasConflict;
 use App\Modules\Kompas\Services\KompasState;
 use App\Modules\Kompas\Services\LaporanOmset;
 use App\Support\Api\ApiResponse;
+use App\Support\JsonDoc;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -144,7 +145,9 @@ class KompasController
             return ApiResponse::error('validation_failed', "Send {\"$field\": …}.", 422);
         }
         try {
-            $out = $this->kompas->savePart($kind, $key, $body[$field], $base, $this->actor($r));
+            $raw = JsonDoc::decode($r->getContent());
+            $out = $this->kompas->savePart($kind, $key, $body[$field], $base, $this->actor($r),
+                $raw instanceof \stdClass && property_exists($raw, $field) ? $raw->$field : $body[$field]);
         } catch (KompasConflict $e) {
             return ApiResponse::error('version_conflict', 'This part was changed by someone else. Reload it and apply your change again.', 409,
                 ['current' => KompasState::part($this->kompas->assoc(), $kind, $key)]);

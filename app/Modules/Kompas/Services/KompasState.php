@@ -2,6 +2,7 @@
 
 namespace App\Modules\Kompas\Services;
 
+use App\Support\JsonDoc;
 use App\Support\Modules;
 use App\Support\NamedLock;
 use App\Support\RowSync;
@@ -173,6 +174,33 @@ class KompasState
         return is_array($s) ? $s : [];
     }
 
+    /**
+     * The blob for a narrow WRITE: objects stay stdClass (JsonDoc), so an empty
+     * map elsewhere in the blob ({} → []) is never rewritten as a list (#303).
+     * Narrow writers compute on assoc() and patch only their own sub-tree here.
+     */
+    private function doc(): stdClass
+    {
+        try {
+            $row = $this->db()->selectOne('SELECT `data` FROM `'.self::t('app_state').'` WHERE `'.self::idCol().'`=1');
+        } catch (Throwable) {
+            return new stdClass;
+        }
+        $d = JsonDoc::decode($row ? (string) $row->data : null);
+
+        return $d instanceof stdClass ? $d : new stdClass;
+    }
+
+    /** A map member of the doc as an object (a stored [] or a missing one becomes {}). */
+    private static function objectAt(stdClass $doc, string $key): stdClass
+    {
+        if (! isset($doc->$key) || ! ($doc->$key instanceof stdClass)) {
+            $doc->$key = is_array($doc->$key ?? null) && $doc->$key !== [] ? (object) $doc->$key : new stdClass;
+        }
+
+        return $doc->$key;
+    }
+
     /** state_ts — the stored version (updated_at). */
     public function ts(): int
     {
@@ -273,6 +301,7 @@ class KompasState
 
             $tg = isset($data['target']) && is_array($data['target']) ? $data['target'] : [];
             $ubah = 0;
+            $patch = [];
             foreach (['marketing', 'event', 'kasir'] as $divi) {
                 if (! isset($s['employees'][$divi]) || ! is_array($s['employees'][$divi])) {
                     continue;
@@ -291,12 +320,30 @@ class KompasState
                         $ubah++;
                     }
                     $s['employees'][$divi][$i]['target'] = $baru;
+                    $patch[$divi][$i] = $baru;
                     unset($tg[$id]);
                 }
             }
             $hilang = array_values(array_map('strval', array_keys($tg)));
 
-            $this->write($s, isset($data['by']) ? self::s($data['by']) : '', self::nowMs());
+            // write the stored doc with ONLY these values changed: {} elsewhere stays {}
+            $doc = $this->doc();
+            $set = self::objectAt($doc, 'settings');
+            foreach (['companyMonthlyTarget', 'useWorkingDays', 'workingDaysPerMonth'] as $k) {
+                if (array_key_exists($k, $s['settings'])) {
+                    $set->$k = $s['settings'][$k];
+                }
+            }
+            foreach ($patch as $divi => $byIndex) {
+                foreach ($byIndex as $i => $baru) {
+                    $list = $doc->employees->$divi ?? null;
+                    if (is_array($list) && isset($list[$i]) && $list[$i] instanceof stdClass) {
+                        $list[$i]->target = $baru;
+                    }
+                }
+            }
+
+            $this->write($doc, isset($data['by']) ? self::s($data['by']) : '', self::nowMs());
 
             return ['saved' => true, 'ubah' => $ubah, 'hilang' => $hilang, 'ts' => gmdate('c')];
         }, 10, self::BUSY);
@@ -332,9 +379,12 @@ class KompasState
      *
      * @return array{value:mixed, version:string, ts:int}
      */
-    public function savePart(string $kind, string $key, mixed $value, string $baseHash, string $by): array
+    public function savePart(string $kind, string $key, mixed $value, string $baseHash, string $by, mixed $valueDoc = null): array
     {
-        return NamedLock::run('kompas', 'kompas_save', function () use ($kind, $key, $value, $baseHash, $by) {
+        // $valueDoc: the same value decoded keeping {} as objects (JsonDoc); what is stored
+        $valueDoc ??= $value;
+
+        return NamedLock::run('kompas', 'kompas_save', function () use ($kind, $key, $value, $valueDoc, $baseHash, $by) {
             $s = $this->assoc();
             if (! $s) {
                 throw new RuntimeException('Data omset belum pernah tersimpan — buka panel Input Omset Harian lebih dulu');
@@ -342,30 +392,34 @@ class KompasState
             if (! hash_equals(self::partVersion(self::part($s, $kind, $key)), $baseHash)) {
                 throw new KompasConflict($this->ts());
             }
+            // patched on the stored doc, not on assoc(): {} elsewhere stays {} (#303)
+            $doc = $this->doc();
             if ($kind === 'section') {
-                if ($value === null) {
-                    unset($s[$key]);
+                if ($valueDoc === null) {
+                    unset($doc->$key);
                 } else {
-                    $s[$key] = $value;
+                    $doc->$key = $valueDoc;
                 }
             } elseif ($kind === 'report') {
-                if ($value === null) {
-                    unset($s['reports'][$key]);
+                $reports = self::objectAt($doc, 'reports');
+                if ($valueDoc === null) {
+                    unset($reports->$key);
                 } else {
-                    $s['reports'][$key] = $value;
+                    $reports->$key = $valueDoc;
                 }
             } else {
-                $rows = array_values(array_filter(is_array($s['daily'] ?? null) ? $s['daily'] : [], fn ($d) => ! (is_array($d) && ($d['date'] ?? null) === $key)));
-                foreach (is_array($value) ? $value : [] as $row) {
-                    if (is_array($row)) {
-                        $rows[] = ['date' => $key] + $row;
+                $rows = array_values(array_filter(is_array($doc->daily ?? null) ? $doc->daily : [],
+                    fn ($d) => ! ($d instanceof stdClass && ($d->date ?? null) === $key)));
+                foreach (is_array($valueDoc) ? $valueDoc : [] as $row) {
+                    if ($row instanceof stdClass || is_array($row)) {
+                        $rows[] = (object) (['date' => $key] + (array) $row);
                     }
                 }
-                $s['daily'] = $rows;
+                $doc->daily = $rows;
             }
             $ts = max(self::nowMs(), $this->ts() + 1);
-            $this->write($s, $by, $ts);
-            $now = self::part($s, $kind, $key);
+            $this->write($doc, $by, $ts);
+            $now = self::part(JsonDoc::toArray($doc), $kind, $key);
 
             return ['value' => $now, 'version' => self::partVersion($now), 'ts' => $ts];
         }, 10, self::BUSY);
