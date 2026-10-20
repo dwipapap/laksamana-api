@@ -29,7 +29,7 @@ use Illuminate\Support\Str;
 final class HrisImporKaryawanService
 {
     /** Legacy HR division id => shift Divisi kode (the rest become kantor Divisi). */
-    private const HR_DIVISI_SHIFT = ['d_bar' => 'bar', 'd_kitchen' => 'kitchen', 'd_store' => 'floor'];
+    public const HR_DIVISI_SHIFT = ['d_bar' => 'bar', 'd_kitchen' => 'kitchen', 'd_store' => 'floor'];
 
     /** Level by Jabatan words, checked in this order; no match = level 2 (Crew). */
     private const LEVEL_KATA = [
