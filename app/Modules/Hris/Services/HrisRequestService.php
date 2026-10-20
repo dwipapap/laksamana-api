@@ -245,7 +245,7 @@ final class HrisRequestService
         }
         if ($row->status === 'DISETUJUI') {
             $this->refund($row, $nama);
-            $this->writeCells($row, [], true);
+            $this->writeCells($row, [], true, (string) $row->hrd_oleh);
         }
         self::deleteLampiran($row->lampiran_path);
         $row->fill(['status' => 'DIBATALKAN', 'lampiran_path' => null,
@@ -342,7 +342,7 @@ final class HrisRequestService
             }
         }
         try {
-            $this->writeCells($row, $this->cellRows($row), false);
+            $this->writeCells($row, $this->cellRows($row), false, $hrdName);
         } catch (\Throwable $e) {
             if ($pakai !== []) {
                 $this->saldo->kembalikan('PENGAJUAN', $row->id, 'Gagal tulis Jadwal, dikembalikan');
@@ -392,19 +392,21 @@ final class HrisRequestService
     /**
      * Write (or delete) Jadwal cells with the approving head's authority —
      * the head approved the absence, so the roster consequence carries the
-     * same authority as the head writing it themselves.
+     * same authority as the head writing it themselves. The trail names the
+     * acting HRD official: `HRIS:<name>`.
      */
-    private function writeCells(HrisPengajuan $row, array $rows, bool $hapus): void
+    private function writeCells(HrisPengajuan $row, array $rows, bool $hapus, string $aktor): void
     {
         $u = ['id' => $row->head_oleh_id, 'name' => $row->head_oleh, 'adminModules' => []];
+        $jejak = 'HRIS:'.($aktor !== '' ? $aktor : '?');
         if ($hapus) {
             $hapusRows = [];
             foreach ($this->cellRows($row) as $c) {
                 $hapusRows[] = ['u' => $c['u'], 'd' => $c['d']];
             }
-            $this->jadwal->saveCells([], $hapusRows, 'HRIS:'.$row->hrd_oleh, $u);
+            $this->jadwal->saveCells([], $hapusRows, $jejak, $u);
         } else {
-            $this->jadwal->saveCells($rows, [], 'HRIS:'.$row->hrd_oleh ?: 'HRIS', $u);
+            $this->jadwal->saveCells($rows, [], $jejak, $u);
         }
     }
 
