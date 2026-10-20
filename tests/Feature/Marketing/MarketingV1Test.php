@@ -110,3 +110,25 @@ it('uploads and serves a file', function () {
     expect($key)->toStartWith('rc_')->toEndWith('.png');
     $this->withToken($token)->get('/api/v1/marketing/files/'.$key)->assertOk()->assertHeader('Content-Type', 'image/png');
 });
+
+it('pages SQL results identically to the whole list', function () {
+    $h = ['Authorization' => 'Bearer '.loginAs(officeUser('u-aurel'))];
+    $penuh = $this->getJson('/api/v1/marketing/events?perPage=1000', $h)->assertOk();
+    $total = $penuh->json('meta.total');
+    expect($total)->toBeGreaterThan(10);
+
+    $rakit = [];
+    $halaman = (int) ceil($total / 4);
+    foreach (range(1, $halaman) as $p) {
+        $r = $this->getJson("/api/v1/marketing/events?perPage=4&page=$p", $h)->assertOk()
+            ->assertJsonPath('meta.total', $total)
+            ->assertJsonPath('meta.page', $p);
+        array_push($rakit, ...$r->json('data'));
+    }
+    expect($rakit)->toBe($penuh->json('data'));
+
+    // A filtered page carries the same total as the filtered whole list.
+    $saring = $this->getJson('/api/v1/marketing/events?status=Deal&perPage=1000', $h)->assertOk();
+    $this->getJson('/api/v1/marketing/events?status=Deal&perPage=4&page=2', $h)->assertOk()
+        ->assertJsonPath('meta.total', $saring->json('meta.total'));
+});

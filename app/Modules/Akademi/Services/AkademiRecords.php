@@ -73,13 +73,40 @@ class AkademiRecords
     public function list(string $resource, array $f, int $page, int $perPage): array
     {
         $r = self::resource($resource);
-        $rows = array_values(array_filter($this->tableRows($r['def'], $f), fn ($x) => is_array($x) && $this->matches($r['key'], $x, $f)));
-        $total = count($rows);
+        if (! empty($f['q']) || $this->butuhPhp($r['key'], $f)) {
+            // Free-text search and the materials division[] membership live in
+            // data JSON only — they stay in PHP.
+            $rows = array_values(array_filter($this->tableRows($r['def'], $f), fn ($x) => is_array($x) && $this->matches($r['key'], $x, $f)));
+            $total = count($rows);
 
-        return ['rows' => array_slice($rows, ($page - 1) * $perPage, $perPage), 'total' => $total];
+            return ['rows' => array_slice($rows, ($page - 1) * $perPage, $perPage), 'total' => $total];
+        }
+        // Indexed filters: COUNT(*) + LIMIT/OFFSET in SQL, decode only the
+        // page. Same WHERE as tableRows(), same order, same matches() guard.
+        [$table, $where, $args, $order] = $this->tableWhere($r['def'], $f);
+        $from = $where ? " FROM `$table` WHERE $where" : " FROM `$table`";
+        $total = (int) ($this->db()->selectOne("SELECT COUNT(*) AS c$from", $args)?->c ?? 0);
+        $offset = ($page - 1) * $perPage;
+        $out = [];
+        foreach ($this->db()->select(
+            "SELECT data$from ORDER BY $order LIMIT $perPage OFFSET $offset", $args) as $row) {
+            $d = json_decode((string) $row->data, true);
+            if (is_array($d) && $this->matches($r['key'], $d, $f)) {
+                $out[] = $d;
+            }
+        }
+
+        return ['rows' => $out, 'total' => $total];
     }
 
-    private function tableRows(array $def, array $f): array
+    /** Filters matches() answers from data JSON, beyond what SQL expresses. */
+    private function butuhPhp(string $key, array $f): bool
+    {
+        return $key === 'materials' && ! empty($f['division']) && $f['division'] !== 'all';
+    }
+
+    /** @return array{0:string,1:string,2:list<mixed>,3:string} table, WHERE, args, ORDER BY */
+    private function tableWhere(array $def, array $f): array
     {
         $cols = $def['cols'];
         $where = [];
@@ -107,7 +134,14 @@ class AkademiRecords
             $args[] = (int) $f['updatedSince'];
         }
         $order = ! empty($def['created']) ? AkademiSchema::createdOrder() : AkademiSchema::idOrder();
-        $sql = "SELECT data FROM `{$def['table']}`".($where ? ' WHERE '.implode(' AND ', $where) : '')." ORDER BY $order";
+
+        return [$def['table'], implode(' AND ', $where), $args, $order];
+    }
+
+    private function tableRows(array $def, array $f): array
+    {
+        [$table, $where, $args, $order] = $this->tableWhere($def, $f);
+        $sql = "SELECT data FROM `$table`".($where ? ' WHERE '.$where : '')." ORDER BY $order";
         $out = [];
         foreach ($this->db()->select($sql, $args) as $row) {
             $d = json_decode((string) $row->data, true);
