@@ -64,7 +64,7 @@ Documents: `settings`, `baseline`, `rolePerms`, `roleNav`, `menuDb`, `katalog`, 
 
 | Method | Path | Returns |
 |---|---|---|
-| GET | `/state` | The full state in one call (same as the old `getAll`). `meta.version` = `_versi`. |
+| GET | `/state` | The full state in one call (same as the old `getAll`), **except design-request photos**: each `designreqs[].refs[]` with `t:"img"` comes as a stub `{t, n, dipangkas: true}` without `v` (#341 — three requests were 77% of the answer). Fetch the photos with `GET /design-requests/{id}`. `meta.version` = `_versi`. |
 | GET | `/events-on/{YYYY-MM-DD}` | Deal/Event Done events that day (multi-day events included, with `hari`/`totalHari`), plus Assisted VIP rows, plus `settings{serviceCharge, pb1}`. |
 | GET | `/dp?from=&to=` | Event payments and VIP DP proofs, **filtered by event date**, plus `vipTerkunci` and the `luar` (outside-range) summary. **Open to `marketing`, `reservasi`, `cashier` and `finance`** (G-15): it feeds the DP Event tab of the Dana Masuk page. It returns payments only — no CRM, pipeline or invoice — which is why it may be wider than the rest of this contract. |
 
@@ -92,3 +92,11 @@ actions, which had no module gate. These four routes are **open to `marketing|ko
 | GET | `/files/{key}` | Streams the file. |
 
 Store the returned `key` inside the record (e.g. `{key, name}` in `detail.attachFiles`). Files that no record references are moved to the trash after 7 days.
+
+## Design-request photos in writes (#341)
+
+`POST`/`PUT`/`PATCH /design-requests…` accept the stubs that `/state` sends. A stub
+(`dipangkas: true`, or an image ref without `v`) is replaced by the stored photo — matched
+by name, then by position among the photos — so saving a row taken from `/state` never
+wipes its photos. A stub with no stored photo to match is dropped, never stored empty.
+Leaving a photo out of `refs` still removes it. The legacy `getAll` is unchanged.

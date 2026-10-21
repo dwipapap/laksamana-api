@@ -229,6 +229,9 @@ class MarketingRecords
             if ($this->find($resource, $id)) {
                 throw new RecordConflict('exists', null);
             }
+            if ($resource === 'design-requests') {
+                $data = DesignRefs::restore($data, null);
+            }
             $now = self::nowMs();
             $data['id'] = $id;
             $data['createdAt'] = $data['createdAt'] ?? $now;
@@ -251,6 +254,12 @@ class MarketingRecords
                 throw new RuntimeException('not_found');
             }
             $next = $merge ? array_replace($cur, $data) : $data;
+            if ($resource === 'design-requests') {
+                // Before the conflict check: a row taken from /state carries photo
+                // stubs, and comparing them with the stored photos would call an
+                // unchanged save a conflict.
+                $next = DesignRefs::restore($next, $cur);
+            }
             $next['id'] = $id;
             if (! isset($next['createdAt']) && isset($cur['createdAt'])) {
                 $next['createdAt'] = $cur['createdAt'];
