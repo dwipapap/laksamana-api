@@ -30,6 +30,28 @@ it('lists content with paging meta and filters', function () {
     }
 });
 
+it('pages SQL results identically to the whole list', function () {
+    $h = ['Authorization' => 'Bearer '.loginAs(officeUser('u-andry'))];
+    $penuh = $this->getJson('/api/v1/konten/content?perPage=1000', $h)->assertOk();
+    $total = $penuh->json('meta.total');
+    expect($total)->toBeGreaterThan(10);
+
+    $rakit = [];
+    $halaman = (int) ceil($total / 4);
+    foreach (range(1, $halaman) as $p) {
+        $r = $this->getJson("/api/v1/konten/content?perPage=4&page=$p", $h)->assertOk()
+            ->assertJsonPath('meta.total', $total)
+            ->assertJsonPath('meta.page', $p);
+        array_push($rakit, ...$r->json('data'));
+    }
+    expect($rakit)->toBe($penuh->json('data'));
+
+    // A filtered page carries the same total as the filtered whole list.
+    $saring = $this->getJson('/api/v1/konten/content?status=Posted&perPage=1000', $h)->assertOk();
+    $this->getJson('/api/v1/konten/content?status=Posted&perPage=4&page=2', $h)->assertOk()
+        ->assertJsonPath('meta.total', $saring->json('meta.total'));
+});
+
 it('creates a record, stamps a version and logs the activity', function () {
     $res = $this->withToken(loginAs(officeUser('u-andry')))
         ->postJson('/api/v1/konten/brands', ['name' => 'Brand API'])
