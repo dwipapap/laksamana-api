@@ -11,6 +11,9 @@
 # its ~6,200 files by FTP took hours. Deliberately NOT built: config:cache /
 # view:cache (they would bake this runner's /home/runner/... paths into
 # bootstrap/cache and break the app on the server).
+# The server itself holds a config + route cache (api#312, built there over
+# SSH by tools/deploy-ssh.sh). FTP cannot run artisan, so this run deletes both
+# files before uploading: the app then runs uncached, never on stale routes.
 # `.env` is created once on the server by the owner and is never uploaded or
 # deleted (the FTP action only removes files it uploaded itself).
 #
@@ -105,6 +108,24 @@ jobs:
           HOST="${FTP_SERVER#ftp://}"; HOST="${HOST#ftps://}"; HOST="${HOST%/}"
           IP=$(getent ahostsv4 "$HOST" 2>/dev/null | awk '{print $1; exit}')
           echo "host=${IP:-$HOST}" >> "$GITHUB_OUTPUT"
+
+      # Without this, routes added by this commit stay invisible (404) and new
+      # config keys stay empty until someone rebuilds the cache on the server.
+      # `*` = ignore "no such file" (cache not built).
+      - name: Drop the server's config + route cache
+        if: steps.cfg.outputs.ready == 'true'
+        continue-on-error: true
+        env:
+          FTP_HOST: ${{ steps.ftpip.outputs.host }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_DIR: ${{ vars.FTP_DIR || './' }}
+        run: |
+          dir="${FTP_DIR%/}/bootstrap/cache"
+          curl -sS --max-time 60 --list-only -u "$FTP_USERNAME:$FTP_PASSWORD" \
+            -Q "*DELE $dir/config.php" -Q "*DELE $dir/routes-v7.php" \
+            "ftp://$FTP_HOST/" > /dev/null
+          echo 'Config + route cache dropped: the app runs uncached until `php artisan config:cache && php artisan route:cache` runs on the server (docs/deploy.md "Route and config cache").' | tee -a "$GITHUB_STEP_SUMMARY"
 
       # The same upload up to three times; each later attempt runs only if the
       # previous one failed, after a pause (a fresh connection often gets through).

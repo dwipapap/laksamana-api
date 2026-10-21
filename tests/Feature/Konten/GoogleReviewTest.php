@@ -12,10 +12,10 @@ require_once __DIR__.'/helpers.php';
 beforeEach(function () {
     config(['laksamana.modules.konten.data_dir' => storage_path('framework/testing/konten-db')]);
     app(CampaignAnalytics::class)->ensureTables();
-    putenv('GOOGLE_CLIENT_ID=');
-    putenv('GOOGLE_CLIENT_SECRET=');
-    putenv('GOOGLE_PLACES_KEY=');
-    putenv('META_MODEL_API_KEY=');
+    config(['laksamana.konten.secrets.GOOGLE_CLIENT_ID' => '']);
+    config(['laksamana.konten.secrets.GOOGLE_CLIENT_SECRET' => '']);
+    config(['laksamana.konten.secrets.GOOGLE_PLACES_KEY' => '']);
+    config(['laksamana.konten.secrets.META_MODEL_API_KEY' => '']);
     // Secrets are test-run pollution (no rollback past DDL): drop them so
     // every test starts keyless unless it sets its own.
     grDb()->delete("DELETE FROM cg_setting WHERE k IN ('google_client_id','google_client_secret','google_places_key')");
@@ -109,15 +109,15 @@ it('refuses google start without keys, exactly like legacy', function () {
 });
 
 it('starts google oauth with a 15-minute state', function () {
-    putenv('GOOGLE_CLIENT_ID=klien-uji');
-    putenv('GOOGLE_CLIENT_SECRET=rahasia-uji');
+    config(['laksamana.konten.secrets.GOOGLE_CLIENT_ID' => 'klien-uji']);
+    config(['laksamana.konten.secrets.GOOGLE_CLIENT_SECRET' => 'rahasia-uji']);
     $res = $this->withToken(loginAs(officeUser('u-andry')))->postJson('/api/v1/konten/analytics/google/start')->assertOk();
     expect($res->json('data.url'))->toContain('accounts.google.com')
         ->and($res->json('data.url'))->toContain('access_type=offline');
     $st = json_decode(grDb()->selectOne("SELECT v FROM cg_setting WHERE k = 'google_state'")->v ?? '', true);
     expect($st['exp'] ?? 0)->toBeGreaterThan(CampaignAnalytics::nowMs());
-    putenv('GOOGLE_CLIENT_ID=');
-    putenv('GOOGLE_CLIENT_SECRET=');
+    config(['laksamana.konten.secrets.GOOGLE_CLIENT_ID' => '']);
+    config(['laksamana.konten.secrets.GOOGLE_CLIENT_SECRET' => '']);
 });
 
 it('rejects unknown google oauth states on the public callback', function () {
@@ -126,9 +126,9 @@ it('rejects unknown google oauth states on the public callback', function () {
 });
 
 it('completes google oauth: token, locations, one sync, then redirects', function () {
-    putenv('GOOGLE_CLIENT_ID=klien-uji');
-    putenv('GOOGLE_CLIENT_SECRET=rahasia-uji');
-    putenv('GOOGLE_PLACES_KEY=kunci-uji');
+    config(['laksamana.konten.secrets.GOOGLE_CLIENT_ID' => 'klien-uji']);
+    config(['laksamana.konten.secrets.GOOGLE_CLIENT_SECRET' => 'rahasia-uji']);
+    config(['laksamana.konten.secrets.GOOGLE_PLACES_KEY' => 'kunci-uji']);
     grDb()->update("INSERT INTO cg_setting (k, v) VALUES ('google_state', ?)
         ON DUPLICATE KEY UPDATE v = VALUES(v)",
         [json_encode(['s' => 'uji-state', 'exp' => CampaignAnalytics::nowMs() + 600000, 'by' => 'tes'])]);
@@ -178,9 +178,9 @@ it('completes google oauth: token, locations, one sync, then redirects', functio
     // locations are pulled, but no full review sync runs inside the redirect (#304)
     expect(grDb()->selectOne("SELECT id FROM cg_gtempat WHERE id = 'accounts/ACCTEST/locations/LOCTEST'"))->not->toBeNull()
         ->and(grDb()->selectOne('SELECT id FROM cg_greview WHERE id = ?', [sha1('accounts/ACCTEST/locations/LOCTEST/reviews/REVCB1')]))->toBeNull();
-    putenv('GOOGLE_CLIENT_ID=');
-    putenv('GOOGLE_CLIENT_SECRET=');
-    putenv('GOOGLE_PLACES_KEY=');
+    config(['laksamana.konten.secrets.GOOGLE_CLIENT_ID' => '']);
+    config(['laksamana.konten.secrets.GOOGLE_CLIENT_SECRET' => '']);
+    config(['laksamana.konten.secrets.GOOGLE_PLACES_KEY' => '']);
 });
 
 it('continues a long review history from a cursor instead of re-pulling the newest 2,000 (#304)', function () {
@@ -223,7 +223,7 @@ it('syncs google reviews: dedup place, skips duplicates, keeps pertama_at', func
     grSeedAkun(9999999999999, 9999999999999);
     grDb()->update("INSERT INTO cg_setting (k, v) VALUES ('google_places', 'ChIJplacesTEST001')
         ON DUPLICATE KEY UPDATE v = VALUES(v)");
-    putenv('GOOGLE_PLACES_KEY=kunci-uji');
+    config(['laksamana.konten.secrets.GOOGLE_PLACES_KEY' => 'kunci-uji']);
     grFakeSync();
     $t = loginAs(officeUser('u-andry'));
 
@@ -255,7 +255,7 @@ it('syncs google reviews: dedup place, skips duplicates, keeps pertama_at', func
     $rplace = grDb()->selectOne('SELECT penulis FROM cg_greview WHERE id = ?',
         [sha1('places/ChIJplacesTEST001/reviews/REVPLACE1')]);
     expect($rplace->penulis)->toBe('Tamu Places');
-    putenv('GOOGLE_PLACES_KEY=');
+    config(['laksamana.konten.secrets.GOOGLE_PLACES_KEY' => '']);
 });
 
 it('posts a reply to google and records the writer', function () {
@@ -314,7 +314,7 @@ it('flags a review ditangani with a note, and unflags it clean', function () {
 });
 
 it('analyses reviews with AI, drops invented ids, and stores the result', function () {
-    putenv('META_MODEL_API_KEY=kunci-palsu');
+    config(['laksamana.konten.secrets.META_MODEL_API_KEY' => 'kunci-palsu']);
     grSeedReview('grai1', 'gbp', 'accounts/ACCTEST/locations/LOCAI/reviews/REVA1', 'accounts/ACCTEST/locations/LOCAI');
     Http::fake(['api.meta.ai/*' => Http::response(['content' => [['type' => 'text', 'text' => '{"ringkasan":"R","sentimen":{"positif":0,"netral":0,"negatif":1},'
         .'"kekuatan":[],"perbaikan":[{"masalah":"Kotor","area":"Kebersihan","jumlah":1,"prioritas":"tinggi","saran":"Bersihkan","bukti":["r1","rX"]}],'
@@ -327,18 +327,18 @@ it('analyses reviews with AI, drops invented ids, and stores the result', functi
         ->and($res->json('data.tangani.0.id'))->toBe('grai1');
     $tersimpan = json_decode(grDb()->selectOne("SELECT v FROM cg_setting WHERE k = 'gr_ai'")->v ?? '', true);
     expect($tersimpan['ringkasan'] ?? null)->toBe('R');
-    putenv('META_MODEL_API_KEY=');
+    config(['laksamana.konten.secrets.META_MODEL_API_KEY' => '']);
 });
 
 it('drafts a single reply with AI without storing anything', function () {
-    putenv('META_MODEL_API_KEY=kunci-palsu');
+    config(['laksamana.konten.secrets.META_MODEL_API_KEY' => 'kunci-palsu']);
     grSeedReview('grdraf1', 'gbp', 'accounts/ACCTEST/locations/LOCTEST/reviews/REVD1', 'accounts/ACCTEST/locations/LOCTEST');
     Http::fake(['api.meta.ai/*' => Http::response(['content' => [['type' => 'text', 'text' => '{"balasan":"Terima kasih Kak"}']],
         'model' => CampaignAnalytics::AI_MODELS[0]])]);
     $res = $this->withToken(loginAs(officeUser('u-andry')))->postJson('/api/v1/konten/analytics/google/draft',
         ['id' => 'grdraf1'])->assertOk();
     expect($res->json('data.balasan'))->toBe('Terima kasih Kak');
-    putenv('META_MODEL_API_KEY=');
+    config(['laksamana.konten.secrets.META_MODEL_API_KEY' => '']);
 });
 
 it('refuses google AI without a key, exactly like legacy', function () {
@@ -363,14 +363,14 @@ it('refuses place search without a places key, exactly like legacy', function ()
 
 it('searches places and disconnects without deleting reviews', function () {
     $admin = loginAs(anyActiveUser(true));
-    putenv('GOOGLE_PLACES_KEY=kunci-uji');
+    config(['laksamana.konten.secrets.GOOGLE_PLACES_KEY' => 'kunci-uji']);
     Http::fake(['places.googleapis.com/*' => Http::response(['places' => [[
         'id' => 'ChIJbaru000001', 'displayName' => ['text' => 'Laksamana Baru'],
         'formattedAddress' => 'Jl X', 'rating' => 4.8, 'userRatingCount' => 20,
     ]]])]);
     $res = $this->withToken($admin)->postJson('/api/v1/konten/analytics/google/search', ['q' => 'Laksamana'])->assertOk();
     expect($res->json('data.hasil.0.id'))->toBe('ChIJbaru000001');
-    putenv('GOOGLE_PLACES_KEY=');
+    config(['laksamana.konten.secrets.GOOGLE_PLACES_KEY' => '']);
 
     grSeedAkun(9999999999999, 9999999999999);
     grSeedReview('grputus1', 'gbp', 'accounts/ACCTEST/locations/LOCTEST/reviews/REVPUTUS1', 'accounts/ACCTEST/locations/LOCTEST');

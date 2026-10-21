@@ -256,7 +256,7 @@ class CampaignAnalytics
 
     private function secret(string $env, string $key): string
     {
-        $v = trim((string) env($env, ''));
+        $v = trim((string) config('laksamana.konten.secrets.'.$env));
         if ($v !== '') {
             return $v;
         }
@@ -266,7 +266,7 @@ class CampaignAnalytics
 
     public function secretFromConfig(string $env): bool
     {
-        return trim((string) env($env, '')) !== '';
+        return trim((string) config('laksamana.konten.secrets.'.$env)) !== '';
     }
 
     public function aiKey(): string
@@ -1257,7 +1257,7 @@ class CampaignAnalytics
 
     private function tiktokRedirectUri(): string
     {
-        $base = rtrim((string) env('API_PUBLIC_URL', ''), '/');
+        $base = rtrim((string) config('laksamana.konten.api_public_url'), '/');
         if ($base === '') {
             $base = 'https://'.((string) ($_SERVER['SERVER_NAME'] ?? 'api.laksamanamuda.id'));
         }
@@ -1267,7 +1267,7 @@ class CampaignAnalytics
 
     private function igRedirectUri(): string
     {
-        $base = rtrim((string) env('API_PUBLIC_URL', ''), '/');
+        $base = rtrim((string) config('laksamana.konten.api_public_url'), '/');
         if ($base === '') {
             $base = 'https://'.((string) ($_SERVER['SERVER_NAME'] ?? 'api.laksamanamuda.id'));
         }
@@ -1914,7 +1914,7 @@ class CampaignAnalytics
 
     public function googleRedirectUri(): string
     {
-        $base = rtrim((string) env('API_PUBLIC_URL', ''), '/');
+        $base = rtrim((string) config('laksamana.konten.api_public_url'), '/');
         if ($base === '') {
             $base = 'https://'.((string) ($_SERVER['SERVER_NAME'] ?? 'api.laksamanamuda.id'));
         }

@@ -36,9 +36,9 @@ class ReservasiRecap
     /** True when the prod-pin env is fully set (then ?source=prod is allowed). */
     public static function prodPinned(): bool
     {
-        return (string) env('RESERVASI_RECAP_PROD_HOST', '') !== ''
-            && (string) env('RESERVASI_RECAP_PROD_DATABASE', '') !== ''
-            && (string) env('RESERVASI_RECAP_PROD_USERNAME', '') !== '';
+        $p = (array) config('laksamana.prod_pins.reservasi_recap');
+
+        return ($p['host'] ?? '') !== '' && ($p['database'] ?? '') !== '' && ($p['username'] ?? '') !== '';
     }
 
     /**
@@ -174,14 +174,15 @@ class ReservasiRecap
         if (! self::prodPinned()) {
             throw new InvalidArgumentException('Prod source is not configured (RESERVASI_RECAP_PROD_*).');
         }
+        $p = (array) config('laksamana.prod_pins.reservasi_recap');
         $capsule = new Manager;
         $capsule->addConnection([
             'driver' => 'mysql',
-            'host' => (string) env('RESERVASI_RECAP_PROD_HOST'),
-            'port' => (int) env('RESERVASI_RECAP_PROD_PORT', 3306),
-            'database' => (string) env('RESERVASI_RECAP_PROD_DATABASE'),
-            'username' => (string) env('RESERVASI_RECAP_PROD_USERNAME'),
-            'password' => (string) env('RESERVASI_RECAP_PROD_PASSWORD', ''),
+            'host' => (string) $p['host'],
+            'port' => (int) $p['port'],
+            'database' => (string) $p['database'],
+            'username' => (string) $p['username'],
+            'password' => (string) $p['password'],
             'charset' => 'utf8mb4',
             'collation' => 'utf8mb4_unicode_ci',
             'prefix' => '',

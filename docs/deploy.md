@@ -15,7 +15,7 @@ Claude and the agents never deploy or touch a server (CLAUDE.md §0): GitHub Act
 2. Uploads the app folder by FTP (three attempts). `tests/`, `tools/`, `docs/`, `.github/`, `.env*` and logs are never uploaded. Only files that changed since the last deploy are sent; files created on the server (`.env`, logs, compiled views) are never deleted.
 3. Verifies: `https://<host>/up` answers 200 and `https://<host>/build.txt` shows the deployed commit. A half-finished upload fails this step.
 
-Deliberately **not** done: `config:cache`, `route:cache`, `view:cache` (built in CI they would contain the runner's paths), and no `php artisan` on the server (there may be no shell).
+Deliberately **not** done by the workflow: `config:cache`, `route:cache`, `view:cache` (built in CI they would contain the runner's paths), and no `php artisan` on the server. The config and route caches are built **on the server** instead ("Route and config cache" below).
 
 ## One-time setup per environment (owner) — see #172
 
@@ -90,6 +90,8 @@ If the run summary says **composer.lock changed**, run in cPanel Terminal for th
 2. Try it on dev.
 3. Actions → **deploy** → Run workflow → target `production` (no approval needed).
 
+4. Rebuild the caches on that server ("Route and config cache" below): `cd ~/<app folder> && php artisan config:cache && php artisan route:cache`. `tools/deploy-ssh.sh` does this itself.
+
 **Rollback:** run the workflow on the previous good commit (Run workflow → "Use workflow from" a branch or tag at that commit). Nothing in the database changes on deploy, so code rollback is enough.
 
 ## Deploying over SSH (fallback)
@@ -100,7 +102,22 @@ When Rumahweb's firewall keeps dropping the GitHub runners (Troubleshooting belo
 tools/deploy-ssh.sh production            # or: dev; optional ref (default origin/main); -y skips the prompt
 ```
 
-It does what the workflow does: uploads the commit without `tests/`, `tools/`, `docs/`, never touches `.env`, `vendor/`, logs or cPanel's ini files, removes files the commit deleted since the deployed one, runs Composer only when `composer.lock` changed, writes `build.txt` last and verifies `/up` + `build.txt`. It never runs `migrate`; new core migrations are listed for a deliberate apply (next section).
+It does what the workflow does: uploads the commit without `tests/`, `tools/`, `docs/`, never touches `.env`, `vendor/`, logs or cPanel's ini files, removes files the commit deleted since the deployed one, runs Composer only when `composer.lock` changed, clears the config + route cache before the upload and rebuilds both after Composer (a failed cache is cleared and stops the run before `build.txt`), writes `build.txt` last and verifies `/up` + `build.txt`. It never runs `migrate`; new core migrations are listed for a deliberate apply (next section).
+
+## Route and config cache (api#312)
+
+Since 2026-10-21 both servers run with `php artisan config:cache` and `php artisan route:cache` (`bootstrap/cache/config.php`, `routes-v7.php`): before that, every request rebuilt the ~650 routes and the whole config. The caches hold absolute paths, the route table of the commit they were built from, and the `.env` values at build time. So **after every deploy, and after every `.env` change**:
+
+```bash
+cd ~/<app folder> && php artisan config:cache && php artisan route:cache   # every deploy; the caches hold absolute paths
+```
+
+- `tools/deploy-ssh.sh` does this itself.
+- The FTP workflow cannot run artisan, so it deletes both cache files over FTP before uploading. The app then runs **uncached** (correct, just slower) until someone runs the line above. Dev deploys by FTP automatically after `ci`, so dev is often uncached; that is expected.
+- If a cache command fails, run `php artisan config:clear && php artisan route:clear` (the app works uncached) and report the error.
+- **Under a cached config, `env()` returns null everywhere except `config/*.php`.** App code reads settings with `config('…')` only; the `env()` call lives in `config/` (Konten secrets and URLs, the Reservasi/InfoPagi prod pins: `config/laksamana.php`). `tests/Unit/NoEnvOutsideConfigTest.php` fails CI on any new `env()` outside `config/`. (A first `config:cache` on 2026-10-21 hit exactly this and was rolled back until the reads were moved.)
+
+Measured on 2026-10-21 (`GET /api/v1/menu`, curl run on the server itself, so there is no network in the time): production 0.07 s and 0.05 s, dev 0.21 s and 0.18 s once warm, with the route cache on. From outside, ~0.5 s of the 0.6–0.9 s total is the TLS handshake to Rumahweb.
 
 ## New core migrations
 

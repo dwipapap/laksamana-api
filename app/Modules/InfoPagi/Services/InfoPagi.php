@@ -38,12 +38,14 @@ class InfoPagi
     /** True when BOTH prod pins are fully set (then ?source=prod is allowed). */
     public static function prodPinned(): bool
     {
-        return (string) env('EVENT_INFO_PROD_HOST', '') !== ''
-            && (string) env('EVENT_INFO_PROD_DATABASE', '') !== ''
-            && (string) env('EVENT_INFO_PROD_USERNAME', '') !== ''
-            && (string) env('MARKETING_INFO_PROD_HOST', '') !== ''
-            && (string) env('MARKETING_INFO_PROD_DATABASE', '') !== ''
-            && (string) env('MARKETING_INFO_PROD_USERNAME', '') !== '';
+        foreach (['event_info', 'marketing_info'] as $pin) {
+            $p = (array) config('laksamana.prod_pins.'.$pin);
+            if (($p['host'] ?? '') === '' || ($p['database'] ?? '') === '' || ($p['username'] ?? '') === '') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /** Today in Asia/Jakarta. */
@@ -241,15 +243,15 @@ class InfoPagi
         if (! self::prodPinned()) {
             throw new InvalidArgumentException('Prod source is not configured (EVENT_INFO_PROD_* / MARKETING_INFO_PROD_*).');
         }
-        $prefix = $module === 'event' ? 'EVENT_INFO_PROD_' : 'MARKETING_INFO_PROD_';
+        $p = (array) config('laksamana.prod_pins.'.($module === 'event' ? 'event_info' : 'marketing_info'));
         $capsule = new Manager;
         $capsule->addConnection([
             'driver' => 'mysql',
-            'host' => (string) env($prefix.'HOST'),
-            'port' => (int) env($prefix.'PORT', 3306),
-            'database' => (string) env($prefix.'DATABASE'),
-            'username' => (string) env($prefix.'USERNAME'),
-            'password' => (string) env($prefix.'PASSWORD', ''),
+            'host' => (string) $p['host'],
+            'port' => (int) $p['port'],
+            'database' => (string) $p['database'],
+            'username' => (string) $p['username'],
+            'password' => (string) $p['password'],
             'charset' => 'utf8mb4',
             'collation' => 'utf8mb4_unicode_ci',
             'prefix' => '',
