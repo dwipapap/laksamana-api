@@ -127,7 +127,7 @@ success. Validation messages are the legacy Indonesian strings verbatim.
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/analytics/state` | Full read: insight (≤1000), jadwal (≤1500), riset (30, decoded), bank (≤1000), postInfo, akun (no tokens), setting summary, `boleh.admin`. |
+| GET | `/analytics/state` | Full read: insight (≤1000), jadwal (≤1500), riset (30, decoded), bank (≤1000), postInfo, akun (no tokens), setting summary, `boleh.admin`. Optional `?insightLimit&jadwalLimit&bankLimit` (each ≤ its maximum) for a smaller head of a section; bare call answers like before. |
 | GET | `/analytics/top?platform&urut=views\|er&dari&sampai&hal&per` | One page of top posts (API pulls + Input Performa, deduped by url, WIB dates). `per` clamped 5–50. → `{baris, total, hal, per, halMaks}`. Each row: `rinci` (9 numbers, `v` + `s` = api/manual/''), `tercatat`, `er`. |
 | GET | `/analytics/accounts` | Connected accounts (no tokens), each with `terhubung`. |
 | GET | `/analytics/bank?status=IDE\|TERJADWAL\|ARSIP&platform` | Bank Konten ideas (≤1000). |

@@ -94,7 +94,13 @@ class CampaignController
 
     public function state(Request $r): JsonResponse
     {
-        return ApiResponse::ok($this->analytics->state($this->admin($r)));
+        $v = $r->validate([
+            'insightLimit' => 'nullable|integer|min:1|max:1000',
+            'jadwalLimit' => 'nullable|integer|min:1|max:1500',
+            'bankLimit' => 'nullable|integer|min:1|max:1000',
+        ]);
+
+        return ApiResponse::ok($this->analytics->state($this->admin($r), $v));
     }
 
     public function accounts(): JsonResponse
@@ -132,7 +138,7 @@ class CampaignController
 
     public function settings(): JsonResponse
     {
-        return ApiResponse::ok($this->analytics->state(false)['setting']);
+        return ApiResponse::ok($this->analytics->settingSummary());
     }
 
     private function requireVersion(Request $r, ?string $id, mixed $bodyId): ?JsonResponse
