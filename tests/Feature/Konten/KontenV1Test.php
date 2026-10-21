@@ -20,6 +20,31 @@ it('requires login', function () {
     $this->getJson('/api/v1/konten/content')->assertStatus(401);
 });
 
+it('updates date-driven ad statuses in one call and never touches paused', function () {
+    $h = ['Authorization' => 'Bearer '.loginAs(officeUser('u-andry'))];
+    $wib = time() + 7 * 3600;
+    $kemarin = gmdate('Y-m-d', $wib - 86400);
+    $besok = gmdate('Y-m-d', $wib + 86400);
+    $lewat = $this->postJson('/api/v1/konten/ads',
+        ['name' => 'Iklan lewat', 'status' => 'active', 'startDate' => $kemarin, 'endDate' => $kemarin], $h)
+        ->assertCreated()->json('data');
+    $belum = $this->postJson('/api/v1/konten/ads',
+        ['name' => 'Iklan belum', 'status' => 'active', 'startDate' => $besok], $h)
+        ->assertCreated()->json('data');
+    $jeda = $this->postJson('/api/v1/konten/ads',
+        ['name' => 'Iklan jeda', 'status' => 'paused', 'startDate' => $kemarin, 'endDate' => $kemarin], $h)
+        ->assertCreated()->json('data');
+
+    $this->postJson('/api/v1/konten/ads/auto-status', [], $h)->assertOk()->assertJsonPath('data.diubah', 2);
+
+    expect($this->getJson('/api/v1/konten/ads/'.$lewat['id'], $h)->assertOk()->json('data.status'))->toBe('ended');
+    expect($this->getJson('/api/v1/konten/ads/'.$belum['id'], $h)->assertOk()->json('data.status'))->toBe('draft');
+    expect($this->getJson('/api/v1/konten/ads/'.$jeda['id'], $h)->assertOk()->json('data.status'))->toBe('paused');
+
+    // A second run changes nothing: only changed rows are ever rewritten.
+    $this->postJson('/api/v1/konten/ads/auto-status', [], $h)->assertOk()->assertJsonPath('data.diubah', 0);
+});
+
 it('lists content with paging meta and filters', function () {
     $token = loginAs(officeUser('u-andry'));
     $this->withToken($token)->getJson('/api/v1/konten/content?perPage=5')
