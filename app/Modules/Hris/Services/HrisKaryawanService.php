@@ -95,6 +95,10 @@ final class HrisKaryawanService
     {
         $k = $this->find($userId);
         $out = $this->shape($k, $pii, $this->kepalaPerDivisi());
+        // Transition hint (P1-2): the legacy shiftKru value, if any, so HR
+        // can tell an inherited default from an explicit shift_bawaan.
+        // Read-only: attendance still falls back to it when shift_bawaan is empty.
+        $out['shift_lama'] = $this->shiftLama($k->user_id);
         $out['bawahan'] = HrisKaryawan::query()->where('atasan_user_id', $k->user_id)
             ->whereNull('tanggal_keluar')->pluck('user_id')->map(fn ($u) => ['user_id' => $u, 'nama' => $this->nama($u)])->all();
         $out['riwayat'] = HrisKaryawanRiwayat::query()->where('karyawan_id', $k->id)
@@ -106,6 +110,19 @@ final class HrisKaryawanService
             ])->all();
 
         return $out;
+    }
+
+    /** Legacy shiftKru default for the user, if any (transition read, P1-2). */
+    private function shiftLama(string $userId): ?string
+    {
+        try {
+            $kru = JsonDoc::toArray($this->jadwal->setting())['shiftKru'] ?? [];
+        } catch (\Throwable) {
+            return null;
+        }
+        $kode = is_array($kru) ? self::s($kru[$userId] ?? '') : '';
+
+        return $kode !== '' ? $kode : null;
     }
 
     public function find(string $userId): HrisKaryawan

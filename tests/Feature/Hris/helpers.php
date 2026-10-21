@@ -36,7 +36,7 @@ function hrisMakeHr(string $uid): void
 function hrisSettings(array $over = []): array
 {
     return app(HrisSettingsService::class)->save($over + [
-        'awalMenit' => 180, 'akhirMenit' => 180, 'toleransiTelat' => 5,
+        'awalMenit' => 180, 'toleransiTelat' => 5,
         'akurasiMaks' => 100, 'pulangLewatMenit' => 180,
         'durasiKerja' => ['default' => 540, 'orang' => []],
         'tanpaShiftBoleh' => false, 'hr' => [],

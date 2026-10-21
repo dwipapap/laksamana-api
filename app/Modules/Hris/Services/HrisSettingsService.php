@@ -17,7 +17,10 @@ final class HrisSettingsService
 {
     public const DEFAULTS = [
         'awalMenit' => 180,
-        'akhirMenit' => 180,
+        // akhirMenit was removed (P1-1): MASUK is [mulai - awalMenit,
+        // selesai] and PULANG uses pulangLewatMenit; the Absensi module keeps
+        // its own akhirMenit. PUT still accepts the key and ignores it,
+        // because the old PWA sends it — see save().
         'toleransiTelat' => 5,
         // GPS fix accuracy ceiling: dalam_area needs 1 <= akurasi <= akurasiMaks (A13).
         'akurasiMaks' => 100,
@@ -93,9 +96,11 @@ final class HrisSettingsService
     {
         $bersih = [];
         foreach ($input as $k => $v) {
-            if ($k === 'wajahWajib') {
-                // Removed setting (A18): the old PWA still sends it, so it
-                // is accepted and ignored instead of refused as unknown.
+            if ($k === 'wajahWajib' || $k === 'akhirMenit') {
+                // Removed settings: the old PWA still sends them, so they
+                // are accepted and ignored instead of refused as unknown.
+                // Stored akhirMenit rows are left untouched (never deleted)
+                // and no longer surface in reads (not in DEFAULTS).
                 continue;
             }
             if (! array_key_exists($k, self::DEFAULTS)) {
@@ -118,7 +123,6 @@ final class HrisSettingsService
 
         return match ($k) {
             'awalMenit' => $int($v, 0, 720, $k),
-            'akhirMenit' => $int($v, 0, 720, $k),
             'toleransiTelat' => $int($v, 0, 120, $k),
             'akurasiMaks' => $int($v, 10, 1000, $k),
             'pulangLewatMenit' => $int($v, 0, 720, $k),

@@ -231,7 +231,7 @@ Defaults (`PUT /hris/settings` takes a partial map; unknown keys are `422`):
 
 ```json
 {
-  "awalMenit": 180, "akhirMenit": 180, "toleransiTelat": 5,
+  "awalMenit": 180, "toleransiTelat": 5,
   "akurasiMaks": 100, "pulangLewatMenit": 180,
   "durasiKerja": {"default": 540, "orang": {"u-dwipa": 480}},
   "tanpaShiftBoleh": false,
@@ -243,8 +243,9 @@ Defaults (`PUT /hris/settings` takes a partial map; unknown keys are `422`):
 }
 ```
 
-- `awalMenit` (0–720): how early a MASUK is still VALID. `akhirMenit` stays
-  stored but no longer gates MASUK or PULANG.
+- `awalMenit` (0–720): how early a MASUK is still VALID. `akhirMenit` is
+  removed: PUT still accepts it and ignores it (old PWA sends it), and
+  stored rows stay in the DB but no longer surface in reads.
 - `akurasiMaks` (10–1000 m): GPS accuracy ceiling for `dalam_area`.
 - `pulangLewatMenit` (0–720): grace past the duration target before PULANG
   queues `LUAR_SHIFT`.
@@ -526,7 +527,7 @@ The shift definitions stay in the Jadwal setting (`shifts`), so the old panels k
 | GET/PUT | `/hris/roster/aturan` | `maksBeruntun` (1–31), `jedaMin` (hours, 0–24) | PUT is HR only; stored in the Jadwal setting |
 | GET | `/hris/me/jadwal` | `dari`, `sampai` (≤ 62 days) | Own cells `{tanggal, kode, nama, warna, mulai, selesai, blok[], libur}` |
 
-**Default shift (J8):** `hris_karyawan.shift_bawaan` (set through `PATCH /hris/kelola/karyawan/{userId}`; it must be an active working shift). Attendance reads it before the old `shiftKru` map. `hris:impor-karyawan` fills empty values from `shiftKru`.
+**Default shift (J8):** `hris_karyawan.shift_bawaan` (set through `PATCH /hris/kelola/karyawan/{userId}`; it must be an active working shift). Attendance reads it before the old `shiftKru` map. `hris:impor-karyawan` fills empty values from `shiftKru`. `GET /hris/kelola/karyawan/{userId}` also returns `shift_lama` (the legacy `shiftKru` value, if any) as a transition hint; it is read-only and never written by HRIS.
 
 ## For laksamana-hris
 

@@ -48,16 +48,18 @@ it('reads and saves settings as HR', function () {
     $h = ['Authorization' => 'Bearer '.$t];
 
     $r = test()->getJson('/api/v1/hris/settings', $h)->assertOk()->json('data');
-    expect($r)->toMatchArray(['awalMenit' => 180, 'akhirMenit' => 180, 'akurasiMaks' => 100,
+    expect($r)->toMatchArray(['awalMenit' => 180, 'akurasiMaks' => 100,
         'pulangLewatMenit' => 180, 'tanpaShiftBoleh' => false]);
     expect($r)->not->toHaveKey('wajahWajib');
+    expect($r)->not->toHaveKey('akhirMenit');
     expect($r['durasiKerja'])->toMatchArray(['default' => 540, 'orang' => []]);
 
-    // The old PWA still sends wajahWajib: accepted, then ignored (A18).
-    $r = test()->putJson('/api/v1/hris/settings', ['data' => ['awalMenit' => 90, 'wajahWajib' => true]], $h)
+    // The old PWA still sends wajahWajib and akhirMenit: accepted, then ignored.
+    $r = test()->putJson('/api/v1/hris/settings', ['data' => ['awalMenit' => 90, 'wajahWajib' => true, 'akhirMenit' => 180]], $h)
         ->assertOk()->json('data');
-    expect($r)->toMatchArray(['awalMenit' => 90, 'akhirMenit' => 180]);
+    expect($r)->toMatchArray(['awalMenit' => 90]);
     expect($r)->not->toHaveKey('wajahWajib');
+    expect($r)->not->toHaveKey('akhirMenit');
 
     // Unknown keys and out-of-range values are refused.
     test()->putJson('/api/v1/hris/settings', ['data' => ['bonus' => 1]], $h)->assertStatus(422);

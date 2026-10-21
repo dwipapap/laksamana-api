@@ -208,3 +208,22 @@ it('narrows HRIS Akses Bawaan to Karyawan once HRIS_HANYA_KARYAWAN is on', funct
         ->and(app(OfficeAccess::class)->builtinModules('u-admin'))->not->toContain('hris')
         ->and(app(OfficeAccess::class)->builtinModules('u-adit'))->toContain('hris');
 });
+
+it('exposes the legacy shiftKru as read-only shift_lama on karyawan detail', function () {
+    kelolaSiap();
+    hrisMakeHr('u-admin');
+    $h = ['Authorization' => 'Bearer '.hrisToken('u-admin')];
+
+    $jadwal = app(JadwalService::class);
+    $data = JsonDoc::toArray($jadwal->setting());
+    $shifts = is_array($data['shifts'] ?? null) ? $data['shifts'] : [];
+    $shifts['LEGACYX'] = ['m' => '08:00', 's' => '17:00'];
+    $data['shifts'] = $shifts;
+    $kru = is_array($data['shiftKru'] ?? null) ? $data['shiftKru'] : [];
+    $kru['u-adit'] = 'LEGACYX';
+    $data['shiftKru'] = $kru;
+    $jadwal->saveSetting($data, 'test');
+
+    $d = test()->getJson('/api/v1/hris/kelola/karyawan/u-adit', $h)->assertOk()->json('data');
+    expect($d['shift_lama'])->toBe('LEGACYX');
+});
