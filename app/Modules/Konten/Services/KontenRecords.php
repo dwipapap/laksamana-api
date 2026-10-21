@@ -76,6 +76,30 @@ class KontenRecords
     public function list(string $resource, array $f, int $page, int $perPage): array
     {
         $r = self::resource($resource);
+        if ($this->sqlPageable($f, $resource)) {
+            // Indexed filters: COUNT(*) + LIMIT/OFFSET in SQL, decode only the
+            // page. Same WHERE as tableRows(), same order, same matches() guard.
+            [$table, $where, $args, $order] = $this->tableWhere($r['def'], $f, $resource);
+            $from = $where ? " FROM `$table` WHERE $where" : " FROM `$table`";
+            $total = (int) ($this->db()->selectOne("SELECT COUNT(*) AS c$from", $args)?->c ?? 0);
+            $offset = ($page - 1) * $perPage;
+            $out = [];
+            foreach ($this->db()->select(
+                "SELECT data$from ORDER BY $order LIMIT $perPage OFFSET $offset", $args) as $row) {
+                $d = json_decode((string) $row->data, true);
+                if (is_array($d)) {
+                    $d = self::perfObjek($d);
+                    if ($this->matches($d, $f, $resource)) {
+                        $out[] = $d;
+                    }
+                }
+            }
+            if ($resource === 'content' && ! empty($f['ringkas'])) {
+                $out = array_map([self::class, 'projectContent'], $out);
+            }
+
+            return ['rows' => $out, 'total' => $total, 'facets' => null];
+        }
         $rows = array_values(array_filter($this->tableRows($r['def'], $f, $resource), fn ($x) => is_array($x) && $this->matches($x, $f, $resource)));
         $total = count($rows);
         $facets = null;
@@ -88,6 +112,25 @@ class KontenRecords
         }
 
         return ['rows' => $rows, 'total' => $total, 'facets' => $facets];
+    }
+
+    /**
+     * Totally expressible in SQL: no free text, no archive view, no
+     * multi-platform or empty-pic matching (their mirrors lie or need PHP),
+     * and no PIC-facet aggregation (it counts the whole filtered set).
+     * The PHP path below stays for those, with identical results.
+     */
+    private function sqlPageable(array $f, string $resource): bool
+    {
+        if (! empty($f['q']) || ! empty($f['facets'])) {
+            return false;
+        }
+        if ($resource === 'content' && (! empty($f['platform'])
+            || ($f['pic'] ?? '') === '__none__' || ! empty($f['arsip']))) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -182,7 +225,8 @@ class KontenRecords
         return implode("\n\n", $p);
     }
 
-    private function tableRows(array $def, array $f, string $resource = ''): array
+    /** @return array{0:string,1:string,2:list<mixed>,3:string} table, WHERE, args, ORDER BY */
+    private function tableWhere(array $def, array $f, string $resource = ''): array
     {
         $cols = $def['cols'];
         $where = [];
@@ -221,7 +265,14 @@ class KontenRecords
         } else {
             $order = ! empty($def['created']) ? KontenSchema::createdOrder() : KontenSchema::idOrder();
         }
-        $sql = "SELECT data FROM `{$def['table']}`".($where ? ' WHERE '.implode(' AND ', $where) : '')." ORDER BY $order";
+
+        return [$def['table'], implode(' AND ', $where), $args, $order];
+    }
+
+    private function tableRows(array $def, array $f, string $resource = ''): array
+    {
+        [$table, $where, $args, $order] = $this->tableWhere($def, $f, $resource);
+        $sql = "SELECT data FROM `$table`".($where ? ' WHERE '.$where : '')." ORDER BY $order";
         $out = [];
         foreach ($this->db()->select($sql, $args) as $row) {
             $d = json_decode((string) $row->data, true);
