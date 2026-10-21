@@ -106,6 +106,15 @@ share `lakk5493_db_ems`. `menu`, `news` and `homepage` are greenfield and live i
 8. **Milestone.** Finishing a module = commit + annotated tag (`git tag -a m<N>-<name>`) + a row in
    `docs/MILESTONES.md` + status tables in `docs/modules/README.md` and §5 below.
 
+## 2a. Servers cache config and routes (api#312)
+
+Production and dev run `php artisan config:cache && php artisan route:cache`. Both must
+be rebuilt after every deploy and `.env` change (`tools/deploy-ssh.sh` does it; an FTP deploy
+deletes the caches, so the app runs uncached until someone rebuilds them). Under a cached
+config `env()` returns null outside `config/`: **never call `env()` in app code**. Read
+`config('…')` and put the `env()` call in `config/*.php`. `tests/Unit/NoEnvOutsideConfigTest.php`
+enforces this in CI. Details: `docs/deploy.md` "Route and config cache".
+
 ## 3. Files on disk
 
 Legacy data dirs (`/home/lakk5493/<x>-db`) are configured per module via `<KEY>_DATA_DIR`

@@ -341,7 +341,7 @@ class CampaignController
 
     private static function vueBase(): string
     {
-        $base = trim((string) env('OFFICE_VUE_URL', ''));
+        $base = trim((string) config('laksamana.konten.office_vue_url'));
 
         return $base !== '' ? rtrim($base, '/') : (string) config('app.url');
     }

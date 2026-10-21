@@ -161,6 +161,16 @@ foreach ($modules as $key => &$m) {
 }
 unset($m);
 
+// A read-only pin to a production database (`?source=prod` in the recap/morning
+// reports). Empty host/database/username = not pinned.
+$prodPin = fn (string $prefix) => [
+    'host' => (string) env($prefix.'HOST', ''),
+    'port' => (int) env($prefix.'PORT', 3306),
+    'database' => (string) env($prefix.'DATABASE', ''),
+    'username' => (string) env($prefix.'USERNAME', ''),
+    'password' => (string) env($prefix.'PASSWORD', ''),
+];
+
 return [
     'modules' => $modules,
     'legacy_policies' => $legacyPolicies,
@@ -200,6 +210,33 @@ return [
         'smtp_user' => env('TIX_SMTP_USER', ''),
         'smtp_pass' => env('TIX_SMTP_PASS', ''),
         'smtp_from_name' => env('TIX_SMTP_FROM_NAME', 'Laksamana Muda'),
+    ],
+
+    // Read here, never with env() in app code: once `config:cache` runs, env()
+    // outside config/ returns null (docs/deploy.md "Route and config cache").
+    'prod_pins' => [
+        'reservasi_recap' => $prodPin('RESERVASI_RECAP_PROD_'),
+        'event_info' => $prodPin('EVENT_INFO_PROD_'),
+        'marketing_info' => $prodPin('MARKETING_INFO_PROD_'),
+    ],
+
+    // konten (Campaign analytics). `secrets` is keyed by the env name; a
+    // non-empty value wins over the key typed in Pengaturan (cg_setting).
+    'konten' => [
+        'secrets' => [
+            'META_MODEL_API_KEY' => (string) env('META_MODEL_API_KEY', ''),
+            'TIKTOK_CLIENT_KEY' => (string) env('TIKTOK_CLIENT_KEY', ''),
+            'TIKTOK_CLIENT_SECRET' => (string) env('TIKTOK_CLIENT_SECRET', ''),
+            'INSTAGRAM_APP_ID' => (string) env('INSTAGRAM_APP_ID', ''),
+            'INSTAGRAM_APP_SECRET' => (string) env('INSTAGRAM_APP_SECRET', ''),
+            'GOOGLE_CLIENT_ID' => (string) env('GOOGLE_CLIENT_ID', ''),
+            'GOOGLE_CLIENT_SECRET' => (string) env('GOOGLE_CLIENT_SECRET', ''),
+            'GOOGLE_PLACES_KEY' => (string) env('GOOGLE_PLACES_KEY', ''),
+        ],
+        // Public base of this API (OAuth redirect URIs). Empty = https:// + SERVER_NAME.
+        'api_public_url' => (string) env('API_PUBLIC_URL', ''),
+        // Where the Vue Office lives (OAuth callbacks land there). Empty = APP_URL.
+        'office_vue_url' => (string) env('OFFICE_VUE_URL', ''),
     ],
 
     // howandi-life's own API_TOKEN (checked by its compat controller only). It is

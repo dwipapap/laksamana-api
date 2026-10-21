@@ -12,11 +12,11 @@ require_once __DIR__.'/helpers.php';
 beforeEach(function () {
     config(['laksamana.modules.konten.data_dir' => storage_path('framework/testing/konten-db')]);
     app(CampaignAnalytics::class)->ensureTables();
-    putenv('META_MODEL_API_KEY=');
-    putenv('TIKTOK_CLIENT_KEY=');
-    putenv('TIKTOK_CLIENT_SECRET=');
-    putenv('INSTAGRAM_APP_ID=');
-    putenv('INSTAGRAM_APP_SECRET=');
+    config(['laksamana.konten.secrets.META_MODEL_API_KEY' => '']);
+    config(['laksamana.konten.secrets.TIKTOK_CLIENT_KEY' => '']);
+    config(['laksamana.konten.secrets.TIKTOK_CLIENT_SECRET' => '']);
+    config(['laksamana.konten.secrets.INSTAGRAM_APP_ID' => '']);
+    config(['laksamana.konten.secrets.INSTAGRAM_APP_SECRET' => '']);
 });
 
 function cgDb()
@@ -256,7 +256,7 @@ it('syncs Instagram against faked API responses', function () {
 });
 
 it('runs research against a faked Meta answer and stores it', function () {
-    putenv('META_MODEL_API_KEY=fake-key');
+    config(['laksamana.konten.secrets.META_MODEL_API_KEY' => 'fake-key']);
     cgClearSettings();
     Http::fake([
         'api.meta.ai/*' => Http::response(['content' => [['type' => 'text', 'text' => '{"ringkasan":"R","pola":[],"tren":[],"ide":[],"waktuTayang":[],"hashtag":[],"peringatan":[]}']],
@@ -266,7 +266,7 @@ it('runs research against a faked Meta answer and stores it', function () {
         ->assertOk();
     expect($res->json('data.hasil.ringkasan'))->toBe('R');
     expect(cgDb()->selectOne('SELECT topik FROM cg_riset WHERE id = ?', [$res->json('data.id')])->topik)->toBe('malam minggu');
-    putenv('META_MODEL_API_KEY=');
+    config(['laksamana.konten.secrets.META_MODEL_API_KEY' => '']);
 });
 
 it('refuses research without an AI key, exactly like legacy', function () {
