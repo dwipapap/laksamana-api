@@ -3,6 +3,7 @@
 namespace App\Modules\Marketing\Http\V1;
 
 use App\Auth\OfficeAccess;
+use App\Modules\Marketing\Services\DesignRefs;
 use App\Modules\Marketing\Services\MarketingFiles;
 use App\Modules\Marketing\Services\MarketingQueries;
 use App\Modules\Marketing\Services\MarketingRecords;
@@ -81,10 +82,17 @@ class MarketingController
 
     // ─────────────────────────── state & read models ──
 
-    /** One-call bootstrap: the full state S incl. `_versi` (same as legacy getAll). */
+    /**
+     * One-call bootstrap: the full state S incl. `_versi` (same as legacy getAll),
+     * except design-request photos, sent as stubs (DesignRefs, #341) — fetch one
+     * request with GET /design-requests/{id} to see them.
+     */
     public function state(): JsonResponse
     {
         $s = $this->state->read();
+        if (isset($s['designreqs']) && is_array($s['designreqs'])) {
+            $s['designreqs'] = DesignRefs::trimRows($s['designreqs']);
+        }
 
         return ApiResponse::ok($s, ['version' => $s['_versi']]);
     }
