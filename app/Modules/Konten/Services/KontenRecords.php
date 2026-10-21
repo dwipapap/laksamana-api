@@ -432,6 +432,66 @@ class KontenRecords
     }
 
     /**
+     * Date-driven ad statuses in one call (port of the old Office
+     * autoUpdateStatuses and Vue perbaruiStatusIklanOtomatis, replacing its N
+     * per-row PATCHes): past endDate → ended, started → active, not yet →
+     * draft; a manual "paused" is never touched. Dates compare as local
+     * wall-clock YYYY-MM-DD (WIB), never UTC. One konten_save lock for the
+     * whole batch; only changed rows are rewritten (version bumped and logged
+     * exactly like a PATCH, so old tabs see the same 409 guards as before).
+     * No client version is needed: the server reads fresh under the lock.
+     *
+     * @return array{diubah:int}
+     */
+    public function autoStatusAds(string $by, ?string $today = null): array
+    {
+        return NamedLock::run('konten', 'konten_save', function () use ($by, $today) {
+            $today ??= gmdate('Y-m-d', time() + 7 * 3600); // WIB wall clock, like the Vue hariIni()
+            $r = self::resource('ads');
+            $diubah = 0;
+            foreach ($this->tableRows($r['def'], [], 'ads') as $cur) {
+                $ns = self::statusOtomatis($cur, $today);
+                if ($ns === null) {
+                    continue;
+                }
+                $next = $cur;
+                $next['status'] = $ns;
+                unset($next['baseUpdatedAt']);
+                $next['updatedAt'] = max(self::nowMs(), self::versionOf($cur) + 1);
+                $this->writeRow($r['def'], $next);
+                $this->log($r, (string) ($cur['id'] ?? ''), $next, 'diubah', $by);
+                $diubah++;
+            }
+
+            return ['diubah' => $diubah];
+        });
+    }
+
+    /**
+     * The new date-driven status for one ad row, or null when nothing
+     * changes. Mirrors Vue statusIklanOtomatis exactly: string comparison on
+     * zero-padded YYYY-MM-DD, startDate/endDate only, paused never touched.
+     */
+    public static function statusOtomatis(array $row, string $today): ?string
+    {
+        if (($row['status'] ?? '') === 'paused') {
+            return null;
+        }
+        $awal = (string) ($row['startDate'] ?? '');
+        $akhir = (string) ($row['endDate'] ?? '');
+        $ns = (string) ($row['status'] ?? '');
+        if ($akhir !== '' && $today > $akhir) {
+            $ns = 'ended';
+        } elseif ($awal !== '' && $today >= $awal) {
+            $ns = 'active';
+        } elseif ($awal !== '' && $today < $awal) {
+            $ns = 'draft';
+        }
+
+        return ($ns !== '' && $ns !== ($row['status'] ?? '')) ? $ns : null;
+    }
+
+    /**
      * Merge one platform's performance figures into a content row
      * (content.data.perf per platform), or remove that platform's entry
      * when $metrics is null (the old Input Performa screen deletes
