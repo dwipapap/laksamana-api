@@ -209,6 +209,17 @@ class KontenController
 
     // ─────────────────────────── performance (content.data.perf) ──
 
+    /**
+     * Date-driven ad statuses in one call (api#329): past endDate → ended,
+     * started → active, not yet → draft; paused never touched (WIB dates).
+     * No version needed — the server reads fresh under one konten_save lock
+     * and only rewrites changed rows. Replaces the Vue N-per-row PATCHes.
+     */
+    public function autoStatusAds(Request $r): JsonResponse
+    {
+        return ApiResponse::ok($this->records->autoStatusAds($this->actor($r)));
+    }
+
     /** Merge one platform's figures into a content row: {platform, metrics}. A null metrics removes that platform's entry. */
     public function performance(Request $r, string $id): JsonResponse
     {

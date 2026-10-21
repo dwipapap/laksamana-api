@@ -47,6 +47,7 @@ Resources: `users`, `brands`, `campaigns`, `content`, `prod-tasks`, `shootings`,
 | PUT | `/{resource}/{id}` | Replaces the whole record. Needs `If-Match: "<version>"` or `"version"` in the body. |
 | PATCH | `/{resource}/{id}` | Merges top-level fields into the record. Same version rule as PUT. |
 | DELETE | `/{resource}/{id}` | Same version rule (`If-Match` or `?version=`). |
+| POST | `/ads/auto-status` | Date-driven ad statuses in one call (replaces N per-row PATCHes): past `endDate` → `ended`, started → `active`, not yet → `draft`; `paused` never touched. Dates compare as WIB wall-clock `YYYY-MM-DD`. No version needed — the server reads fresh under one `konten_save` lock and only rewrites changed rows (each version-bumped + audit-logged like PATCH). → `{diubah: n}`. |
 
 ### Versions and conflicts
 

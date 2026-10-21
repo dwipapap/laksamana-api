@@ -32,6 +32,9 @@ Route::middleware(['auth:sanctum', 'module:konten'])->prefix('konten')->group(fu
     // per-platform performance figures living inside the content row
     Route::put('content/{id}/performance', [C::class, 'performance']);
 
+    // date-driven ad statuses in one call (api#329, replaces N per-row PATCHes)
+    Route::post('ads/auto-status', [C::class, 'autoStatusAds']);
+
     // records: users, brands, campaigns, content, prod-tasks, shootings,
     // assets, bank, kols, visits, ads, ad-funds, notifications
     $res = 'users|brands|campaigns|content|prod-tasks|shootings|assets|bank|kols|visits|ads|ad-funds|notifications';
