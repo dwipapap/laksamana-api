@@ -68,6 +68,12 @@ class CampaignAnalytics
         return Modules::db('konten');
     }
 
+    public const INSIGHT_MAKS = 1000;
+
+    public const JADWAL_MAKS = 1500;
+
+    public const BANK_MAKS = 1000;
+
     /** Fresh connection after a 1–2 minute AI call (else "MySQL server has gone away"). */
     private function freshDb(): ConnectionInterface
     {
@@ -319,15 +325,46 @@ class CampaignAnalytics
 
     // ─────────────────────────── reads ──
 
-    /** Full read: insight, jadwal, riset (30, decoded), bank, postInfo, akun (no tokens), setting summary. */
-    public function state(bool $isAdmin): array
+    /** Only the setting summary — GET /analytics/settings must not pull the 1000+1500+1000 lists. */
+    public function settingSummary(): array
+    {
+        $this->ensureTables();
+
+        return [
+            'aiSiap' => $this->aiKey() !== '',
+            'aiModel' => $this->aiModel(),
+            'ai' => $this->aiSummary(),
+            'kategori' => $this->kategori(),
+            'profil' => $this->setting('profil', self::PROFIL_BAWAAN),
+            'tiktokSiap' => $this->secret('TIKTOK_CLIENT_KEY', 'tiktok_key') !== '' && $this->secret('TIKTOK_CLIENT_SECRET', 'tiktok_secret') !== '',
+            'tiktokDariConfig' => $this->secretFromConfig('TIKTOK_CLIENT_KEY'),
+            'redirectUri' => $this->tiktokRedirectUri(),
+            'tiktokScope' => self::TIKTOK_SCOPE,
+            'igSiap' => $this->secret('INSTAGRAM_APP_ID', 'ig_id') !== '' && $this->secret('INSTAGRAM_APP_SECRET', 'ig_secret') !== '',
+            'igDariConfig' => $this->secretFromConfig('INSTAGRAM_APP_ID'),
+            'igRedirectUri' => $this->igRedirectUri(),
+        ] + $this->googleSettingSummary();
+    }
+
+    /**
+     * Full read: insight, jadwal, riset (30, decoded), bank, postInfo, akun (no tokens), setting summary, `boleh.admin`.
+     * Optional per-section caps keep the documented maxima by default, so a
+     * bare call answers exactly like before; a panel that only shows the
+     * head of a section asks for less instead of the whole payload.
+     *
+     * @param  array{insightLimit?:int,jadwalLimit?:int,bankLimit?:int}  $opt
+     */
+    public function state(bool $isAdmin, array $opt = []): array
     {
         $this->ensureTables();
         $db = $this->db();
-        $insight = $db->select('SELECT * FROM cg_insight ORDER BY (tgl_tayang IS NULL), tgl_tayang DESC, dibuat_at DESC LIMIT 1000');
-        $jadwal = $db->select('SELECT * FROM cg_jadwal ORDER BY tanggal DESC, jam DESC LIMIT 1500');
+        $insightLim = min(max((int) ($opt['insightLimit'] ?? self::INSIGHT_MAKS), 1), self::INSIGHT_MAKS);
+        $jadwalLim = min(max((int) ($opt['jadwalLimit'] ?? self::JADWAL_MAKS), 1), self::JADWAL_MAKS);
+        $bankLim = min(max((int) ($opt['bankLimit'] ?? self::BANK_MAKS), 1), self::BANK_MAKS);
+        $insight = $db->select('SELECT * FROM cg_insight ORDER BY (tgl_tayang IS NULL), tgl_tayang DESC, dibuat_at DESC LIMIT '.$insightLim);
+        $jadwal = $db->select('SELECT * FROM cg_jadwal ORDER BY tanggal DESC, jam DESC LIMIT '.$jadwalLim);
         $riset = $db->select('SELECT id, jenis, topik, platform, catatan, hasil, model, oleh, at FROM cg_riset ORDER BY at DESC LIMIT 30');
-        $bank = $db->select('SELECT * FROM cg_bank ORDER BY (tanggal IS NULL), tanggal ASC, dibuat_at DESC LIMIT 1000');
+        $bank = $db->select('SELECT * FROM cg_bank ORDER BY (tanggal IS NULL), tanggal ASC, dibuat_at DESC LIMIT '.$bankLim);
         foreach ($riset as $r) {
             $h = json_decode((string) $r->hasil, true);
             $r->hasil = is_array($h) ? $h : null;
@@ -350,20 +387,7 @@ class CampaignAnalytics
                 'igRiwayatSelesai' => $this->setting('ig_bf_selesai') === '1',
             ],
             'akun' => $akun,
-            'setting' => [
-                'aiSiap' => $this->aiKey() !== '',
-                'aiModel' => $this->aiModel(),
-                'ai' => $this->aiSummary(),
-                'kategori' => $this->kategori(),
-                'profil' => $this->setting('profil', self::PROFIL_BAWAAN),
-                'tiktokSiap' => $this->secret('TIKTOK_CLIENT_KEY', 'tiktok_key') !== '' && $this->secret('TIKTOK_CLIENT_SECRET', 'tiktok_secret') !== '',
-                'tiktokDariConfig' => $this->secretFromConfig('TIKTOK_CLIENT_KEY'),
-                'redirectUri' => $this->tiktokRedirectUri(),
-                'tiktokScope' => self::TIKTOK_SCOPE,
-                'igSiap' => $this->secret('INSTAGRAM_APP_ID', 'ig_id') !== '' && $this->secret('INSTAGRAM_APP_SECRET', 'ig_secret') !== '',
-                'igDariConfig' => $this->secretFromConfig('INSTAGRAM_APP_ID'),
-                'igRedirectUri' => $this->igRedirectUri(),
-            ] + $this->googleSettingSummary(),
+            'setting' => $this->settingSummary(),
             'boleh' => ['admin' => $isAdmin],
         ];
     }
