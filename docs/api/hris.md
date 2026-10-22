@@ -13,6 +13,9 @@ Code: `app/Modules/Hris`.
   divisions, never their own queue decision), `semua` (HR: module admins of
   `hris` plus the `hr` id list in settings; HR may decide their own queued
   punch, owner decision 2026-10-17).
+- `/kelola` is an HRIS-admin surface in the PWA. `me/today.bolehKelola` is
+  true only for `hris` module admins and superadmins. HR settings membership
+  and division-head status do not grant entry to `/kelola`.
 - Time: server time rendered as WIB. Money: n/a in B1.
 - No liveness (A4). Defences are face match, the duplicate check, GPS and the
   audit photo.
@@ -44,6 +47,30 @@ Code: `app/Modules/Hris`.
 | GET | `/hris/settings` | all | Merged settings map (defaults + stored rows) |
 | PUT | `/hris/settings` | HR | `{data: {...}}` partial; unknown keys refused |
 | POST | `/hris/admin/import-locations` | HR | One-time idempotent import of legacy absensi locations (by nama). `{dibuat, diperbarui}` |
+| GET | `/hris/pengumuman` | all | Published announcements for the caller's active HRIS division(s), plus global notices. `?kelola=1` returns the caller's permitted authored items; HRIS admins see all. |
+| GET | `/hris/pengumuman/{id}` | audience / author | Detail. An inaccessible or guessed id answers `404`, including foreign published notices. `?kelola=1` is required for an author's own draft. |
+| POST | `/hris/pengumuman` | HR, head, granted writer, admin | Create a draft with `{judul, isi, semua, divisi_ids}`. Author id/name come from the session. A head is limited to the canonical HRIS division ids they lead, even if also granted extra rights. |
+| PATCH | `/hris/pengumuman/{id}` | author / admin | Edit an owned draft or published item with `{judul, isi, semua, divisi_ids, berubah}`. The author and original `published_at` stay fixed; each successful edit increments `berubah` and `updated_at`. |
+| POST | `/hris/pengumuman/{id}/publish` | author / admin | Publish a draft immediately with `{berubah}`. The server rechecks writer and audience scope, target divisions, and version under a row lock. |
+| POST | `/hris/pengumuman/{id}/archive` | author / admin | Archive a permitted authored item with `{berubah}`. |
+| GET | `/hris/pengumuman/options` | writer; admin for grant list | Returns audience choices. Admins also get active employee names, current announcement grants, and active divisions. |
+| PUT | `/hris/pengumuman/grant` | HRIS module admin / superadmin | Set a selected active employee's announcement-only scope: `{user_id, semua_divisi, divisi_ids}`. This grant does not confer any HR endpoint privilege or `/kelola` access. |
+| DELETE | `/hris/pengumuman/grant/{userId}` | HRIS module admin / superadmin | Revoke the selected employee's announcement-only grant. |
+
+### Announcement access rules
+
+Announcements and scoped grants are stored in `hris_pengumuman`,
+`hris_pengumuman_divisi` and `hris_pengumuman_grant` on the `core` connection.
+The feature has no attachment fields or storage. Public listing includes only
+published rows. Drafts are visible to their author through the management
+view and to admins. A writer's management list contains only their own items;
+published content is available there only while every target remains in the
+writer's current scope. Admins can manage all rows. Division heads are always
+limited to divisions returned by `HrisDivisiService::petaKepala()`; an
+additional grant never widens a head's publishing scope. HR settings members
+can publish globally or to active divisions but still cannot open `/kelola`.
+Other granted writers can publish globally or to the active divisions chosen
+by an HRIS admin. All writes require `berubah`; a stale version answers `409`.
 
 ### Punch body
 

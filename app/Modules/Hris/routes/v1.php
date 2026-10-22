@@ -11,6 +11,7 @@ use App\Modules\Hris\Http\V1\HrisKpiController as P;
 use App\Modules\Hris\Http\V1\HrisMealController as E;
 use App\Modules\Hris\Http\V1\HrisMeController as M;
 use App\Modules\Hris\Http\V1\HrisOfficeController as O;
+use App\Modules\Hris\Http\V1\HrisPengumumanController as U;
 use App\Modules\Hris\Http\V1\HrisOnboardingController as J;
 use App\Modules\Hris\Http\V1\HrisPelamarController as A;
 use App\Modules\Hris\Http\V1\HrisPermintaanController as N;
@@ -27,6 +28,15 @@ use Illuminate\Support\Facades\Route;
 Route::middleware(['auth:sanctum', 'module:hris'])->prefix('hris')->group(function () {
     // Crew surface.
     Route::get('me/today', [M::class, 'today']);
+    Route::get('pengumuman', [U::class, 'index']);
+    Route::get('pengumuman/options', [U::class, 'options']);
+    Route::post('pengumuman', [U::class, 'store']);
+    Route::get('pengumuman/{id}', [U::class, 'show'])->where('id', '[A-Za-z0-9-]+');
+    Route::patch('pengumuman/{id}', [U::class, 'update'])->where('id', '[A-Za-z0-9-]+');
+    Route::post('pengumuman/{id}/publish', [U::class, 'publish'])->where('id', '[A-Za-z0-9-]+');
+    Route::post('pengumuman/{id}/archive', [U::class, 'archive'])->where('id', '[A-Za-z0-9-]+');
+    Route::put('pengumuman/grant', [U::class, 'grant']);
+    Route::delete('pengumuman/grant/{userId}', [U::class, 'revoke'])->where('userId', '[A-Za-z0-9._-]+');
     Route::post('punches', [M::class, 'punch']);
     Route::get('punches', [M::class, 'punches']);
     Route::get('punches/{id}/photo', [M::class, 'punchPhoto'])->where('id', '[A-Za-z0-9-]+');

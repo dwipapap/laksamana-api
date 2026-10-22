@@ -8,6 +8,7 @@ use App\Auth\OfficeAccess;
 use App\Modules\Hris\Models\HrisKetukan;
 use App\Modules\Hris\Services\HrisAttendanceService;
 use App\Modules\Hris\Services\HrisLingkup;
+use App\Modules\Hris\Services\HrisPengumumanService;
 use App\Modules\Hris\Services\HrisPerhatianService;
 use App\Support\Api\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -25,6 +26,7 @@ final class HrisMeController extends HrisBaseController
         private readonly HrisAttendanceService $hadir,
         private readonly HrisLingkup $lingkup,
         private readonly HrisPerhatianService $perhatian,
+        private readonly HrisPengumumanService $pengumuman,
     ) {
         parent::__construct($access);
     }
@@ -36,7 +38,9 @@ final class HrisMeController extends HrisBaseController
 
         return ApiResponse::ok($this->hadir->meToday($me)
             + ['perhatian' => $this->perhatian->untuk($me)]
-            + ['lingkup' => $this->lingkup->lingkup($me)]);
+            + ['lingkup' => $this->lingkup->lingkup($me)]
+            + ['bolehKelola' => $this->access->isModuleAdmin((string) ($me['id'] ?? ''), 'hris')]
+            + ['bolehPengumuman' => $this->pengumuman->bolehKelola($me)]);
     }
 
     /** Punch in or out. */
