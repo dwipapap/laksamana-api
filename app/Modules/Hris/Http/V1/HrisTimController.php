@@ -103,6 +103,13 @@ final class HrisTimController extends HrisBaseController
         return $this->run(fn () => $this->ubah->detailKelola($me, $id));
     }
 
+    public function showUbahPersetujuan(Request $r, string $id): JsonResponse
+    {
+        $me = $this->me($r);
+
+        return $this->run(fn () => $this->ubah->detailPemutus($me, $id));
+    }
+
     public function batalUbah(Request $r, string $id): JsonResponse
     {
         $d = $r->validate(['berubah' => ['required', 'integer']]);

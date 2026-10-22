@@ -208,6 +208,7 @@ Route::middleware(['auth:sanctum', 'module:hris'])->prefix('hris')->group(functi
     Route::get('tim/ubah-shift', [C::class, 'indexUbah']);
     Route::post('tim/ubah-shift', [C::class, 'storeUbah']);
     Route::get('tim/ubah-shift/{id}', [C::class, 'showUbah'])->where('id', '[A-Za-z0-9]+');
+    Route::get('tim/persetujuan/ubah-shift/{id}', [C::class, 'showUbahPersetujuan'])->where('id', '[A-Za-z0-9]+');
     Route::post('tim/ubah-shift/{id}/batal', [C::class, 'batalUbah'])->where('id', '[A-Za-z0-9]+');
     Route::get('tim/persetujuan', [C::class, 'persetujuan']);
     Route::post('tim/ubah-shift/{id}/putuskan', [C::class, 'putuskanUbah'])->where('id', '[A-Za-z0-9]+');

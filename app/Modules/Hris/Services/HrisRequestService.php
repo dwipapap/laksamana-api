@@ -39,6 +39,7 @@ final class HrisRequestService
         private readonly Divisi $divisi,
         private readonly AccountRepository $users,
         private readonly HrisRosterEventService $event,
+        private readonly HrisShiftService $shift,
     ) {}
 
     /** @var array<string,string> user_id → display name (best-effort, per request) */
@@ -407,49 +408,27 @@ final class HrisRequestService
         foreach ($rows as $c) {
             $kunci[(string) ($c['u'] ?? '').'|'.(string) ($c['d'] ?? '')] = $c;
         }
+        $defs = [];
+        foreach ($this->shift->list() as $x) {
+            $defs[(string) $x['kode']] = $x;
+        }
         if ($hapus) {
             $hapusRows = [];
             foreach ($this->cellRows($row) as $c) {
                 $hapusRows[] = ['u' => $c['u'], 'd' => $c['d']];
                 $kunci[(string) $c['u'].'|'.(string) $c['d']] = $c + ['hapus' => true];
             }
-            $lama = $this->selUntuk(array_keys($kunci));
-            $this->jadwal->saveCells([], $hapusRows, $jejak, $u);
-            $this->catatEvent($row, $kunci, $lama, $aktor, $catatan ?? (string) $row->alasan);
+            $result = $this->jadwal->saveCells([], $hapusRows, $jejak, $u, true);
+            $this->catatEvent($row, $kunci, $result['before'] ?? [], $aktor, $catatan ?? (string) $row->alasan, $defs);
         } else {
-            $lama = $this->selUntuk(array_keys($kunci));
-            $this->jadwal->saveCells($rows, [], $jejak, $u);
-            $this->catatEvent($row, $kunci, $lama, $aktor, $catatan ?? (string) $row->alasan);
+            $result = $this->jadwal->saveCells($rows, [], $jejak, $u, true);
+            $this->catatEvent($row, $kunci, $result['before'] ?? [], $aktor, $catatan ?? (string) $row->alasan, $defs);
         }
-    }
-
-    /** Current cells for the touched keys, before the write. */
-    private function selUntuk(array $kunci): array
-    {
-        $perOrang = [];
-        foreach ($kunci as $k) {
-            [$uid, $d] = explode('|', $k, 2) + [null, null];
-            if ($uid) {
-                $perOrang[$uid][] = $d;
-            }
-        }
-        $out = [];
-        foreach ($perOrang as $uid => $tgl) {
-            if ($tgl === []) {
-                continue;
-            }
-            sort($tgl);
-            foreach ($this->jadwal->shiftRange($uid, $tgl[0], $tgl[count($tgl) - 1])['rows'] ?? [] as $c) {
-                $c = (array) $c;
-                $out[(string) $c['u'].'|'.(string) $c['d']] = $c;
-            }
-        }
-
-        return $out;
     }
 
     /** One roster event per cell the request actually changed. */
-    private function catatEvent(HrisPengajuan $row, array $kunci, array $lama, string $aktor, string $catatan): void
+    private function catatEvent(HrisPengajuan $row, array $kunci, array $lama, string $aktor, string $catatan,
+        array $defs): void
     {
         $karyawan = HrisKaryawan::query()->where('user_id', $row->user_id)->first();
         $divKode = $karyawan?->divisi?->kode;
@@ -471,11 +450,11 @@ final class HrisRequestService
             $this->event->catat(HrisRosterEvent::PENGAJUAN, $aktor, [
                 'user_id' => $row->user_id, 'divisi_kode' => $divKode,
                 'tanggal_kerja' => (string) $d,
-                'sel_lama' => $sebelum === null ? null : $this->potretSel($sebelum),
-                'sel_baru' => $sesudah === null ? null : $this->potretSel($sesudah),
+                'sel_lama' => $sebelum === null ? null : $this->potretSel($sebelum, $defs),
+                'sel_baru' => $sesudah === null ? null : $this->potretSel($sesudah, $defs),
                 'ref_pengajuan_id' => $row->id,
                 'diajukan_oleh' => $this->namaUser($row->user_id),
-                'diajukan_at' => $row->created_at === null ? null : (int) $row->created_at->timestamp,
+                'diajukan_at' => $row->created_at === null ? null : (int) $row->created_at->timestamp * 1000,
                 'diputus_oleh' => $aktor, 'diputus_at' => PunchRules::ms(),
                 'catatan' => mb_substr($row->jenis.' '.$catatan, 0, 500),
             ]);
@@ -493,10 +472,18 @@ final class HrisRequestService
             && self::s($a['s'] ?? '') === self::s($b['s'] ?? '');
     }
 
-    private static function potretSel(array $c): array
+    private function potretSel(array $c, array $defs): array
     {
-        return ['kode' => (string) ($c['t'] ?? $c['kode'] ?? ''), 'm' => self::s($c['m'] ?? ''),
-            's' => self::s($c['s'] ?? ''), 'n' => self::s($c['n'] ?? '')];
+        $kode = (string) ($c['t'] ?? $c['kode'] ?? '');
+        $def = $defs[$kode] ?? [];
+        $m = self::s($c['m'] ?? '');
+        $s = self::s($c['s'] ?? '');
+
+        return ['kode' => $kode, 'nama' => (string) ($def['nama'] ?? ''),
+            'mulai' => $m !== '' ? $m : (string) ($def['mulai'] ?? ''),
+            'selesai' => $s !== '' ? $s : (string) ($def['selesai'] ?? ''),
+            'blok' => $def['blok'] ?? [], 'libur' => (bool) ($def['libur'] ?? false),
+            'm' => $m, 's' => $s, 'n' => self::s($c['n'] ?? '')];
     }
 
     // ---------------------------------------------------------------- heads

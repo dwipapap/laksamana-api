@@ -53,11 +53,11 @@ return new class extends Migration
             $t->string('shift_baru_kode', 16);
             $t->json('shift_baru');
             $t->string('alasan', 500);
-            // MENUNGGU -> DISETUJUI | DITOLAK | DIBATALKAN. No persisted
-            // midpoint: the Jadwal write is idempotent, so a crash before
-            // the core finalize is recovered by re-deciding (the cell
-            // already equals the target), never by a half-status.
+            // APPLYING is a durable approval intent across core/Jadwal
+            // connections. It freezes the approver before the roster side
+            // effect; retries resume that same operation.
             $t->string('status', 16)->default('MENUNGGU');
+            $t->char('jadwal_sumber_hash', 64);
             $t->string('diajukan_oleh', 120)->default('');
             $t->unsignedBigInteger('diajukan_at');
             $t->string('diputus_oleh_id', 64)->nullable();
@@ -105,7 +105,7 @@ return new class extends Migration
 
         DB::connection('core')->statement(
             'ALTER TABLE `hris_ubah_shift` ADD CONSTRAINT `hris_ubah_shift_chk_0` '
-            ."CHECK (status IN ('MENUNGGU','DISETUJUI','DITOLAK','DIBATALKAN'))"
+            ."CHECK (status IN ('MENUNGGU','APPLYING','DISETUJUI','DITOLAK','DIBATALKAN'))"
         );
         DB::connection('core')->statement(
             'ALTER TABLE `hris_roster_event` ADD CONSTRAINT `hris_roster_event_chk_0` '

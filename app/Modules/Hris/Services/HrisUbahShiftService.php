@@ -18,19 +18,21 @@ use Illuminate\Support\Carbon;
  * crew files, the division head approves directly. No second HR step.
  * CUTI/PH/IZIN keep their own flow in HrisRequestService.
  *
- * One business command: revalidate authority and conditions, compare the
- * source cell, apply through JadwalService, then persist the result and
- * the audit in one core transaction. The frontend never writes roster
- * cells after a decision. The Jadwal write is idempotent (same target),
- * so a crash before the core finalize is recovered by re-deciding:
- * the cell already equals the target and the row finalizes without a
- * rewrite. A cell that matches neither snapshot nor target is a 409
- * conflict, never a silent overwrite.
+ * Approval intent is committed before the Jadwal side effect. The durable
+ * APPLYING state freezes the approver; Jadwal compares the submitted source
+ * fingerprint under the cell row lock and records an operation marker on the
+ * legacy row. Core Jadwal writes share the finalization transaction.
  */
 final class HrisUbahShiftService
 {
-    /** @var callable(string,HrisUbahShift):void|null test seam for apply failure */
+    /** @var callable(string,HrisUbahShift):void|null test seam before apply */
     public static $ujiGagalTulis = null;
+
+    /** @var callable(HrisUbahShift):void|null test seam after Jadwal commit */
+    public static $ujiSesudahTulis = null;
+
+    /** @var callable(HrisUbahShift):void|null test seam after intent commit, before the row CAS */
+    public static $ujiSebelumCAS = null;
 
     public function __construct(
         private readonly OfficeAccess $access,
@@ -77,19 +79,21 @@ final class HrisUbahShiftService
         }
 
         $defs = $this->defs();
-        $sel = $this->sel($uid, $tgl);
+        $raw = $this->jadwal->readCell($uid, $tgl);
+        // Build the frozen snapshot and source fingerprint from one observed
+        // cell representation; separate grid and raw reads could straddle an edit.
+        $sel = $raw;
         $defLama = $sel === null ? null : ($defs[(string) ($sel['t'] ?? '')] ?? null);
         $this->assertBisaDiajukan($uid, $tgl, $sel, $defLama, $kodeBaru, $defs, $k);
         $defBaru = $defs[$kodeBaru];
         $awal = $this->potret($sel, $defLama);
-        $tujuan = $this->potret(['t' => $kodeBaru,
-            'm' => count($defBaru['blok']) >= 2 ? '' : (string) ($sel['m'] ?? ''),
-            's' => count($defBaru['blok']) >= 2 ? '' : (string) ($sel['s'] ?? ''),
+        $tujuan = $this->potret(['t' => $kodeBaru, 'm' => '', 's' => '',
             'n' => (string) ($sel['n'] ?? '')], $defBaru);
+        $sourceHash = $this->jadwal->cellFingerprint($raw);
 
         $dibuat = true;
         $row = HrisUbahShift::query()->getConnection()->transaction(function () use (
-            $uid, $nama, $tgl, $kodeBaru, $alasan, $kunci, $awal, $tujuan, &$dibuat) {
+            $uid, $nama, $tgl, $kodeBaru, $alasan, $kunci, $awal, $tujuan, $sourceHash, &$dibuat) {
             $sama = HrisUbahShift::query()->where('user_id', $uid)
                 ->where('idempotency_key', $kunci)->lockForUpdate()->first();
             if ($sama) {
@@ -104,7 +108,8 @@ final class HrisUbahShiftService
                 return $sama;
             }
             $aktif = HrisUbahShift::query()->where('user_id', $uid)
-                ->where('tanggal_kerja', $tgl)->where('status', HrisUbahShift::MENUNGGU)
+                ->where('tanggal_kerja', $tgl)
+                ->whereIn('status', [HrisUbahShift::MENUNGGU, HrisUbahShift::APPLYING])
                 ->lockForUpdate()->first();
             if ($aktif) {
                 throw new HrisError('sudah_menunggu',
@@ -116,6 +121,7 @@ final class HrisUbahShiftService
                 'user_id' => $uid, 'user_ulid' => $this->users->userUlid($uid),
                 'tanggal_kerja' => $tgl, 'shift_lama_kode' => (string) $awal['kode'],
                 'shift_lama' => $awal, 'shift_baru_kode' => $kodeBaru, 'shift_baru' => $tujuan,
+                'jadwal_sumber_hash' => $sourceHash,
                 'alasan' => $alasan, 'status' => HrisUbahShift::MENUNGGU,
                 'diajukan_oleh' => mb_substr($nama, 0, 120), 'diajukan_at' => PunchRules::ms(),
                 'idempotency_key' => $kunci,
@@ -157,9 +163,13 @@ final class HrisUbahShiftService
         if (in_array($kodeBaru, ['OFF', 'CUTI', 'IZIN'], true)) {
             throw new HrisError('validation_failed', 'Ubah shift tidak untuk OFF, cuti, atau izin. Pakai jenis pengajuan yang sesuai.', 422);
         }
-        if ($this->sudahMulai($tgl, $defLama)) {
+        if ($this->sudahMulai($tgl, $defLama, $sel)) {
             throw new HrisError('shift_mulai',
                 'Shift asal sudah mulai. Hubungi HR untuk perubahan setelah shift berjalan.', 422);
+        }
+        if ($this->sudahMulai($tgl, $defBaru)) {
+            throw new HrisError('shift_mulai',
+                'Shift tujuan sudah mulai. Pilih shift yang belum dimulai atau hubungi HR.', 422);
         }
         if (HrisKetukan::query()->where('user_id', $uid)->where('tanggal_kerja', $tgl)->exists()) {
             throw new HrisError('sudah_ada_ketukan',
@@ -234,18 +244,28 @@ final class HrisUbahShiftService
     public function antreanKepala(array $me): array
     {
         $uid = self::s($me['id'] ?? '');
-        if ($uid === '' || $this->access->isModuleAdmin($uid, 'hris')) {
+        if ($uid === '') {
             return [];
         }
         $milik = $this->divisi->petaKepala()[$uid] ?? [];
-        if ($milik === []) {
-            return [];
-        }
-        $rows = HrisUbahShift::query()->where('status', HrisUbahShift::MENUNGGU)
+        $rows = HrisUbahShift::query()->whereIn('status', [HrisUbahShift::MENUNGGU, HrisUbahShift::APPLYING])
             ->orderBy('tanggal_kerja')->orderBy('created_at')->get();
         $nama = $this->users->namesByIds($rows->pluck('user_id')->unique()->all());
         $out = [];
         foreach ($rows as $r) {
+            if ($r->status === HrisUbahShift::APPLYING) {
+                if ($r->diputus_oleh_id !== $uid) {
+                    continue;
+                }
+                $k = HrisKaryawan::query()->with('divisi')->where('user_id', $r->user_id)->first();
+                $out[] = $this->ringkas($r, (string) ($nama[$r->user_id] ?? $r->user_id),
+                    $k?->divisi ? ['kode' => $k->divisi->kode, 'nama' => $k->divisi->nama] : null);
+
+                continue;
+            }
+            if ($milik === []) {
+                continue;
+            }
             if ($r->user_id === $uid) {
                 continue;
             }
@@ -264,12 +284,16 @@ final class HrisUbahShiftService
     public function antreanHr(array $me): array
     {
         $this->assertApprover($me);
-        $rows = HrisUbahShift::query()->where('status', HrisUbahShift::MENUNGGU)
+        $rows = HrisUbahShift::query()->whereIn('status', [HrisUbahShift::MENUNGGU, HrisUbahShift::APPLYING])
             ->orderBy('tanggal_kerja')->orderBy('created_at')->get();
         $nama = $this->users->namesByIds($rows->pluck('user_id')->unique()->all());
         $out = [];
         foreach ($rows as $r) {
-            if (! $this->butuhHr($r)) {
+            if ($r->status === HrisUbahShift::APPLYING) {
+                if ($r->diputus_oleh_id !== self::s($me['id'] ?? '')) {
+                    continue;
+                }
+            } elseif (! $this->butuhHr($r)) {
                 continue;
             }
             $k = HrisKaryawan::query()->with('divisi')->where('user_id', $r->user_id)->first();
@@ -285,6 +309,22 @@ final class HrisUbahShiftService
         $this->assertApprover($me);
         $row = HrisUbahShift::query()->find(self::s($id))
             ?? throw new HrisError('not_found', 'Pengajuan tidak ada.', 404);
+
+        return $this->detail($row, $this->sel($row->user_id, (string) $row->tanggal_kerja->format('Y-m-d')));
+    }
+
+    /** Decision detail is visible to the current head or the HR fallback. */
+    public function detailPemutus(array $me, string $id): array
+    {
+        $uid = self::s($me['id'] ?? '');
+        $row = HrisUbahShift::query()->find(self::s($id))
+            ?? throw new HrisError('not_found', 'Pengajuan tidak ada.', 404);
+        if ($row->status === HrisUbahShift::APPLYING && $row->diputus_oleh_id === $uid) {
+            // A persisted approval may be resumed by its frozen approver even
+            // if the division mapping changed after the side effect began.
+        } else {
+            $this->assertBolehPutus($uid, $row);
+        }
 
         return $this->detail($row, $this->sel($row->user_id, (string) $row->tanggal_kerja->format('Y-m-d')));
     }
@@ -307,10 +347,19 @@ final class HrisUbahShiftService
             throw new HrisError('validation_failed', 'Penolakan wajib disertai catatan untuk kru.', 422);
         }
 
-        $row = HrisUbahShift::query()->getConnection()->transaction(function () use ($uid, $id, $in, $status) {
+        $resume = false;
+        $row = HrisUbahShift::query()->getConnection()->transaction(function () use (
+            $uid, $nama, $id, $in, $status, $catatan, &$resume) {
             $r = HrisUbahShift::query()->lockForUpdate()->find(self::s($id))
                 ?? throw new HrisError('not_found', 'Pengajuan tidak ada.', 404);
             HrisDivisiService::assertVersion($r->version, $in);
+            if ($r->status === HrisUbahShift::APPLYING && $r->diputus_oleh_id === $uid
+                && $status === HrisUbahShift::DISETUJUI) {
+                $resume = true;
+
+                return $r;
+            }
+            $this->assertBolehPutus($uid, $r);
             if (in_array($r->status, [HrisUbahShift::DISETUJUI, HrisUbahShift::DITOLAK,
                 HrisUbahShift::DIBATALKAN], true)) {
                 if ($r->status === $status) {
@@ -318,22 +367,36 @@ final class HrisUbahShiftService
                 }
                 throw new HrisError('already_decided', 'Pengajuan ini sudah diputus.', 409);
             }
-            $this->assertBolehPutus($uid, $r);
+            if ($r->status === HrisUbahShift::APPLYING) {
+                throw new HrisError('apply_in_progress',
+                    'Persetujuan sedang dipulihkan oleh pemutus yang sama. Tunggu atau muat ulang pengajuan.', 409);
+            }
+            if ($status === HrisUbahShift::DISETUJUI) {
+                $r->fill(['status' => HrisUbahShift::APPLYING, 'diputus_oleh_id' => $uid,
+                    'diputus_oleh' => mb_substr($nama, 0, 120), 'diputus_at' => PunchRules::ms(),
+                    'catatan' => $catatan === '' ? null : $catatan])->save();
+
+                return $r;
+            }
+            $r->fill(['status' => HrisUbahShift::DITOLAK,
+                'diputus_oleh_id' => $uid, 'diputus_oleh' => mb_substr($nama, 0, 120),
+                'diputus_at' => PunchRules::ms(), 'catatan' => $catatan])->save();
 
             return $r;
         });
 
-        if ($status === HrisUbahShift::DITOLAK) {
-            $row->fill(['status' => HrisUbahShift::DITOLAK,
-                'diputus_oleh_id' => $uid, 'diputus_oleh' => mb_substr($nama, 0, 120),
-                'diputus_at' => PunchRules::ms(), 'catatan' => $catatan])->save();
+        if ($row->status === HrisUbahShift::DITOLAK) {
             $this->audit->record($nama, 'ubah_shift_ditolak', 'hris_ubah_shift', $row->id,
                 ['status' => HrisUbahShift::DITOLAK, 'tanggal' => (string) $row->tanggal_kerja->format('Y-m-d')]);
 
             return $this->detail($row->fresh(), $this->sel($row->user_id, (string) $row->tanggal_kerja->format('Y-m-d')));
         }
 
-        return $this->terapkan($nama, $uid, $row->fresh(), $catatan === '' ? null : $catatan);
+        if ($row->status === HrisUbahShift::DISETUJUI) {
+            return $this->detail($row, $this->sel($row->user_id, (string) $row->tanggal_kerja->format('Y-m-d')));
+        }
+
+        return $this->terapkan($row->fresh(), $resume);
     }
 
     /**
@@ -345,7 +408,7 @@ final class HrisUbahShiftService
         if ($uid === '') {
             throw new HrisError('forbidden', 'Putusan ubah shift hanya oleh kepala divisi atau HR.', 403);
         }
-        if ($row->user_id === $uid) {
+        if (self::s($row->user_id) === $uid) {
             throw new HrisError('forbidden', 'Pengajuan sendiri tidak bisa diputus sendiri.', 403);
         }
         $k = HrisKaryawan::query()->where('user_id', $row->user_id)->first();
@@ -391,62 +454,103 @@ final class HrisUbahShiftService
 
     // ----------------------------------------------------------------- apply
 
-    /**
-     * Approve path: revalidate, write the Jadwal cell, then finalize the
-     * row, the roster event and the audit in one core transaction. The
-     * write targets exactly the requested cell, so re-running it is safe;
-     * a cell that matches neither snapshot nor target is a conflict.
-     */
-    private function terapkan(string $nama, string $uid, HrisUbahShift $row, ?string $catatan): array
+    /** Resume the frozen APPLYING operation while holding the request lock. */
+    private function terapkan(HrisUbahShift $intent, bool $resume): array
     {
-        $tgl = (string) $row->tanggal_kerja->format('Y-m-d');
+        $connection = HrisUbahShift::query()->getConnection();
+        $tgl = (string) $intent->tanggal_kerja->format('Y-m-d');
+        $sideEffect = false;
+        $writeAttempted = false;
         try {
-            [$u, $k] = $this->karyawanAktif($row->user_id, utamakanPesan: true);
-            $sel = $this->sel($row->user_id, $tgl);
-            $defs = $this->defs();
-            $sudah = $this->selSamaTarget($sel, $row);
-            if (! $sudah) {
-                $this->assertSiapTerap($row, $sel, $defs, $k);
-                $this->tulisSel($nama, $uid, $row, $sel);
+            $result = $connection->transaction(function () use ($intent, $tgl, $resume,
+                &$sideEffect, &$writeAttempted): array {
+                $r = HrisUbahShift::query()->lockForUpdate()->findOrFail($intent->id);
+                if ($r->status === HrisUbahShift::DISETUJUI) {
+                    return ['row' => $r];
+                }
+                if ($r->status !== HrisUbahShift::APPLYING || $r->diputus_oleh_id !== $intent->diputus_oleh_id) {
+                    throw new HrisError('apply_in_progress', 'Persetujuan ini tidak lagi dapat dipulihkan oleh pemutus ini.', 409);
+                }
+                try {
+                    $nama = (string) $r->diputus_oleh;
+                    $sel = $this->sel($r->user_id, $tgl);
+                    $target = ['t' => (string) $r->shift_baru_kode,
+                        'm' => self::s($r->shift_baru['m'] ?? ''), 's' => self::s($r->shift_baru['s'] ?? ''),
+                        'n' => self::s($r->shift_baru['n'] ?? '')];
+                    if (self::$ujiSebelumCAS) {
+                        (self::$ujiSebelumCAS)($r);
+                    }
+                    $applied = $this->jadwal->applyCellIfUnchanged(
+                        $r->user_id, $tgl, (string) $r->jadwal_sumber_hash, $target, $r->id, $nama,
+                        function () use ($r, $sel): void {
+                            [, $k] = $this->karyawanAktif($r->user_id, utamakanPesan: true);
+                            $this->assertSiapTerap($r, $sel, $this->defs(), $k);
+                            if (self::$ujiGagalTulis) {
+                                (self::$ujiGagalTulis)('jadwal', $r);
+                            }
+                        },
+                        function () use (&$writeAttempted): void {
+                            $writeAttempted = true;
+                        }
+                    );
+                    if ($applied['state'] === 'conflict') {
+                        throw new HrisError('sel_berubah',
+                            'Sel jadwal berubah setelah pengajuan dibuat. Muat ulang dan minta kru mengajukan kembali.', 409,
+                            ['terkini' => $applied['cell']]);
+                    }
+                    $sideEffect = true;
+                    if (self::$ujiSesudahTulis) {
+                        (self::$ujiSesudahTulis)($r);
+                    }
+                    $r->fill(['status' => HrisUbahShift::DISETUJUI,
+                        'diputus_at' => $r->diputus_at ?? PunchRules::ms()])->save();
+                    if (! $this->event->adaEvent($r->id)) {
+                        $k = HrisKaryawan::query()->with('divisi')->where('user_id', $r->user_id)->first();
+                        $this->event->catat(HrisRosterEvent::UBAH_SHIFT, $nama, [
+                            'user_id' => $r->user_id, 'user_ulid' => $this->users->userUlid($r->user_id),
+                            'divisi_kode' => $k?->divisi?->kode, 'divisi_nama' => $k?->divisi?->nama,
+                            'tanggal_kerja' => $tgl, 'sel_lama' => $r->shift_lama, 'sel_baru' => $r->shift_baru,
+                            'ref_pengajuan_id' => $r->id, 'diajukan_oleh' => $r->diajukan_oleh,
+                            'diajukan_at' => (int) $r->diajukan_at,
+                            'diputus_oleh' => $nama, 'diputus_at' => (int) $r->diputus_at,
+                            'catatan' => $r->alasan,
+                        ]);
+                    }
+                    $this->audit->record($nama, 'ubah_shift_disetujui', 'hris_ubah_shift', $r->id,
+                        ['status' => HrisUbahShift::DISETUJUI, 'tanggal' => $tgl,
+                            'dari' => (string) $r->shift_lama_kode, 'ke' => (string) $r->shift_baru_kode]);
+
+                    return ['row' => $r];
+                } catch (HrisError $e) {
+                    if (! $resume && ! $sideEffect && ! $writeAttempted) {
+                        $r->fill(['status' => HrisUbahShift::MENUNGGU, 'diputus_oleh_id' => null,
+                            'diputus_oleh' => null, 'diputus_at' => null, 'catatan' => null])->save();
+
+                        return ['error' => $e];
+                    }
+                    throw $e;
+                }
+            });
+
+            if (isset($result['error'])) {
+                throw $result['error'];
             }
+            $row = $result['row'];
+
+            return $this->detail($row, $this->sel($row->user_id, $tgl));
         } catch (HrisError $e) {
-            $this->audit->record($nama, 'ubah_shift_gagal_terap', 'hris_ubah_shift', $row->id,
-                ['status' => HrisUbahShift::MENUNGGU, 'galat' => $e->errorCode]);
+            $nama = (string) $intent->diputus_oleh;
+            $this->audit->record($nama, 'ubah_shift_gagal_terap', 'hris_ubah_shift', $intent->id,
+                ['status' => HrisUbahShift::query()->find($intent->id)?->status, 'galat' => $e->errorCode]);
             throw $e;
         } catch (\Throwable $e) {
             report($e);
-            $this->audit->record($nama, 'ubah_shift_gagal_terap', 'hris_ubah_shift', $row->id,
-                ['status' => HrisUbahShift::MENUNGGU, 'galat' => 'terap_gagal']);
+            $nama = (string) $intent->diputus_oleh;
+            $this->audit->record($nama, 'ubah_shift_gagal_terap', 'hris_ubah_shift', $intent->id,
+                ['status' => HrisUbahShift::query()->find($intent->id)?->status, 'galat' => 'terap_gagal']);
             throw new HrisError('terap_gagal',
-                'Perubahan disetujui tetapi jadwal gagal ditulis. Coba putuskan lagi.', 500);
+                'Persetujuan sedang dipulihkan. Coba buka detail dan ulangi persetujuan.', 500);
         }
-        HrisUbahShift::query()->getConnection()->transaction(function () use ($row, $nama, $uid, $catatan) {
-            $r = HrisUbahShift::query()->lockForUpdate()->findOrFail($row->id);
-            if ($r->status !== HrisUbahShift::MENUNGGU) {
-                return;
-            }
-            $r->fill(['status' => HrisUbahShift::DISETUJUI,
-                'diputus_oleh_id' => $uid, 'diputus_oleh' => mb_substr($nama, 0, 120),
-                'diputus_at' => PunchRules::ms(), 'catatan' => $catatan])->save();
-            if (! $this->event->adaEvent($r->id)) {
-                $k = HrisKaryawan::query()->with('divisi')->where('user_id', $r->user_id)->first();
-                $this->event->catat(HrisRosterEvent::UBAH_SHIFT, $nama, [
-                    'user_id' => $r->user_id, 'user_ulid' => $this->users->userUlid($r->user_id),
-                    'divisi_kode' => $k?->divisi?->kode, 'divisi_nama' => $k?->divisi?->nama,
-                    'tanggal_kerja' => (string) $r->tanggal_kerja->format('Y-m-d'),
-                    'sel_lama' => $r->shift_lama, 'sel_baru' => $r->shift_baru,
-                    'ref_pengajuan_id' => $r->id,
-                    'diajukan_oleh' => $r->diajukan_oleh, 'diajukan_at' => (int) $r->diajukan_at,
-                    'diputus_oleh' => mb_substr($nama, 0, 120), 'diputus_at' => PunchRules::ms(),
-                    'catatan' => $r->alasan,
-                ]);
-            }
-            $this->audit->record($nama, 'ubah_shift_disetujui', 'hris_ubah_shift', $r->id,
-                ['status' => HrisUbahShift::DISETUJUI, 'tanggal' => (string) $r->tanggal_kerja->format('Y-m-d'),
-                    'dari' => (string) $r->shift_lama_kode, 'ke' => (string) $r->shift_baru_kode]);
-        });
-
-        return $this->detail(HrisUbahShift::query()->findOrFail($row->id), $this->sel($row->user_id, $tgl));
     }
 
     /** Revalidation at decision time: authority already checked, now facts. */
@@ -465,35 +569,30 @@ final class HrisUbahShiftService
         if ($defBaru === null || ! $defBaru['aktif'] || $defBaru['libur']) {
             throw new HrisError('shift_tak_tersedia', 'Shift tujuan sudah tidak tersedia. Tolak dan minta kru mengajukan ulang.', 422);
         }
+        $defLama = $defs[(string) $row->shift_lama_kode] ?? null;
+        if ($defLama === null || $defLama['libur']) {
+            throw new HrisError('shift_tak_tersedia', 'Shift asal tidak lagi tersedia. Tinjau ulang sebelum memutus.', 422);
+        }
+        $tujuan = $row->shift_baru ?? [];
+        if ((string) ($tujuan['nama'] ?? '') !== (string) $defBaru['nama']
+            || (string) ($tujuan['mulai'] ?? '') !== (string) $defBaru['mulai']
+            || (string) ($tujuan['selesai'] ?? '') !== (string) $defBaru['selesai']
+            || ($tujuan['blok'] ?? []) !== ($defBaru['blok'] ?? [])) {
+            throw new HrisError('shift_tak_tersedia', 'Definisi shift tujuan berubah setelah pengajuan. Minta kru mengajukan ulang.', 409);
+        }
         $divKode = (string) ($k->divisi?->kode ?? $this->jadwal->divisiUser($row->user_id));
         if ($defBaru['divisi'] !== [] && ! in_array($divKode, $defBaru['divisi'], true)) {
             throw new HrisError('shift_tak_tersedia', "Shift tujuan bukan untuk divisi {$divKode} lagi.", 422);
         }
-        if ($this->sudahMulai($tgl, $defBaru)) {
+        if ($this->sudahMulai($tgl, $defLama, $sel)) {
+            throw new HrisError('shift_mulai', 'Shift asal sudah mulai. Hubungi HR untuk perubahan setelah shift berjalan.', 422);
+        }
+        if ($this->sudahMulai($tgl, $defBaru, $tujuan)) {
             throw new HrisError('shift_mulai', 'Shift tujuan sudah mulai. Hubungi HR untuk perubahan setelah shift berjalan.', 422);
         }
         if (HrisKetukan::query()->where('user_id', $row->user_id)->where('tanggal_kerja', $tgl)->exists()) {
             throw new HrisError('sudah_ada_ketukan', 'Tanggal itu sudah ada ketukan absen. Hubungi HR.', 422);
         }
-    }
-
-    /** The single Jadwal write, mirroring the roster authority. */
-    private function tulisSel(string $nama, string $uid, HrisUbahShift $row, ?array $sel): void
-    {
-        if (self::$ujiGagalTulis) {
-            (self::$ujiGagalTulis)('jadwal', $row);
-
-            return;
-        }
-        $tgl = (string) $row->tanggal_kerja->format('Y-m-d');
-        $baru = $row->shift_baru ?? [];
-        $this->jadwal->saveCells(
-            [['u' => $row->user_id, 'd' => $tgl, 't' => (string) $row->shift_baru_kode,
-                'm' => (string) ($baru['m'] ?? ''), 's' => (string) ($baru['s'] ?? ''),
-                'n' => mb_substr(self::s($sel['n'] ?? ''), 0, 120)]],
-            [],
-            'HRIS:'.$nama,
-            ['id' => '', 'name' => $nama, 'adminModules' => ['jadwal']]);
     }
 
     // ---------------------------------------------------------------- helpers
@@ -528,11 +627,7 @@ final class HrisUbahShiftService
     /** Explicit roster cell of one crew member on one date, if any. */
     private function sel(string $uid, string $tgl): ?array
     {
-        foreach ($this->jadwal->shiftRange($uid, $tgl, $tgl)['rows'] ?? [] as $r) {
-            return (array) $r;
-        }
-
-        return null;
+        return $this->jadwal->readCell($uid, $tgl);
     }
 
     /** Frozen snapshot of a cell: code, def detail, effective hours, note. */
@@ -549,11 +644,15 @@ final class HrisUbahShiftService
             'm' => self::s($sel['m'] ?? ''), 's' => self::s($sel['s'] ?? ''), 'n' => self::s($sel['n'] ?? '')];
     }
 
-    /** Whether the shift already started (first block bound, work date). */
-    private function sudahMulai(string $tgl, array $def): bool
+    /** Whether the effective shift already started (WIB, first block, work date). */
+    private function sudahMulai(string $tgl, array $def, ?array $cell = null): bool
     {
         $blok = $def['blok'] ?? [];
-        $mulai = is_array($blok[0] ?? null) ? (string) ($blok[0]['mulai'] ?? '') : (string) ($def['mulai'] ?? '');
+        $mulai = self::s($cell['m'] ?? '');
+        if ($mulai === '') {
+            $mulai = is_array($blok[0] ?? null)
+                ? (string) ($blok[0]['mulai'] ?? '') : (string) ($def['mulai'] ?? '');
+        }
         if ($mulai === '') {
             return true;
         }
@@ -563,37 +662,9 @@ final class HrisUbahShiftService
             || ($tgl === $now->format('Y-m-d') && $now->format('H:i') >= $mulai);
     }
 
-    /** The cell already shows the approved target (recovery after a crash). */
-    private function selSamaTarget(?array $sel, HrisUbahShift $row): bool
-    {
-        if ($sel === null || (string) ($sel['t'] ?? '') !== (string) $row->shift_baru_kode) {
-            return false;
-        }
-        $baru = $row->shift_baru ?? [];
-        $def = $this->defs()[(string) $row->shift_baru_kode] ?? null;
-
-        return $this->jamEfektif($sel, $def)[0] === $this->jamEfektif($baru, $def)[0]
-            && $this->jamEfektif($sel, $def)[1] === $this->jamEfektif($baru, $def)[1];
-    }
-
-    /** Effective hours: explicit cell hours, else the shift definition. */
-    private function jamEfektif(array $sel, ?array $def): array
-    {
-        $m = self::s($sel['m'] ?? '');
-        $s = self::s($sel['s'] ?? '');
-        if ($m === '' && $def !== null) {
-            $m = (string) ($def['mulai'] ?? '');
-        }
-        if ($s === '' && $def !== null) {
-            $s = (string) ($def['selesai'] ?? '');
-        }
-
-        return [$m, $s];
-    }
-
     private function assertStatus(string $status): void
     {
-        if (! in_array($status, [HrisUbahShift::MENUNGGU, HrisUbahShift::DISETUJUI,
+        if (! in_array($status, [HrisUbahShift::MENUNGGU, HrisUbahShift::APPLYING, HrisUbahShift::DISETUJUI,
             HrisUbahShift::DITOLAK, HrisUbahShift::DIBATALKAN], true)) {
             throw new HrisError('validation_failed', 'Status tidak dikenal.', 422);
         }

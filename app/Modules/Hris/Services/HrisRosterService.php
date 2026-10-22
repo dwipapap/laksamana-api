@@ -129,11 +129,10 @@ final class HrisRosterService
             return ['isi' => 0, 'hapus' => 0, 'peringatan' => []];
         }
         $kunci = $this->kunciTersentuh($rows, $hapusRows);
-        $lama = $this->selUntuk($kunci);
         $r = $this->jadwal->saveCells($rows, $hapusRows, 'HRIS:'.$by,
-            ['id' => '', 'name' => $by, 'adminModules' => ['jadwal']]);
+            ['id' => '', 'name' => $by, 'adminModules' => ['jadwal']], true);
         $this->audit->record($by, 'roster_disimpan', 'jadwal_sel', '', ['isi' => count($rows), 'hapus' => count($hapusRows)]);
-        $this->catatEvent($kunci, $lama, $by);
+        $this->catatEvent($kunci, $r['before'] ?? [], $by, $defs);
 
         return ['isi' => (int) ($r['isi'] ?? count($rows)), 'hapus' => (int) ($r['hapus'] ?? count($hapusRows)),
             'peringatan' => $this->peringatan($orang, $defs)];
@@ -153,30 +152,8 @@ final class HrisRosterService
         return $kunci;
     }
 
-    /** Current cells for the touched keys, read BEFORE the write. */
-    private function selUntuk(array $kunci): array
-    {
-        $perOrang = [];
-        foreach (array_keys($kunci) as $k) {
-            [$uid, $d] = explode('|', $k, 2) + [null, null];
-            if ($uid) {
-                $perOrang[$uid][] = $d;
-            }
-        }
-        $out = [];
-        foreach ($perOrang as $uid => $tgl) {
-            sort($tgl);
-            foreach ($this->jadwal->shiftRange($uid, $tgl[0], $tgl[count($tgl) - 1])['rows'] ?? [] as $c) {
-                $c = (array) $c;
-                $out[(string) $c['u'].'|'.(string) $c['d']] = $c;
-            }
-        }
-
-        return $out;
-    }
-
     /** One roster event per cell the manual/batch/clear write changed. */
-    private function catatEvent(array $kunci, array $lama, string $by): void
+    private function catatEvent(array $kunci, array $lama, string $by, array $defs): void
     {
         if ($kunci === []) {
             return;
@@ -205,8 +182,8 @@ final class HrisRosterService
                 'divisi_kode' => ($divisi[(string) $uid] ?? null)?->kode,
                 'divisi_nama' => ($divisi[(string) $uid] ?? null)?->nama,
                 'tanggal_kerja' => (string) $tgl,
-                'sel_lama' => $sebelum === null ? null : $this->potretSel($sebelum),
-                'sel_baru' => $sesudah === null ? null : $this->potretSel($sesudah),
+                'sel_lama' => $sebelum === null ? null : $this->potretSel($sebelum, $defs),
+                'sel_baru' => $sesudah === null ? null : $this->potretSel($sesudah, $defs),
             ]);
         }
     }
@@ -222,10 +199,18 @@ final class HrisRosterService
             && self::s($a['s'] ?? '') === self::s($b['s'] ?? '');
     }
 
-    private static function potretSel(array $c): array
+    private function potretSel(array $c, array $defs): array
     {
-        return ['kode' => (string) ($c['t'] ?? $c['kode'] ?? ''), 'm' => self::s($c['m'] ?? ''),
-            's' => self::s($c['s'] ?? ''), 'n' => self::s($c['n'] ?? '')];
+        $kode = (string) ($c['t'] ?? $c['kode'] ?? '');
+        $def = $defs[$kode] ?? [];
+        $m = self::s($c['m'] ?? '');
+        $s = self::s($c['s'] ?? '');
+
+        return ['kode' => $kode, 'nama' => (string) ($def['nama'] ?? ''),
+            'mulai' => $m !== '' ? $m : (string) ($def['mulai'] ?? ''),
+            'selesai' => $s !== '' ? $s : (string) ($def['selesai'] ?? ''),
+            'blok' => $def['blok'] ?? [], 'libur' => (bool) ($def['libur'] ?? false),
+            'm' => $m, 's' => $s, 'n' => self::s($c['n'] ?? '')];
     }
 
     /** @return array{0:string,1:string} [userId, date] after the Divisi check */

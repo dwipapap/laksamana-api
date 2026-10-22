@@ -52,9 +52,8 @@ it('keeps start time, end time and note when a Kepala Divisi saves a full cell t
 
     $this->withToken($token)->getJson('/api/v1/jadwal/cells?from=2026-10-15&to=2026-10-15')
         ->assertOk()
-        ->assertJsonPath('data.0.m', '08:00')
-        ->assertJsonPath('data.0.s', '16:00')
-        ->assertJsonPath('data.0.n', 'apel pagi');
+        ->assertJsonFragment(['u' => 'u-yuzaalfarel', 'd' => '2026-10-15', 't' => 'PAGI',
+            'm' => '08:00', 's' => '16:00', 'n' => 'apel pagi']);
 });
 
 it('refuses a head writing another division', function () {

@@ -559,11 +559,138 @@ class JadwalService
 
     // ------------------------------------------------------------ writes
 
+    /** Raw one-cell snapshot, including the metadata used to detect ABA writes. */
+    public function readCell(string $user, string $tgl): ?array
+    {
+        return $this->rawCell($user, self::tglValid($tgl), false);
+    }
+
+    /** Stable fingerprint for an expected cell version captured at submit time. */
+    public function cellFingerprint(?array $cell): string
+    {
+        if ($cell === null) {
+            return hash('sha256', 'null');
+        }
+        $keys = ['u', 'd', 't', 'm', 's', 'n', 'updated_at', 'updated_by', 'version'];
+        $values = [];
+        foreach ($keys as $key) {
+            $values[$key] = (string) ($cell[$key] ?? '');
+        }
+
+        return hash('sha256', json_encode($values, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    /**
+     * Compare and replace one explicit roster cell under its Jadwal row lock.
+     * On legacy Jadwal, updated_by carries the durable operation id so a
+     * retry can prove that this exact approval wrote the target. On core,
+     * the caller's outer core transaction also contains finalization.
+     *
+     * @return array{state:'written'|'already_applied'|'conflict',cell:?array}
+     */
+    public function applyCellIfUnchanged(string $user, string $tgl, string $expectedHash,
+        array $target, string $operationId, string $actor, ?callable $beforeWrite = null,
+        ?callable $onWriteAttempt = null): array
+    {
+        $d = self::tglValid($tgl);
+        if ($d === '' || $user === '') {
+            throw new RuntimeException('Sel jadwal tidak valid.');
+        }
+        $marker = 'HRIS-UBAH-SHIFT:'.$operationId;
+        $state = 'conflict';
+        $cell = null;
+        $this->db()->transaction(function () use ($user, $d, $expectedHash, $target,
+            $actor, $marker, $beforeWrite, $onWriteAttempt, &$state, &$cell): void {
+            $current = $this->rawCell($user, $d, true);
+            if (! self::onCore() && ($current['updated_by'] ?? '') === $marker
+                && $this->cellHasTarget($current, $target)) {
+                $state = 'already_applied';
+                $cell = $current;
+
+                return;
+            }
+            if ($current === null || ! hash_equals($expectedHash, $this->cellFingerprint($current))) {
+                $cell = $current;
+
+                return;
+            }
+            if ($beforeWrite !== null) {
+                $beforeWrite($current);
+            }
+            if ($onWriteAttempt !== null) {
+                $onWriteAttempt();
+            }
+            if (self::onCore()) {
+                $actorId = $this->actorUlid($actor);
+                $this->db()->update(
+                    'UPDATE `jadwal_sel` SET `shift`=?, `jam_mulai`=?, `jam_selesai`=?, `catatan`=?, '
+                    .'`updated_by`=?, `updated_at`=?, `version`=`version`+1 WHERE `legacy_id`=?',
+                    [self::s($target['t'] ?? ''), self::jamValid($target['m'] ?? ''),
+                        self::jamValid($target['s'] ?? ''), mb_substr(self::s($target['n'] ?? ''), 0, 120),
+                        $actorId, self::now(), $user.'|'.$d]
+                );
+            } else {
+                $this->db()->update(
+                    'UPDATE `jadwal_sel` SET `shift`=?, `jam_mulai`=?, `jam_selesai`=?, `catatan`=?, '
+                    .'`updated_by`=?, `updated_at`=? WHERE `user_id`=? AND `tgl`=?',
+                    [self::s($target['t'] ?? ''), self::jamValid($target['m'] ?? ''),
+                        self::jamValid($target['s'] ?? ''), mb_substr(self::s($target['n'] ?? ''), 0, 120),
+                        $marker, self::ms(), $user, $d]
+                );
+            }
+            $state = 'written';
+            $cell = $this->rawCell($user, $d, true);
+        });
+
+        return ['state' => $state, 'cell' => $cell];
+    }
+
+    private function cellHasTarget(?array $cell, array $target): bool
+    {
+        return $cell !== null
+            && (string) ($cell['t'] ?? '') === self::s($target['t'] ?? '')
+            && (string) ($cell['m'] ?? '') === self::s($target['m'] ?? '')
+            && (string) ($cell['s'] ?? '') === self::s($target['s'] ?? '')
+            && (string) ($cell['n'] ?? '') === self::s($target['n'] ?? '');
+    }
+
+    /** Read a Jadwal cell; callers may request FOR UPDATE inside a transaction. */
+    private function rawCell(string $user, string $tgl, bool $lock): ?array
+    {
+        if ($tgl === '') {
+            return null;
+        }
+        $suffix = $lock ? ' FOR UPDATE' : '';
+        if (self::onCore()) {
+            $row = $this->db()->selectOne(
+                'SELECT `legacy_id`,`tgl`,`shift`,`jam_mulai`,`jam_selesai`,`catatan`,`updated_by`,`updated_at`,`version` '
+                .'FROM `jadwal_sel` WHERE `legacy_id`=?'.$suffix, [$user.'|'.$tgl]);
+            if (! $row) {
+                return null;
+            }
+            $userId = (string) $row->legacy_id;
+            $uid = substr($userId, 0, strrpos($userId, '|'));
+        } else {
+            $row = $this->db()->selectOne(
+                'SELECT `user_id`,`tgl`,`shift`,`jam_mulai`,`jam_selesai`,`catatan`,`updated_by`,`updated_at` '
+                .'FROM `jadwal_sel` WHERE `user_id`=? AND `tgl`=?'.$suffix, [$user, $tgl]);
+            if (! $row) {
+                return null;
+            }
+            $uid = (string) $row->user_id;
+        }
+
+        return ['u' => $uid, 'd' => (string) $row->tgl, 't' => (string) $row->shift,
+            'm' => (string) ($row->jam_mulai ?? ''), 's' => (string) ($row->jam_selesai ?? ''),
+            'n' => (string) ($row->catatan ?? ''), 'updated_by' => (string) ($row->updated_by ?? ''),
+            'updated_at' => (string) ($row->updated_at ?? ''), 'version' => (string) ($row->version ?? '')];
+    }
+
     /**
      * Upsert + delete cells in ONE transaction. Every crew member touched is
      * permission-checked BEFORE the transaction opens. Malformed rows are skipped.
      */
-    public function saveCells(mixed $rows, mixed $hapus, string $by, ?array $u): array
+    public function saveCells(mixed $rows, mixed $hapus, string $by, ?array $u, bool $captureBefore = false): array
     {
         $rows = is_array($rows) ? $rows : [];
         $hapus = is_array($hapus) ? $hapus : [];
@@ -578,16 +705,42 @@ class JadwalService
         foreach (array_keys($semua) as $uid) {
             $this->assertMayWriteRow($u, (string) $uid);
         }
+        $sortKey = static fn ($a, $b) => [(string) ($a['u'] ?? ''), (string) ($a['d'] ?? '')]
+            <=> [(string) ($b['u'] ?? ''), (string) ($b['d'] ?? '')];
+        usort($rows, $sortKey);
+        usort($hapus, $sortKey);
+        $lockRows = array_merge($rows, $hapus);
+        usort($lockRows, $sortKey);
 
         if (self::onCore()) {
-            return $this->saveCellsCore($rows, $hapus, $by);
+            $result = $this->saveCellsCore($rows, $hapus, $by, $captureBefore, $lockRows);
+            if (! $captureBefore) {
+                unset($result['before']);
+            }
+
+            return $result;
         }
 
         $now = self::ms();
         $by = mb_substr(self::s($by), 0, 120);
         $nIsi = 0;
         $nHapus = 0;
-        $this->db()->transaction(function () use ($rows, $hapus, $now, $by, &$nIsi, &$nHapus) {
+        $before = [];
+        $this->db()->transaction(function () use ($rows, $hapus, $now, $by, $captureBefore, $lockRows,
+            &$nIsi, &$nHapus, &$before) {
+            if ($captureBefore) {
+                foreach ($lockRows as $r) {
+                    $r = (array) $r;
+                    $uid = self::s($r['u'] ?? '');
+                    $d = self::tglValid($r['d'] ?? '');
+                    if ($uid !== '' && $d !== '') {
+                        $cell = $this->rawCell($uid, $d, true);
+                        if ($cell !== null) {
+                            $before[$uid.'|'.$d] = $cell;
+                        }
+                    }
+                }
+            }
             foreach ($rows as $r) {
                 $r = (array) $r;
                 $uid = mb_substr(self::s($r['u'] ?? ''), 0, 64);
@@ -619,11 +772,16 @@ class JadwalService
             }
         });
 
-        return ['saved' => true, 'isi' => $nIsi, 'hapus' => $nHapus, 'ts' => gmdate('c')];
+        $result = ['saved' => true, 'isi' => $nIsi, 'hapus' => $nHapus, 'before' => $before, 'ts' => gmdate('c')];
+        if (! $captureBefore) {
+            unset($result['before']);
+        }
+
+        return $result;
     }
 
     /** Cells on core: legacy user ids translate to User ULIDs inside. */
-    private function saveCellsCore(array $rows, array $hapus, string $by): array
+    private function saveCellsCore(array $rows, array $hapus, string $by, bool $captureBefore, array $lockRows): array
     {
         [$toUlid] = $this->users();
         $actor = $this->actorUlid($by);
@@ -631,7 +789,22 @@ class JadwalService
         $now = self::now();
         $nIsi = 0;
         $nHapus = 0;
-        $this->db()->transaction(function () use ($rows, $hapus, $toUlid, $actor, $now, &$nIsi, &$nHapus) {
+        $before = [];
+        $this->db()->transaction(function () use ($rows, $hapus, $toUlid, $actor, $now, $captureBefore, $lockRows,
+            &$nIsi, &$nHapus, &$before) {
+            if ($captureBefore) {
+                foreach ($lockRows as $r) {
+                    $r = (array) $r;
+                    $uid = self::s($r['u'] ?? '');
+                    $d = self::tglValid($r['d'] ?? '');
+                    if ($uid !== '' && $d !== '') {
+                        $cell = $this->rawCell($uid, $d, true);
+                        if ($cell !== null) {
+                            $before[$uid.'|'.$d] = $cell;
+                        }
+                    }
+                }
+            }
             foreach ($rows as $r) {
                 $r = (array) $r;
                 $uid = mb_substr(self::s($r['u'] ?? ''), 0, 64);
@@ -674,7 +847,7 @@ class JadwalService
             }
         });
 
-        return ['saved' => true, 'isi' => $nIsi, 'hapus' => $nHapus, 'ts' => gmdate('c')];
+        return ['saved' => true, 'isi' => $nIsi, 'hapus' => $nHapus, 'before' => $before, 'ts' => gmdate('c')];
     }
 
     /** Whether any roster cell ever used this shift code (HRIS refuses to delete it then). */

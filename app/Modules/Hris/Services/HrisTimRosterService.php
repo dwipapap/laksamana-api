@@ -115,7 +115,7 @@ final class HrisTimRosterService
                 }
                 if ($def['libur']) {
                     $jumlah['tidak_masuk']++;
-                    $baris[] = $k + ['status' => 'Tidak masuk', 'shift' => $this->bentukShift($def, $c)];
+                    $baris[] = $k + ['status' => 'Tidak masuk', 'shift' => null];
 
                     continue;
                 }

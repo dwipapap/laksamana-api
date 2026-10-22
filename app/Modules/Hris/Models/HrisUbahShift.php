@@ -16,6 +16,8 @@ final class HrisUbahShift extends CoreRecord
 {
     public const MENUNGGU = 'MENUNGGU';
 
+    public const APPLYING = 'APPLYING';
+
     public const DISETUJUI = 'DISETUJUI';
 
     public const DITOLAK = 'DITOLAK';

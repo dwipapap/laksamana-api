@@ -89,7 +89,8 @@ it('files a shift change without touching the official roster', function () {
     ubahSiap();
     $h = ubahCrew();
     $d = ubahTanggal();
-    hrisPlantShift('u-yuzaalfarel', $d, 'PAGI', '08:00', '17:00');
+    app(JadwalService::class)->saveCells([['u' => 'u-yuzaalfarel', 'd' => $d,
+        't' => 'PAGI', 'm' => '', 's' => '']], [], 'test', ['id' => 'u-admin', 'name' => 'Admin', 'adminModules' => ['*']]);
     $tujuan = ubahTargetValid('u-yuzaalfarel');
 
     $r = test()->postJson('/api/v1/hris/tim/ubah-shift',
@@ -99,7 +100,12 @@ it('files a shift change without touching the official roster', function () {
     expect($r['status'])->toBe('MENUNGGU')
         ->and($r['shift_lama']['kode'])->toBe('PAGI')
         ->and($r['shift_baru']['kode'])->toBe($tujuan)
+        ->and($r['shift_baru']['m'])->toBe('')
+        ->and($r['shift_baru']['s'])->toBe('')
         ->and($r['shift_baru']['blok'])->not()->toBe([]);
+    $defBaru = collect(app(HrisShiftService::class)->list())->firstWhere('kode', $tujuan);
+    expect($r['shift_baru']['mulai'])->toBe($defBaru['mulai'])
+        ->and($r['shift_baru']['selesai'])->toBe($defBaru['selesai']);
     $sel = app(JadwalService::class)->shiftRange('u-yuzaalfarel', $d, $d)['rows'];
     expect($sel[0]['t'])->toBe('PAGI');
 });
@@ -160,6 +166,59 @@ it('refuses a started shift and a punched date', function () {
         ->assertStatus(422)->assertJsonPath('error.code', 'sudah_ada_ketukan');
 });
 
+it('checks effective source and target starts at submit and again at approval', function () {
+    ubahSiap();
+    $tgl = hrisToday();
+    $shiftMalam = app(HrisShiftService::class)->create(['nama' => 'Uji Shift Malam',
+        'blok' => [['mulai' => '22:00', 'selesai' => '23:00']]], 'test')['kode'];
+    $shiftSplit = app(HrisShiftService::class)->create(['nama' => 'Uji Shift Split Mulai',
+        'blok' => [['mulai' => '08:00', 'selesai' => '12:00'], ['mulai' => '13:00', 'selesai' => '17:00']]], 'test')['kode'];
+
+    Carbon::setTestNow(Carbon::parse($tgl.' 12:00:00', 'Asia/Jakarta'));
+    try {
+        hrisPlantShift('u-yuzaalfarel', $tgl, 'PAGI', '11:00', '17:00');
+        test()->postJson('/api/v1/hris/tim/ubah-shift',
+            ['tanggal_kerja' => $tgl, 'shift_baru' => $shiftMalam, 'alasan' => 'x', 'idempotency_key' => 'k-src-submit'],
+            ubahCrew())->assertStatus(422)->assertJsonPath('error.code', 'shift_mulai');
+
+        hrisPlantShift('u-yuzaalfarel', $tgl, 'PAGI', '22:00', '23:00');
+        test()->postJson('/api/v1/hris/tim/ubah-shift',
+            ['tanggal_kerja' => $tgl, 'shift_baru' => $shiftSplit, 'alasan' => 'x', 'idempotency_key' => 'k-target-submit'],
+            ubahCrew())->assertStatus(422)->assertJsonPath('error.code', 'shift_mulai');
+    } finally {
+        Carbon::setTestNow(Carbon::parse($tgl.' 07:00:00', 'Asia/Jakarta'));
+    }
+
+    try {
+        hrisPlantShift('u-adit', $tgl, 'PAGI', '08:00', '17:00');
+        $sourceId = ubahSvcAjukan('u-adit', $tgl, $shiftMalam, 'k-src-approve')['id'];
+        Carbon::setTestNow(Carbon::parse($tgl.' 09:00:00', 'Asia/Jakarta'));
+        hrisMakeHr('u-admin');
+        try {
+            app(HrisUbahShiftService::class)->putuskan(hrisMe('u-admin'), $sourceId,
+                ['status' => 'DISETUJUI', 'berubah' => ubahVersi($sourceId)]);
+            expect(false)->toBeTrue('a started source shift cannot be approved');
+        } catch (HrisError $e) {
+            expect($e->status)->toBe(422)->and($e->errorCode)->toBe('shift_mulai');
+        }
+        app(HrisUbahShiftService::class)->batal(hrisMe('u-adit'), $sourceId, ['berubah' => ubahVersi($sourceId)]);
+
+        Carbon::setTestNow(Carbon::parse($tgl.' 07:00:00', 'Asia/Jakarta'));
+        hrisPlantShift('u-adit', $tgl, 'PAGI', '13:00', '17:00');
+        $targetId = ubahSvcAjukan('u-adit', $tgl, $shiftSplit, 'k-target-approve')['id'];
+        Carbon::setTestNow(Carbon::parse($tgl.' 09:00:00', 'Asia/Jakarta'));
+        try {
+            app(HrisUbahShiftService::class)->putuskan(hrisMe('u-admin'), $targetId,
+                ['status' => 'DISETUJUI', 'berubah' => ubahVersi($targetId)]);
+            expect(false)->toBeTrue('a started target shift cannot be approved');
+        } catch (HrisError $e) {
+            expect($e->status)->toBe(422)->and($e->errorCode)->toBe('shift_mulai');
+        }
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
 it('keeps one active request per crew and date', function () {
     ubahSiap();
     $h = ubahCrew();
@@ -189,6 +248,19 @@ it('scopes history and detail to the owner', function () {
     $asing = ubahCrew('u-arif');
 
     test()->getJson("/api/v1/hris/tim/ubah-shift/{$milik['id']}", $asing)->assertNotFound();
+    test()->getJson("/api/v1/hris/tim/persetujuan/ubah-shift/{$milik['id']}", $asing)->assertOk();
+    try {
+        app(HrisUbahShiftService::class)->detailPemutus(hrisMe('u-yuzaalfarel'), $milik['id']);
+        expect(false)->toBeTrue('requester cannot use approval detail');
+    } catch (HrisError $e) {
+        expect($e->status)->toBe(403);
+    }
+    try {
+        app(HrisUbahShiftService::class)->detailPemutus(hrisMe('u-dwipa'), $milik['id']);
+        expect(false)->toBeTrue('non-approver cannot use approval detail');
+    } catch (HrisError $e) {
+        expect($e->status)->toBe(403);
+    }
     test()->postJson("/api/v1/hris/tim/ubah-shift/{$milik['id']}/batal", ['berubah' => 1], $asing)->assertNotFound();
     test()->getJson('/api/v1/hris/tim/ubah-shift', $asing)->assertOk()->assertJsonPath('meta.total', 0);
 });
@@ -222,11 +294,20 @@ it('lets the division head approve directly and writes the roster', function () 
 
     $sel = app(JadwalService::class)->shiftRange('u-yuzaalfarel', $d, $d)['rows'];
     expect($sel[0]['t'])->toBe($tujuan);
+    $rawSel = app(JadwalService::class)->readCell('u-yuzaalfarel', $d);
+    expect($rawSel['m'])->toBe('')->and($rawSel['s'])->toBe('');
     $event = HrisRosterEvent::query()->where('ref_pengajuan_id', $id)->first();
     expect($event)->not()->toBeNull();
     expect($event->sumber)->toBe('UBAH_SHIFT')
         ->and($event->sel_lama['kode'])->toBe('PAGI')
         ->and($event->sel_baru['kode'])->toBe($tujuan);
+    try {
+        app(HrisUbahShiftService::class)->putuskan(hrisMe('u-dwipa'), $id,
+            ['status' => 'DISETUJUI', 'berubah' => ubahVersi($id)]);
+        expect(false)->toBeTrue('non-approver cannot replay a final decision');
+    } catch (HrisError $e) {
+        expect($e->status)->toBe(403);
+    }
 });
 
 it('refuses non-heads, other divisions and self-approval', function () {
@@ -299,7 +380,7 @@ it('reports a manual edit as a conflict instead of overwriting', function () {
     expect($sel[0]['t'])->toBe('SIANG');
 });
 
-it('recovers when the cell already shows the target', function () {
+it('does not treat a manually written target as proof of application', function () {
     ubahSiap();
     $h = ubahHead();
     $d = ubahTanggal();
@@ -307,16 +388,84 @@ it('recovers when the cell already shows the target', function () {
     $tujuan = ubahTargetValid('u-yuzaalfarel');
     $id = ubahSvcAjukan('u-yuzaalfarel', $d, 'MALAM', 'k-pulih')['id'];
 
-    // Simulate a crash between the Jadwal write and the core finalize: the
-    // cell is exactly what the approval would have written.
+    // A manual write can produce the target's visible values. Without the
+    // operation marker it must still conflict and remain unapproved.
     $minta = HrisUbahShift::query()->find($id);
     app(HrisRosterService::class)->simpan(null, [['u' => 'u-yuzaalfarel', 'd' => $d, 't' => $tujuan,
         'm' => (string) ($minta->shift_baru['m'] ?? ''), 's' => (string) ($minta->shift_baru['s'] ?? '')]], [], 'test');
 
     test()->postJson("/api/v1/hris/tim/ubah-shift/{$id}/putuskan",
         ['status' => 'DISETUJUI', 'berubah' => ubahVersi($id)], $h)
+        ->assertStatus(409)->assertJsonPath('error.code', 'sel_berubah');
+    expect(HrisUbahShift::query()->find($id)->status)->toBe('MENUNGGU')
+        ->and(HrisRosterEvent::query()->where('ref_pengajuan_id', $id)->count())->toBe(0);
+});
+
+it('recovers only the frozen approver after a Jadwal write and blocks cancel or reject', function () {
+    ubahSiap();
+    $h = ubahHead();
+    $d = ubahTanggal();
+    hrisPlantShift('u-yuzaalfarel', $d, 'PAGI', '08:00', '17:00');
+    $id = ubahSvcAjukan('u-yuzaalfarel', $d, 'MALAM', 'k-crash-pulih')['id'];
+    HrisUbahShiftService::$ujiSesudahTulis = static function (): void {
+        throw new RuntimeException('simulated crash after legacy Jadwal commit');
+    };
+    try {
+        test()->postJson("/api/v1/hris/tim/ubah-shift/{$id}/putuskan",
+            ['status' => 'DISETUJUI', 'berubah' => ubahVersi($id)], $h)
+            ->assertStatus(500)->assertJsonPath('error.code', 'terap_gagal');
+    } finally {
+        HrisUbahShiftService::$ujiSesudahTulis = null;
+    }
+    expect(HrisUbahShift::query()->find($id)->status)->toBe('APPLYING');
+    test()->getJson('/api/v1/hris/tim/persetujuan', $h)->assertOk()
+        ->assertJsonPath('data.ubah_shift.0.status', 'APPLYING');
+    try {
+        app(HrisUbahShiftService::class)->batal(hrisMe('u-yuzaalfarel'), $id, ['berubah' => ubahVersi($id)]);
+        expect(false)->toBeTrue('APPLYING cannot be cancelled');
+    } catch (HrisError $e) {
+        expect($e->status)->toBe(422);
+    }
+    try {
+        app(HrisUbahShiftService::class)->putuskan(hrisMe('u-arif'), $id,
+            ['status' => 'DITOLAK', 'catatan' => 'Tolak', 'berubah' => ubahVersi($id)]);
+        expect(false)->toBeTrue('APPLYING cannot be rejected');
+    } catch (HrisError $e) {
+        expect($e->status)->toBe(409);
+    }
+    try {
+        app(HrisUbahShiftService::class)->putuskan(hrisMe('u-dwipa'), $id,
+            ['status' => 'DISETUJUI', 'berubah' => ubahVersi($id)]);
+        expect(false)->toBeTrue('a different actor cannot resume');
+    } catch (HrisError $e) {
+        expect($e->status)->toBe(403);
+    }
+    test()->postJson("/api/v1/hris/tim/ubah-shift/{$id}/putuskan",
+        ['status' => 'DISETUJUI', 'berubah' => ubahVersi($id)], $h)
         ->assertOk()->assertJsonPath('data.status', 'DISETUJUI');
     expect(HrisRosterEvent::query()->where('ref_pengajuan_id', $id)->count())->toBe(1);
+});
+
+it('compares the source again after approval intent commits', function () {
+    ubahSiap();
+    $h = ubahHead();
+    $d = ubahTanggal();
+    hrisPlantShift('u-yuzaalfarel', $d, 'PAGI', '08:00', '17:00');
+    $id = ubahSvcAjukan('u-yuzaalfarel', $d, 'MALAM', 'k-race-source')['id'];
+    HrisUbahShiftService::$ujiSebelumCAS = static function () use ($d): void {
+        app(HrisRosterService::class)->simpan(null,
+            [['u' => 'u-yuzaalfarel', 'd' => $d, 't' => 'SIANG']], [], 'Concurrent manual edit');
+    };
+    try {
+        test()->postJson("/api/v1/hris/tim/ubah-shift/{$id}/putuskan",
+            ['status' => 'DISETUJUI', 'berubah' => ubahVersi($id)], $h)
+            ->assertStatus(409)->assertJsonPath('error.code', 'sel_berubah');
+    } finally {
+        HrisUbahShiftService::$ujiSebelumCAS = null;
+    }
+    expect(HrisUbahShift::query()->find($id)->status)->toBe('MENUNGGU')
+        ->and(app(JadwalService::class)->shiftRange('u-yuzaalfarel', $d, $d)['rows'][0]['t'])->toBe('SIANG')
+        ->and(HrisRosterEvent::query()->where('ref_pengajuan_id', $id)->count())->toBe(0);
 });
 
 it('fails visibly when the roster write breaks, then recovers', function () {
@@ -381,7 +530,10 @@ it('records manual, batch and clear edits from the roster screen', function () {
     expect($isi)->not()->toBeNull();
     expect($isi->sumber)->toBe('EDIT_MANUAL')
         ->and($isi->sel_lama['kode'])->toBe('PAGI')
+        ->and($isi->sel_lama['nama'])->not()->toBe('')
+        ->and($isi->sel_lama)->toHaveKeys(['mulai', 'selesai', 'blok'])
         ->and($isi->sel_baru['kode'])->toBe($tujuan)
+        ->and($isi->sel_baru['nama'])->not()->toBe('')
         ->and($isi->aktor)->toBe('HR Uji');
 
     $hapus = HrisRosterEvent::query()->where('user_id', 'u-arif')->where('tanggal_kerja', $d)->first();
@@ -407,5 +559,8 @@ it('records finalized leave requests as roster events', function () {
     expect($event)->not()->toBeNull();
     expect($event->sumber)->toBe('PENGAJUAN')
         ->and($event->sel_lama['kode'])->toBe('PAGI')
-        ->and($event->sel_baru['kode'])->toBe('CUTI');
+        ->and($event->sel_lama['nama'])->not()->toBe('')
+        ->and($event->sel_baru['kode'])->toBe('CUTI')
+        ->and($event->sel_baru['nama'])->not()->toBe('')
+        ->and((int) $event->diajukan_at)->toBeGreaterThan(1_000_000_000_000);
 });

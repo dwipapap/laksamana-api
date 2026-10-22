@@ -88,7 +88,7 @@ it('marks off cells Tidak masuk and flags unknown shifts as data problems', func
 
     $r = test()->getJson("/api/v1/hris/tim/roster?dari={$d}&sampai={$d}", timCrew())->assertOk()->json('data');
     $saya = collect($r['hari'][0]['kru'])->firstWhere('user_id', 'u-yuzaalfarel');
-    expect($saya['status'])->toBe('Tidak masuk')->and($saya['shift']['libur'])->toBeTrue();
+    expect($saya['status'])->toBe('Tidak masuk')->and($saya['shift'])->toBeNull();
     expect($r['masalah'])->toHaveCount(1);
     expect($r['masalah'][0])->toMatchArray(['user_id' => 'u-arif', 'tanggal' => $d, 'kode' => 'XX_TAK_ADA']);
     $j = $r['hari'][0]['jumlah'];

@@ -13374,7 +13374,7 @@
         "tags": [
           "hris"
         ],
-        "summary": "Own shift change detail with frozen before/after plus the live cell and conflict flag",
+        "summary": "Own shift change detail with frozen before/after plus the live cell and conflict flag; private to requester",
         "operationId": "getApiV1HrisTimUbahShiftId",
         "security": [
           {
@@ -13403,7 +13403,7 @@
             }
           },
           "403": {
-            "description": "Forbidden (module not granted, head scope, or not an HRIS module admin)",
+            "description": "Forbidden (not the current head in scope or frozen approver)",
             "content": {
               "application/json": {
                 "schema": {
@@ -13413,7 +13413,7 @@
             }
           },
           "404": {
-            "description": "Not found (unknown id, or another crew member’s request)",
+            "description": "Not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -13430,7 +13430,7 @@
         "tags": [
           "hris"
         ],
-        "summary": "Cancel an own MENUNGGU shift change (versioned)",
+        "summary": "Cancel an own MENUNGGU shift change (versioned); APPLYING cannot be cancelled",
         "operationId": "postApiV1HrisTimUbahShiftIdBatal",
         "security": [
           {
@@ -13560,7 +13560,7 @@
         "tags": [
           "hris"
         ],
-        "summary": "Decide a shift change: head in scope (never self) or HR fallback. Approval applies the single roster cell, then finalizes",
+        "summary": "Decide a shift change: approval commits APPLYING first, then atomically compares/applies the roster cell and finalizes; only the frozen approver can resume",
         "operationId": "postApiV1HrisTimUbahShiftIdPutuskan",
         "security": [
           {
@@ -13648,7 +13648,7 @@
             }
           },
           "409": {
-            "description": "Conflict (stale version, already decided, or cell changed elsewhere)",
+            "description": "Version/source conflict, another decision is in progress, or an APPLYING decision cannot be cancelled/rejected",
             "content": {
               "application/json": {
                 "schema": {
@@ -13833,6 +13833,62 @@
           },
           "403": {
             "description": "Forbidden (not an HRIS module admin)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/hris/tim/persetujuan/ubah-shift/{id}": {
+      "get": {
+        "tags": [
+          "hris"
+        ],
+        "summary": "Head approval detail with frozen before/after and live cell; visible only to the in-scope head or the frozen approver during APPLYING",
+        "operationId": "getApiV1HrisTimPersetujuanUbahShiftId",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized (missing/invalid Bearer token)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (not the current head in scope or frozen approver)",
             "content": {
               "application/json": {
                 "schema": {
