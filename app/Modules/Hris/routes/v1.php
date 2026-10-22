@@ -15,6 +15,7 @@ use App\Modules\Hris\Http\V1\HrisOnboardingController as J;
 use App\Modules\Hris\Http\V1\HrisPelamarController as A;
 use App\Modules\Hris\Http\V1\HrisPengumumanController as U;
 use App\Modules\Hris\Http\V1\HrisPermintaanController as N;
+use App\Modules\Hris\Http\V1\HrisProfilController as V;
 use App\Modules\Hris\Http\V1\HrisQueueController as Q;
 use App\Modules\Hris\Http\V1\HrisRequestController as R;
 use App\Modules\Hris\Http\V1\HrisRosterController as Y;
@@ -41,6 +42,13 @@ Route::middleware(['auth:sanctum', 'module:hris'])->prefix('hris')->group(functi
     Route::get('punches', [M::class, 'punches']);
     Route::get('punches/{id}/photo', [M::class, 'punchPhoto'])->where('id', '[A-Za-z0-9-]+');
     Route::get('riwayat', [M::class, 'riwayat']);
+
+    // Crew profile + contact change requests with HR approval (issue #344).
+    Route::get('me/profile', [V::class, 'profile']);
+    Route::get('me/profile-change-requests', [V::class, 'indexMine']);
+    Route::post('me/profile-change-requests', [V::class, 'storeMine']);
+    Route::get('me/profile-change-requests/{id}', [V::class, 'showMine'])->where('id', '[A-Za-z0-9]+');
+    Route::post('me/profile-change-requests/{id}/cancel', [V::class, 'cancelMine'])->where('id', '[A-Za-z0-9]+');
 
     // Decision queue (HR + Kepala Divisi).
     Route::get('queue', [Q::class, 'queue']);
@@ -153,6 +161,11 @@ Route::middleware(['auth:sanctum', 'module:hris'])->prefix('hris')->group(functi
     Route::post('kelola/karyawan/{userId}/keluar', [W::class, 'keluar'])->where('userId', $uid);
     Route::post('kelola/karyawan/{userId}/batal-keluar', [W::class, 'batalKeluar'])->where('userId', $uid);
     Route::get('kelola/struktur', [W::class, 'struktur']);
+
+    // Profile change approvals (issue #344): Admin Modul HRIS only.
+    Route::get('kelola/perubahan-profil', [V::class, 'indexKelola']);
+    Route::get('kelola/perubahan-profil/{id}', [V::class, 'showKelola'])->where('id', '[A-Za-z0-9]+');
+    Route::post('kelola/perubahan-profil/{id}/decision', [V::class, 'decideKelola'])->where('id', '[A-Za-z0-9]+');
 
     Route::get('kelola/divisi', [W::class, 'divisiIndex']);
     Route::post('kelola/divisi', [W::class, 'divisiStore']);

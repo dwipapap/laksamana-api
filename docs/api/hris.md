@@ -509,6 +509,53 @@ Who may call:
 
 **Karyawan item:** `user_id`, `nama`, `aktif` (Office login), `tim`, `divisi{id,kode,nama,jenis}|null`, `divisi_impor`, `jabatan{id,nama,level,level_urutan}|null`, `jabatan_impor`, `atasan_user_id`, `atasan{user_id,nama,otomatis}|null`, `status_kerja`, dates, `alasan_keluar`, `catatan_keluar`, `berubah`. For Pengelola it also carries `nik`, `jenis_kelamin`, `tanggal_lahir`, `alamat`, `kontak_darurat_*`, `no_hp` and `email`. Write responses add `peringatan[]` when the Jadwal placement or the Office HR columns could not be updated.
 
+## P — crew profile and contact change requests with HR approval (issue #344)
+
+Crew read their current profile from the server and propose contact
+corrections; nothing official changes at submit. An Admin Modul HRIS
+(superadmin `*` included) approves the whole patch or rejects it with a
+readable note. The `hr` settings list, Kepala Divisi, Admin Jadwal and
+announcement grantees get `403` on every route below.
+
+Only these five fields can be requested: `email`, `no_hp` (both on the
+Office User via `AccountRepository`), `alamat`, `kontak_darurat_nama`,
+`kontak_darurat_hp` (on the Karyawan row). Anything else in `perubahan`
+is a `422`; a diff that changes nothing is `tidak_ada_perubahan`.
+`PUT /api/v1/me/contact` and the other Office apps keep their direct
+behaviour on purpose: a contact changed elsewhere while a request waits
+is detected as a `409 kontak_berubah` at approval, never silently
+overwritten.
+
+| Method | Path | Body / query | Notes |
+|---|---|---|---|
+| GET | `/hris/me/profile` | — | Current profile: `kontak{email,no_hp,alamat,kontak_darurat_nama,kontak_darurat_hp}`, `editable_fields`, `revisi_profil`, `pengajuan_aktif` |
+| GET | `/hris/me/profile-change-requests` | `status?`, `page?`, `per_page?` | Own history, newest first |
+| POST | `/hris/me/profile-change-requests` | `perubahan{...}`, `revisi_profil`, `idempotency_key` | `201` MENUNGGU, official contact untouched; same key + payload replays (`200`), same key + other payload is `409`; stale `revisi_profil` is `409 profil_berubah` |
+| GET | `/hris/me/profile-change-requests/{id}` | — | Own detail with `beda[{field,lama,baru,terkini,konflik}]`; another person's id is `404` |
+| POST | `/hris/me/profile-change-requests/{id}/cancel` | `berubah` | Only the owner and only MENUNGGU; `409` on a stale version |
+| GET | `/hris/kelola/perubahan-profil` | `status`=MENUNGGU, `divisi?`, `q?`, `user?`, `page?`, `per_page?` | Oldest first with an accurate `meta.total` |
+| GET | `/hris/kelola/perubahan-profil/{id}` | — | Detail plus `apply_account_ok`, `apply_core_ok`, `apply_galat`, `apply_percobaan` while DIPROSES |
+| POST | `/hris/kelola/perubahan-profil/{id}/decision` | `status` DISETUJUI/DITOLAK, `catatan?` (required on reject), `berubah`, `idempotency_key?` | Whole patch only; replaying the final status returns it, a different one is `409` |
+
+**Apply strategy (two storages, no shared transaction):** `core` holds the
+request and the Karyawan row, the legacy account database holds
+email/no_hp. On approval the service first checks the requester is still
+an active employee, the email is still free and the requested fields
+still match the snapshot — all inside a row lock, so a failed check
+leaves MENUNGGU. It then persists DIPROSES, writes the Account fields
+through `AccountRepository::updateUser` (requested keys only; never
+`saveUserCore`/`applyContact`, so PIN/active/name never move), verifies
+on read-back (a missing legacy email column fails visibly as
+`email_tak_tersimpan` instead of a false success), writes the Karyawan
+fields, verifies, and only then marks DISETUJUI. A crash in between
+leaves a DIPROSES row with `apply_galat` naming the failed target only
+(no PII in audit/logs); the same decision endpoint retries it,
+skipping targets that already match. DIPROSES accepts only a DISETUJUI
+retry; rejecting it is `409 sudah_diproses`.
+
+**Release:** the `hris_perubahan_profil` migration is additive on `core`
+(no legacy DDL). Ship the schema before the API, then the HRIS frontend.
+
 **Side effects:**
 - A write keeps the Jadwal Penempatan Divisi in line: a shift Divisi uses its kode, and anything else uses `nonshift`.
 - A write mirrors Jabatan, status kerja (Talenta words), join date and the Divisi name into the Office User's HR columns.
