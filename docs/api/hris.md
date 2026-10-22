@@ -603,6 +603,39 @@ The shift definitions stay in the Jadwal setting (`shifts`), so the old panels k
 
 **Default shift (J8):** `hris_karyawan.shift_bawaan` (set through `PATCH /hris/kelola/karyawan/{userId}`; it must be an active working shift). Attendance reads it before the old `shiftKru` map. `hris:impor-karyawan` fills empty values from `shiftKru`. `GET /hris/kelola/karyawan/{userId}` also returns `shift_lama` (the legacy `shiftKru` value, if any) as a transition hint; it is read-only and never written by HRIS.
 
+## T — crew team roster, shift changes and head approval (issue #346)
+
+Crew read the team roster and file one-person one-date shift changes;
+the division head approves directly (HR fallback through Kelola).
+CUTI/PH/IZIN keep their own flow and approvals in `HrisRequestService`.
+
+Who may call:
+
+- **Crew**: `tim/divisi`, `tim/roster`, own `tim/ubah-shift` rows, `tim/persetujuan` (only what they may decide: heads see their scope, plain crew get empty lists). No roster writes, no HR audit.
+- **Head**: decides shift changes of their current division members (never self) through `tim/ubah-shift/{id}/putuskan`, plus their head-step CUTI/PH/IZIN through the existing `POST /hris/requests/{id}/decision`. Kantor and shift heads both resolve through the canonical HRIS map.
+- **HR admin** (Admin Modul HRIS, superadmin `*`): decides fallback shift changes (division without a head, or the requester is a head themself) through the same putuskan endpoint, and reads `kelola/roster/riwayat`.
+
+| Method | Path | Body / query | Notes |
+|---|---|---|---|
+| GET | `/hris/tim/divisi` | — | Active divisions `{id,kode,nama,jenis}` for the filter |
+| GET | `/hris/tim/roster` | `dari`, `sampai` (≤ 31 days), `divisi` (code or `semua`; default own, else `semua`) | Per day: `kru[{user_id,nama,jabatan,divisi,milik_sendiri,status,shift}]`, `jumlah{dijadwalkan,tidak_masuk,belum_diatur}`, `masalah[]` (unknown shift codes, excluded from counts) |
+| GET | `/hris/tim/ubah-shift` | `status?`, `page?`, `per_page?` | Own history, newest first |
+| POST | `/hris/tim/ubah-shift` | `tanggal_kerja`, `shift_baru`, `alasan`, `idempotency_key` | `201` MENUNGGU, official roster untouched; same key + payload replays, same key + other payload is `409` |
+| GET | `/hris/tim/ubah-shift/{id}` | — | Own detail with frozen before/after plus the live cell and a conflict flag; another person's id is `404` |
+| POST | `/hris/tim/ubah-shift/{id}/batal` | `berubah` | Only the owner and only MENUNGGU |
+| GET | `/hris/tim/persetujuan` | — | `{ubah_shift[], pengajuan[]}` the caller may decide (heads only; plain crew get empty lists) |
+| POST | `/hris/tim/ubah-shift/{id}/putuskan` | `status` DISETUJUI/DITOLAK, `catatan?` (required on reject), `berubah` | Head in scope (never self) or HR fallback; whole patch only; replaying the final status returns it, a different one is `409` |
+| GET | `/hris/kelola/ubah-shift/{id}` | — | HR shift change detail (same shape as the crew detail); Admin HRIS only |
+| GET | `/hris/kelola/roster/riwayat` | `tanggal_dari/sampai`, `waktu_dari/sampai`, `divisi?`, `user?`, `q?`, `sumber?`, `page?`, `per_page?` | `{event[], menunggu_hr[]}`: append-only cell events with before/after snapshots plus shift changes waiting for the HR fallback decider |
+
+**Team roster meaning (schedule, never attendance):** a cell with a valid working shift is Dijadwalkan; a cell with a valid off/libur shift is Tidak masuk; no explicit cell is Belum diatur (shift bawaan never upgrades it; office/nonshift crew without cells stay Belum diatur). SPLIT counts once with both blocks; an end earlier than the start is marked `lintas_hari` on the work date. Unknown shift codes are listed under `masalah` with names and dates, never silently counted. Peer DTOs carry names, positions, divisions, dates, schedule status and shift detail only.
+
+**Ubah shift rules:** one explicit working source cell; target must be a working active shift valid for the requester's division (OFF/CUTI/IZIN/SAKIT/non-working excluded); no past dates, no started shifts (first block bound on the work date), no punched dates — those get a message to contact HR instead of a silent queue. One active request per crew per date. A manual edit after submit is a `409 sel_berubah` with the live cell, never an overwrite.
+
+**Apply strategy (two storages, no shared transaction):** the decision revalidates authority and facts under a row lock, writes the single Jadwal cell through `JadwalService::saveCells` (same `adminModules: jadwal` authority as the roster screen), then persists status, roster event and audit in one core transaction. The write is idempotent, so a crash before the core finalize is recovered by re-deciding: the cell already equals the target and the row finalizes (the event is written once, guarded by the request id). A cell matching neither snapshot nor target stays MENUNGGU as a conflict. Rejections and cancelled pendings never create cell events.
+
+**Audit boundary:** `hris_roster_event` starts at deploy (manual/batch/clear edits, approved shift changes, finalized leave requests, leaver cleanup as SISTEM). It does not backfill past manual SQL or legacy panel writes; those stay out of scope and are documented as such.
+
 ## For laksamana-hris
 
 `packages/api` generates types from `openapi.json` (tag `hris`). Web PWA:

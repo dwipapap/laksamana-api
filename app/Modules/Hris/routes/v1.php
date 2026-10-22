@@ -20,6 +20,7 @@ use App\Modules\Hris\Http\V1\HrisQueueController as Q;
 use App\Modules\Hris\Http\V1\HrisRequestController as R;
 use App\Modules\Hris\Http\V1\HrisRosterController as Y;
 use App\Modules\Hris\Http\V1\HrisScoreController as S;
+use App\Modules\Hris\Http\V1\HrisTimController as C;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -188,6 +189,11 @@ Route::middleware(['auth:sanctum', 'module:hris'])->prefix('hris')->group(functi
     Route::patch('kelola/shift/{kode}', [W::class, 'shiftUpdate'])->where('kode', '[A-Za-z0-9_-]+');
     Route::delete('kelola/shift/{kode}', [W::class, 'shiftDestroy'])->where('kode', '[A-Za-z0-9_-]+');
 
+    // Roster history for HR (issue #346): append-only cell events plus the
+    // shift changes waiting for the HR fallback decider.
+    Route::get('kelola/roster/riwayat', [Y::class, 'riwayat']);
+    Route::get('kelola/ubah-shift/{id}', [C::class, 'showUbahKelola'])->where('id', '[A-Za-z0-9]+');
+
     // Roster (J6–J7): planned in HRIS, stored by Jadwal.
     Route::get('roster', [Y::class, 'index']);
     Route::put('roster', [Y::class, 'simpan']);
@@ -195,4 +201,14 @@ Route::middleware(['auth:sanctum', 'module:hris'])->prefix('hris')->group(functi
     Route::get('roster/aturan', [Y::class, 'aturan']);
     Route::put('roster/aturan', [Y::class, 'simpanAturan']);
     Route::get('me/jadwal', [Y::class, 'saya']);
+
+    // Crew team roster, shift changes and head approvals (issue #346).
+    Route::get('tim/divisi', [C::class, 'divisi']);
+    Route::get('tim/roster', [C::class, 'roster']);
+    Route::get('tim/ubah-shift', [C::class, 'indexUbah']);
+    Route::post('tim/ubah-shift', [C::class, 'storeUbah']);
+    Route::get('tim/ubah-shift/{id}', [C::class, 'showUbah'])->where('id', '[A-Za-z0-9]+');
+    Route::post('tim/ubah-shift/{id}/batal', [C::class, 'batalUbah'])->where('id', '[A-Za-z0-9]+');
+    Route::get('tim/persetujuan', [C::class, 'persetujuan']);
+    Route::post('tim/ubah-shift/{id}/putuskan', [C::class, 'putuskanUbah'])->where('id', '[A-Za-z0-9]+');
 });
