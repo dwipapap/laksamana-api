@@ -7,7 +7,10 @@ namespace App\Modules\Hris\Http\V1;
 use App\Auth\OfficeAccess;
 use App\Modules\Hris\Services\HrisError;
 use App\Modules\Hris\Services\HrisLingkup;
+use App\Modules\Hris\Services\HrisRosterEventService;
 use App\Modules\Hris\Services\HrisRosterService;
+use App\Modules\Hris\Services\HrisUbahShiftService;
+use App\Support\Api\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -22,6 +25,8 @@ final class HrisRosterController extends HrisBaseController
         OfficeAccess $access,
         private readonly HrisLingkup $lingkup,
         private readonly HrisRosterService $roster,
+        private readonly HrisRosterEventService $riwayat,
+        private readonly HrisUbahShiftService $ubah,
     ) {
         parent::__construct($access);
     }
@@ -103,5 +108,43 @@ final class HrisRosterController extends HrisBaseController
         $d = $r->validate(['dari' => ['required', 'date_format:Y-m-d'], 'sampai' => ['required', 'date_format:Y-m-d']]);
 
         return $this->run(fn () => $this->roster->jadwalSaya(self::s($me['id']), $d['dari'], $d['sampai']));
+    }
+
+    /**
+     * Kelola roster history tab (issue #346): append-only cell events with
+     * filters, plus the shift changes waiting for the HR fallback decider.
+     * Admin Modul HRIS (superadmin `*` included) only.
+     */
+    public function riwayat(Request $r): JsonResponse
+    {
+        $d = $r->validate([
+            'tanggal_dari' => ['nullable', 'date_format:Y-m-d'],
+            'tanggal_sampai' => ['nullable', 'date_format:Y-m-d'],
+            'waktu_dari' => ['nullable', 'integer', 'min:1'],
+            'waktu_sampai' => ['nullable', 'integer', 'min:1'],
+            'divisi' => ['nullable', 'string', 'max:32'],
+            'user' => ['nullable', 'string', 'max:64'],
+            'q' => ['nullable', 'string', 'max:120'],
+            'sumber' => ['nullable', 'string', 'max:16'],
+            'page' => ['nullable', 'integer', 'min:1', 'max:10000'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+        $me = $this->me($r);
+
+        try {
+            $uid = self::s($me['id'] ?? '');
+            if ($uid === '' || ! $this->access->isModuleAdmin($uid, 'hris')) {
+                throw new HrisError('forbidden', 'Riwayat roster hanya untuk Admin Modul HRIS.', 403);
+            }
+            $hasil = $this->riwayat->riwayat($d['tanggal_dari'] ?? null, $d['tanggal_sampai'] ?? null,
+                isset($d['waktu_dari']) ? (int) $d['waktu_dari'] : null,
+                isset($d['waktu_sampai']) ? (int) $d['waktu_sampai'] : null,
+                $d['divisi'] ?? null, $d['user'] ?? null, $d['q'] ?? null, $d['sumber'] ?? null,
+                (int) ($d['page'] ?? 1), (int) ($d['per_page'] ?? 20));
+
+            return ApiResponse::ok(['event' => $hasil['data'], 'menunggu_hr' => $this->ubah->antreanHr($me)], $hasil['meta']);
+        } catch (\Throwable $e) {
+            return $this->failure($e);
+        }
     }
 }

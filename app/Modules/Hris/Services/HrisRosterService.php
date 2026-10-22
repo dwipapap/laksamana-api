@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\Hris\Services;
 
 use App\Modules\Hris\Models\HrisKaryawan;
+use App\Modules\Hris\Models\HrisRosterEvent;
 use App\Modules\Jadwal\Services\JadwalService;
 use App\Support\Divisi;
 use App\Support\JsonDoc;
@@ -26,6 +27,7 @@ final class HrisRosterService
         private readonly JadwalService $jadwal,
         private readonly HrisShiftService $shift,
         private readonly HrisAuditService $audit,
+        private readonly HrisRosterEventService $event,
     ) {}
 
     private static function s(mixed $v): string
@@ -126,12 +128,89 @@ final class HrisRosterService
         if ($rows === [] && $hapusRows === []) {
             return ['isi' => 0, 'hapus' => 0, 'peringatan' => []];
         }
+        $kunci = $this->kunciTersentuh($rows, $hapusRows);
         $r = $this->jadwal->saveCells($rows, $hapusRows, 'HRIS:'.$by,
-            ['id' => '', 'name' => $by, 'adminModules' => ['jadwal']]);
+            ['id' => '', 'name' => $by, 'adminModules' => ['jadwal']], true);
         $this->audit->record($by, 'roster_disimpan', 'jadwal_sel', '', ['isi' => count($rows), 'hapus' => count($hapusRows)]);
+        $this->catatEvent($kunci, $r['before'] ?? [], $by, $defs);
 
         return ['isi' => (int) ($r['isi'] ?? count($rows)), 'hapus' => (int) ($r['hapus'] ?? count($hapusRows)),
             'peringatan' => $this->peringatan($orang, $defs)];
+    }
+
+    /** @return array<string,array<string,mixed>> key `u|d` => row (+hapus flag) */
+    private function kunciTersentuh(array $rows, array $hapusRows): array
+    {
+        $kunci = [];
+        foreach ($rows as $c) {
+            $kunci[(string) ($c['u'] ?? '').'|'.(string) ($c['d'] ?? '')] = $c;
+        }
+        foreach ($hapusRows as $c) {
+            $kunci[(string) ($c['u'] ?? '').'|'.(string) ($c['d'] ?? '')] = $c + ['hapus' => true];
+        }
+
+        return $kunci;
+    }
+
+    /** One roster event per cell the manual/batch/clear write changed. */
+    private function catatEvent(array $kunci, array $lama, string $by, array $defs): void
+    {
+        if ($kunci === []) {
+            return;
+        }
+        $uids = [];
+        foreach (array_keys($kunci) as $k) {
+            [$uid] = explode('|', $k, 2) + [null];
+            if ($uid) {
+                $uids[$uid] = true;
+            }
+        }
+        $divisi = [];
+        foreach (HrisKaryawan::query()->with('divisi')->whereIn('user_id', array_keys($uids))->get() as $k) {
+            $divisi[(string) $k->user_id] = $k->divisi;
+        }
+        foreach ($kunci as $k => $c) {
+            [$uid, $tgl] = explode('|', $k, 2) + [null, null];
+            $sebelum = $lama[$k] ?? null;
+            $sesudah = ! empty($c['hapus']) ? null : ['kode' => (string) ($c['t'] ?? ''),
+                'm' => self::s($c['m'] ?? ''), 's' => self::s($c['s'] ?? ''), 'n' => self::s($c['n'] ?? '')];
+            if ($this->selSama($sebelum, $sesudah)) {
+                continue;
+            }
+            $this->event->catat(HrisRosterEvent::EDIT_MANUAL, $by, [
+                'user_id' => (string) $uid,
+                'divisi_kode' => ($divisi[(string) $uid] ?? null)?->kode,
+                'divisi_nama' => ($divisi[(string) $uid] ?? null)?->nama,
+                'tanggal_kerja' => (string) $tgl,
+                'sel_lama' => $sebelum === null ? null : $this->potretSel($sebelum, $defs),
+                'sel_baru' => $sesudah === null ? null : $this->potretSel($sesudah, $defs),
+            ]);
+        }
+    }
+
+    private static function selSama(?array $a, ?array $b): bool
+    {
+        if ($a === null || $b === null) {
+            return $a === $b;
+        }
+
+        return (string) ($a['t'] ?? '') === (string) ($b['kode'] ?? '')
+            && self::s($a['m'] ?? '') === self::s($b['m'] ?? '')
+            && self::s($a['s'] ?? '') === self::s($b['s'] ?? '');
+    }
+
+    private function potretSel(array $c, array $defs): array
+    {
+        $kode = (string) ($c['t'] ?? $c['kode'] ?? '');
+        $def = $defs[$kode] ?? [];
+        $m = self::s($c['m'] ?? '');
+        $s = self::s($c['s'] ?? '');
+
+        return ['kode' => $kode, 'nama' => (string) ($def['nama'] ?? ''),
+            'mulai' => $m !== '' ? $m : (string) ($def['mulai'] ?? ''),
+            'selesai' => $s !== '' ? $s : (string) ($def['selesai'] ?? ''),
+            'blok' => $def['blok'] ?? [], 'libur' => (bool) ($def['libur'] ?? false),
+            'm' => $m, 's' => $s, 'n' => self::s($c['n'] ?? '')];
     }
 
     /** @return array{0:string,1:string} [userId, date] after the Divisi check */

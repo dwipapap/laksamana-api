@@ -147,6 +147,7 @@ local copy only).
 | J7 | Roster rules | `maksBeruntun` (6) and `jedaMin` (10 h) move to `/kelola/pengaturan` and only warn |
 | J8 | Clean-up | `jabatan` in the Jadwal setting is dropped for the master Jabatan; the default shift per crew (`shiftKru`) moves to the Karyawan record; `manajemen`/`template` are dropped if unused |
 | J9 | Cutover | Two weeks of parallel use, then the old Jadwal panel is read-only, then removed. Pekerja Harian stay in the DW module |
+| J10 | Team roster, shift changes, audit (#346) | Crew `/roster` (schedule only, explicit cells, Belum diatur stays), crew `tim/ubah-shift` (one person, one date, working target), head decides directly in `/persetujuan`, HR fallback in Kelola; every HRIS cell change lands append-only in `hris_roster_event`, readable at Kelola roster Riwayat. `PUT /me/contact` and legacy panels untouched |
 
 PR order: (1) schema + import, (2) kelola karyawan, (3) master shift + block punches, (4) roster, (5) retire the old panels.
 

@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Modules\Hris\Services;
 
 use App\Auth\AccountRepository;
+use App\Modules\Hris\Models\HrisKaryawan;
 use App\Modules\Hris\Models\HrisPengajuan;
+use App\Modules\Hris\Models\HrisRosterEvent;
 use App\Modules\Hris\Models\HrisSaldoMutasi;
 use App\Modules\Jadwal\Services\JadwalService;
 use App\Support\Divisi;
@@ -36,6 +38,8 @@ final class HrisRequestService
         private readonly JadwalService $jadwal,
         private readonly Divisi $divisi,
         private readonly AccountRepository $users,
+        private readonly HrisRosterEventService $event,
+        private readonly HrisShiftService $shift,
     ) {}
 
     /** @var array<string,string> user_id → display name (best-effort, per request) */
@@ -245,7 +249,7 @@ final class HrisRequestService
         }
         if ($row->status === 'DISETUJUI') {
             $this->refund($row, $nama);
-            $this->writeCells($row, [], true, (string) $row->hrd_oleh);
+            $this->writeCells($row, [], true, (string) $row->hrd_oleh, 'pembatalan HR atas pengajuan DISETUJUI');
         }
         self::deleteLampiran($row->lampiran_path);
         $row->fill(['status' => 'DIBATALKAN', 'lampiran_path' => null,
@@ -393,21 +397,93 @@ final class HrisRequestService
      * Write (or delete) Jadwal cells with the approving head's authority —
      * the head approved the absence, so the roster consequence carries the
      * same authority as the head writing it themselves. The trail names the
-     * acting HRD official: `HRIS:<name>`.
+     * acting HRD official: `HRIS:<name>`. Every changed cell also lands a
+     * roster event (issue #346), so Kelola can trace it later.
      */
-    private function writeCells(HrisPengajuan $row, array $rows, bool $hapus, string $aktor): void
+    private function writeCells(HrisPengajuan $row, array $rows, bool $hapus, string $aktor, ?string $catatan = null): void
     {
         $u = ['id' => $row->head_oleh_id, 'name' => $row->head_oleh, 'adminModules' => []];
         $jejak = 'HRIS:'.($aktor !== '' ? $aktor : '?');
+        $kunci = [];
+        foreach ($rows as $c) {
+            $kunci[(string) ($c['u'] ?? '').'|'.(string) ($c['d'] ?? '')] = $c;
+        }
+        $defs = [];
+        foreach ($this->shift->list() as $x) {
+            $defs[(string) $x['kode']] = $x;
+        }
         if ($hapus) {
             $hapusRows = [];
             foreach ($this->cellRows($row) as $c) {
                 $hapusRows[] = ['u' => $c['u'], 'd' => $c['d']];
+                $kunci[(string) $c['u'].'|'.(string) $c['d']] = $c + ['hapus' => true];
             }
-            $this->jadwal->saveCells([], $hapusRows, $jejak, $u);
+            $result = $this->jadwal->saveCells([], $hapusRows, $jejak, $u, true);
+            $this->catatEvent($row, $kunci, $result['before'] ?? [], $aktor, $catatan ?? (string) $row->alasan, $defs);
         } else {
-            $this->jadwal->saveCells($rows, [], $jejak, $u);
+            $result = $this->jadwal->saveCells($rows, [], $jejak, $u, true);
+            $this->catatEvent($row, $kunci, $result['before'] ?? [], $aktor, $catatan ?? (string) $row->alasan, $defs);
         }
+    }
+
+    /** One roster event per cell the request actually changed. */
+    private function catatEvent(HrisPengajuan $row, array $kunci, array $lama, string $aktor, string $catatan,
+        array $defs): void
+    {
+        $karyawan = HrisKaryawan::query()->where('user_id', $row->user_id)->first();
+        $divKode = $karyawan?->divisi?->kode;
+        if ($divKode === null || $divKode === '') {
+            try {
+                $divKode = $this->jadwal->divisiUser($row->user_id);
+            } catch (\Throwable) {
+                $divKode = '';
+            }
+        }
+        foreach ($kunci as $k => $c) {
+            [, $d] = explode('|', $k, 2) + [null, null];
+            $sebelum = $lama[$k] ?? null;
+            $sesudah = ! empty($c['hapus']) ? null : ['kode' => (string) ($c['t'] ?? ''),
+                'm' => (string) ($c['m'] ?? ''), 's' => (string) ($c['s'] ?? ''), 'n' => (string) ($c['n'] ?? '')];
+            if ($this->selSama($sebelum, $sesudah)) {
+                continue;
+            }
+            $this->event->catat(HrisRosterEvent::PENGAJUAN, $aktor, [
+                'user_id' => $row->user_id, 'divisi_kode' => $divKode,
+                'tanggal_kerja' => (string) $d,
+                'sel_lama' => $sebelum === null ? null : $this->potretSel($sebelum, $defs),
+                'sel_baru' => $sesudah === null ? null : $this->potretSel($sesudah, $defs),
+                'ref_pengajuan_id' => $row->id,
+                'diajukan_oleh' => $this->namaUser($row->user_id),
+                'diajukan_at' => $row->created_at === null ? null : (int) $row->created_at->timestamp * 1000,
+                'diputus_oleh' => $aktor, 'diputus_at' => PunchRules::ms(),
+                'catatan' => mb_substr($row->jenis.' '.$catatan, 0, 500),
+            ]);
+        }
+    }
+
+    private static function selSama(?array $a, ?array $b): bool
+    {
+        if ($a === null || $b === null) {
+            return $a === $b;
+        }
+
+        return (string) ($a['t'] ?? '') === (string) ($b['kode'] ?? '')
+            && self::s($a['m'] ?? '') === self::s($b['m'] ?? '')
+            && self::s($a['s'] ?? '') === self::s($b['s'] ?? '');
+    }
+
+    private function potretSel(array $c, array $defs): array
+    {
+        $kode = (string) ($c['t'] ?? $c['kode'] ?? '');
+        $def = $defs[$kode] ?? [];
+        $m = self::s($c['m'] ?? '');
+        $s = self::s($c['s'] ?? '');
+
+        return ['kode' => $kode, 'nama' => (string) ($def['nama'] ?? ''),
+            'mulai' => $m !== '' ? $m : (string) ($def['mulai'] ?? ''),
+            'selesai' => $s !== '' ? $s : (string) ($def['selesai'] ?? ''),
+            'blok' => $def['blok'] ?? [], 'libur' => (bool) ($def['libur'] ?? false),
+            'm' => $m, 's' => $s, 'n' => self::s($c['n'] ?? '')];
     }
 
     // ---------------------------------------------------------------- heads
@@ -419,6 +495,36 @@ final class HrisRequestService
         } catch (\Throwable) {
             return Divisi::NONSHIFT;
         }
+    }
+
+    /**
+     * Leave requests awaiting THIS head's step (old rules): requester in
+     * the head's division, not self, division has a head. HR's no-head
+     * cases stay in Kelola; they are not exposed here.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public function antreanKepala(array $me): array
+    {
+        $uid = self::s($me['id'] ?? '');
+        if ($uid === '' || ! $this->lingkup->isHead($me)) {
+            return [];
+        }
+        $divs = $this->lingkup->headDivisi($me);
+        $out = [];
+        $rows = HrisPengajuan::query()->where('status', 'MENUNGGU')->orderBy('created_at')->get();
+        $this->hangatkanNama($rows->pluck('user_id')->all());
+        foreach ($rows as $r) {
+            if ($r->user_id === $uid) {
+                continue;
+            }
+            if (! in_array($this->requesterDivisi($r->user_id), $divs, true)) {
+                continue;
+            }
+            $out[] = $this->shape($r);
+        }
+
+        return $out;
     }
 
     private function assertHeadStep(array $me, HrisPengajuan $row, bool $isHr): void
