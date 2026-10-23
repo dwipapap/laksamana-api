@@ -288,6 +288,25 @@ final class PunchRules
         return $default;
     }
 
+    /** The rule branch that supplies one target, with the same priority as targetDurasiMenit. */
+    public static function targetDurasiAsal(?string $sumber, mixed $mulai, mixed $selesai, mixed $durasiKerja, string $userId): string
+    {
+        $kerja = is_array($durasiKerja) ? $durasiKerja : [];
+        $d = self::durasiShiftMenit($mulai, $selesai);
+        $orang = isset($kerja['orang']) && is_array($kerja['orang']) ? $kerja['orang'] : [];
+        if ($sumber === 'JADWAL' && $d > 0) {
+            return 'ROSTER';
+        }
+        if ($sumber !== 'JADWAL' && (int) ($orang[$userId] ?? 0) >= 60) {
+            return 'PER_ORANG';
+        }
+        if ($sumber === 'BAWAAN' && $d > 0) {
+            return 'SHIFT_BAWAAN';
+        }
+
+        return 'CADANGAN';
+    }
+
     /**
      * Judge a PULANG duration (A23, A24).
      *

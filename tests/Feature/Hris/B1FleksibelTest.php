@@ -2,6 +2,9 @@
 
 use App\Modules\Hris\Models\HrisKetukan;
 use App\Modules\Hris\Services\HrisAttendanceService;
+use App\Modules\Hris\Services\HrisImporKaryawanService;
+use App\Modules\Hris\Services\HrisKaryawanService;
+use App\Modules\Hris\Services\HrisShiftService;
 use App\Modules\Jadwal\Services\JadwalService;
 use Illuminate\Support\Facades\Storage;
 
@@ -260,10 +263,33 @@ it('serves the clock-out goal in me/today', function () {
 
     $r = app(HrisAttendanceService::class)->meToday(hrisMe('u-dwipa'));
 
-    expect($r['targetMenit'])->toBe(540)->and($r['bolehPulang'])->toBe('17:00');
+    expect($r['targetMenit'])->toBe(540)->and($r['bolehPulang'])->toBe('17:00')
+        ->and($r['targetAsal'])->toBe('ROSTER');
     expect($r['masuk']['telat_menit'])->toBe(0);
 
     hrisClearShift('u-dwipa', $tgl);
+});
+
+it('keeps a BAWAAN block target consistent with the punch and ignores person duration overrides', function () {
+    $uid = 'u-adit';
+    hrisSettings(['tanpaShiftBoleh' => false, 'durasiKerja' => ['default' => 540, 'orang' => [$uid => 480]]]);
+    app(HrisImporKaryawanService::class)->impor('test');
+    $shift = app(HrisShiftService::class)->create([
+        'nama' => 'Tes Split Target',
+        'blok' => [['mulai' => '11:00', 'selesai' => '15:00'], ['mulai' => '18:00', 'selesai' => '23:00']],
+    ], 'test');
+    app(HrisKaryawanService::class)->update($uid, ['shift_bawaan' => $shift['kode']], 'test');
+    hrisEnrolOnce($uid);
+    $tgl = hrisToday();
+    [$y, $m, $d] = array_map(intval(...), explode('-', $tgl));
+    $masuk = app(HrisAttendanceService::class)->recordPunch(hrisMe($uid),
+        hrisWajahPunch($uid), hrisMs($y, $m, $d, 11, 0));
+
+    $r = app(HrisAttendanceService::class)->meToday(hrisMe($uid));
+
+    expect($masuk['punch'])->toMatchArray(['shift_sumber' => 'BAWAAN', 'target_menit' => 240, 'jumlah_blok' => 2])
+        ->and($r['targetMenit'])->toBe(240)
+        ->and($r['targetAsal'])->toBe('SHIFT_BAWAAN');
 });
 
 it('degrades when hris_ketukan.info is missing', function () {

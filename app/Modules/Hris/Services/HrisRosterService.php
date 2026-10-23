@@ -308,7 +308,8 @@ final class HrisRosterService
         $b = JsonDoc::toArray($this->jadwal->setting());
 
         return ['maksBeruntun' => (int) ($b['maksBeruntun'] ?? 0) > 0 ? (int) $b['maksBeruntun'] : 6,
-            'jedaMin' => (int) ($b['jedaMin'] ?? 0) > 0 ? (int) $b['jedaMin'] : 10];
+            'jedaMin' => array_key_exists('jedaMin', $b) && is_numeric($b['jedaMin'])
+                ? (int) $b['jedaMin'] : 10];
     }
 
     public function simpanAturan(array $in, string $by): array
