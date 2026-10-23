@@ -1329,6 +1329,29 @@ final class HrisAttendanceService
                 break;
             }
         }
+        // Unclosed MASUK from a past work date (forgot clock-out): the next
+        // PULANG tap auto-pairs to it while within 18h, silently. Surface it
+        // so the crew screen can warn and offer a correction request.
+        $sisaKemarin = null;
+        $batasSisa = date('Y-m-d', strtotime($tgl.' -7 days'));
+        $masukTerbuka = HrisKetukan::query()->where('user_id', $uid)->where('arah', 'MASUK')
+            ->where('status', '!=', 'DITOLAK')->where('tanggal_kerja', '<', $tgl)
+            ->where('tanggal_kerja', '>=', $batasSisa)
+            ->orderByDesc('waktu')->first();
+        if ($masukTerbuka) {
+            $tglTerbuka = (string) $masukTerbuka->tanggal_kerja;
+            $sudahTutup = HrisKetukan::query()->where('user_id', $uid)
+                ->where('tanggal_kerja', $tglTerbuka)
+                ->where('arah', 'PULANG')->exists();
+            if (! $sudahTutup) {
+                $sisaKemarin = [
+                    'tanggal_kerja' => $tglTerbuka,
+                    'arah' => 'PULANG',
+                    'masuk_jam' => PunchRules::jamWib((int) $masukTerbuka->waktu),
+                    'masuk_waktu' => (int) $masukTerbuka->waktu,
+                ];
+            }
+        }
 
         return [
             'siapa' => ['id' => $uid, 'nama' => self::s($me['name'] ?? '')],
@@ -1340,6 +1363,7 @@ final class HrisAttendanceService
             'masuk' => $masuk,
             'pulang' => $pulang,
             'ketukanHariIni' => $semua,
+            'sisaKemarin' => $sisaKemarin,
             'wajahTerdaftar' => $this->faceEnrolled($uid),
             'wajahJumlah' => $this->faceCount($uid),
             'lokasi' => $this->locations(true),

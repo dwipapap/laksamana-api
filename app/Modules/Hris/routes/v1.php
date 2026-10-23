@@ -194,6 +194,12 @@ Route::middleware(['auth:sanctum', 'module:hris'])->prefix('hris')->group(functi
     Route::get('kelola/roster/riwayat', [Y::class, 'riwayat']);
     Route::get('kelola/ubah-shift/{id}', [C::class, 'showUbahKelola'])->where('id', '[A-Za-z0-9]+');
 
+    // Attendance corrections for HR: full list plus the rows waiting for
+    // the HR fallback decider. Approval writes the punch row.
+    Route::get('kelola/koreksi-absen', [C::class, 'indexKoreksiKelola']);
+    Route::get('kelola/koreksi-absen/{id}', [C::class, 'showKoreksiKelola'])->where('id', '[A-Za-z0-9]+');
+    Route::post('kelola/koreksi-absen/{id}/putuskan', [C::class, 'putuskanKoreksiKelola'])->where('id', '[A-Za-z0-9]+');
+
     // Roster (J6–J7): planned in HRIS, stored by Jadwal.
     Route::get('roster', [Y::class, 'index']);
     Route::put('roster', [Y::class, 'simpan']);
@@ -202,7 +208,8 @@ Route::middleware(['auth:sanctum', 'module:hris'])->prefix('hris')->group(functi
     Route::put('roster/aturan', [Y::class, 'simpanAturan']);
     Route::get('me/jadwal', [Y::class, 'saya']);
 
-    // Crew team roster, shift changes and head approvals (issue #346).
+    // Crew team roster, shift changes, attendance corrections and head
+    // approvals (issue #346 + koreksi absen).
     Route::get('tim/divisi', [C::class, 'divisi']);
     Route::get('tim/roster', [C::class, 'roster']);
     Route::get('tim/ubah-shift', [C::class, 'indexUbah']);
@@ -212,4 +219,10 @@ Route::middleware(['auth:sanctum', 'module:hris'])->prefix('hris')->group(functi
     Route::post('tim/ubah-shift/{id}/batal', [C::class, 'batalUbah'])->where('id', '[A-Za-z0-9]+');
     Route::get('tim/persetujuan', [C::class, 'persetujuan']);
     Route::post('tim/ubah-shift/{id}/putuskan', [C::class, 'putuskanUbah'])->where('id', '[A-Za-z0-9]+');
+    Route::get('tim/koreksi-absen', [C::class, 'indexKoreksi']);
+    Route::post('tim/koreksi-absen', [C::class, 'storeKoreksi']);
+    Route::get('tim/koreksi-absen/{id}', [C::class, 'showKoreksi'])->where('id', '[A-Za-z0-9]+');
+    Route::get('tim/persetujuan/koreksi-absen/{id}', [C::class, 'showKoreksiPersetujuan'])->where('id', '[A-Za-z0-9]+');
+    Route::post('tim/koreksi-absen/{id}/batal', [C::class, 'batalKoreksi'])->where('id', '[A-Za-z0-9]+');
+    Route::post('tim/koreksi-absen/{id}/putuskan', [C::class, 'putuskanKoreksi'])->where('id', '[A-Za-z0-9]+');
 });

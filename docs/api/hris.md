@@ -226,9 +226,15 @@ so the PWA needs no `jadwal` module grant for the log screen:
   "aturan": {"akurasiMaks": 100, "awalMenit": 180, "pulangLewatMenit": 180, "toleransiTelat": 5},
   "targetMenit": 540, "bolehPulang": "17:00",
   "lingkup": "sendiri",
+  "sisaKemarin": {"tanggal_kerja": "2026-10-19", "arah": "PULANG", "masuk_jam": "22:04", "masuk_waktu": 1760898240000},
   "perhatian": [{"kode": "belum_masuk", "judul": "Belum absen masuk", "pesan": "Shift PAGI mulai 08:00.", "layar": "/absen", "tingkat": "penting"}]
 }
 ```
+
+`sisaKemarin` is the unclosed MASUK of a past work date (within 7 days):
+the next PULANG tap auto-pairs to it while within 18h, silently. The crew
+screen warns and offers a correction request instead of tapping blind.
+`null` when nothing is open.
 
 `shift` is `null` when unscheduled, `false` when the roster is unreadable.
 
@@ -624,7 +630,7 @@ Who may call:
 | GET | `/hris/tim/ubah-shift/{id}` | — | Own detail with frozen before/after plus the live cell and a conflict flag; another person's id is `404` |
 | GET | `/hris/tim/persetujuan/ubah-shift/{id}` | — | Decision detail for the requester's current division head only (never self); a plain crew member or another head gets `403` |
 | POST | `/hris/tim/ubah-shift/{id}/batal` | `berubah` | Only the owner and only MENUNGGU |
-| GET | `/hris/tim/persetujuan` | — | `{ubah_shift[], pengajuan[]}` the caller may decide (heads only; plain crew get empty lists) |
+| GET | `/hris/tim/persetujuan` | — | `{ubah_shift[], koreksi[], pengajuan[]}` the caller may decide (heads only; plain crew get empty lists) |
 | POST | `/hris/tim/ubah-shift/{id}/putuskan` | `status` DISETUJUI/DITOLAK, `catatan?` (required on reject), `berubah` | Head in scope (never self) or HR fallback; final replay is authorized and idempotent; `APPLYING` can only be resumed by its frozen approver using the latest version; cancel/reject or another approver gets `409` |
 | GET | `/hris/kelola/ubah-shift/{id}` | — | HR shift change detail (same shape as the crew detail); Admin HRIS only |
 | GET | `/hris/kelola/roster/riwayat` | `tanggal_dari/sampai`, `waktu_dari/sampai`, `divisi?`, `user?`, `q?`, `sumber?`, `page?`, `per_page?` | `{event[], menunggu_hr[]}`: append-only cell events with before/after snapshots plus shift changes waiting for the HR fallback decider |
@@ -636,6 +642,36 @@ Who may call:
 **Apply strategy:** approval first commits `APPLYING` with the frozen approver identity, time and note. The finalization transaction locks the request while it checks/writes the cell and records its event. Jadwal uses a row-locked compare against the source fingerprint captured at submit; manual/batch/clear writers share the same InnoDB row locks and deterministic cell order. When Jadwal is on the legacy connection, `updated_by` carries `HRIS-UBAH-SHIFT:<request-id>` so a retry can prove the operation identity after a crash. When Jadwal shares `core`, the cell write, request finalization and event are in the same core transaction. A retry resumes only the frozen approver's approval; target equality alone never proves application. If a legacy manual SQL write removes the operation marker while the request is still `APPLYING`, the system leaves it in that state for HR review instead of claiming success or allowing cancellation. Rejections and cancelled pendings never create cell events.
 
 **Migration:** apply only `2026_10_24_090000_create_hris_ubah_shift_tables.php` on the `core` connection after reviewing `php artisan migrate:status`; it creates the HRIS request and event tables plus the source fingerprint. No legacy `jadwal_*` schema changes are required. Do not enable the feature before the migration is present.
+
+## K — attendance corrections (koreksi absen)
+
+Crew file a missing MASUK/PULANG for a past work date (max 7 days back)
+with the clock time and reason; the division head approves directly (HR
+fallback through Kelola). Approval writes the punch row; nothing lands in
+`hris_ketukan` while MENUNGGU. One active request per crew per date and
+direction; a recorded punch settles the date+direction first.
+
+Who may call:
+
+- **Crew**: own `tim/koreksi-absen` rows, plus `tim/persetujuan` (only what they may decide: heads see their scope, plain crew get empty lists).
+- **Head**: decides corrections of their current division members (never self) through `tim/koreksi-absen/{id}/putuskan`.
+- **HR admin** (Admin Modul HRIS, superadmin `*`): decides fallback corrections (division without a head, or the requester is a head themself) through `kelola/koreksi-absen/{id}/putuskan`, and reads `kelola/koreksi-absen`.
+
+| Method | Path | Body / query | Notes |
+|---|---|---|---|
+| GET | `/hris/tim/koreksi-absen` | `status?`, `page?`, `per_page?` | Own history, newest first |
+| POST | `/hris/tim/koreksi-absen` | `tanggal_kerja`, `arah` MASUK/PULANG, `jam` HH:MM, `alasan`, `idempotency_key` | `201` MENUNGGU, official punches untouched; past dates only (max 7 days back); same key + payload replays, same key + other payload is `409` |
+| GET | `/hris/tim/koreksi-absen/{id}` | — | Own detail; another person's id is `404` |
+| GET | `/hris/tim/persetujuan/koreksi-absen/{id}` | — | Decision detail for the requester's current division head only (never self); a plain crew member or another head gets `403` |
+| POST | `/hris/tim/koreksi-absen/{id}/batal` | `berubah` | Only the owner and only MENUNGGU |
+| POST | `/hris/tim/koreksi-absen/{id}/putuskan` | `status` DISETUJUI/DITOLAK, `catatan?` (required on reject), `berubah` | Head in scope (never self) or HR fallback; approval writes the punch row then finalizes in one transaction; a punch recorded in between is `409` |
+| GET | `/hris/kelola/koreksi-absen` | `status?`, `page?`, `per_page?` | `{data[], meta{..., menunggu_hr[]}}`: every correction plus the ones waiting for the HR fallback decider; Admin HRIS only |
+| GET | `/hris/kelola/koreksi-absen/{id}` | — | HR correction detail; Admin HRIS only |
+| POST | `/hris/kelola/koreksi-absen/{id}/putuskan` | `status`, `catatan?`, `berubah` | HR fallback decision; same verdict semantics as the head route; Admin HRIS only |
+
+**Koreksi rules:** past work dates only, at most 7 days back (older goes to HR directly); clock time is WIB HH:MM converted to server epoch ms; the approved punch carries the request reason (`alasan_kru`), the decider (`diputus_oleh/at`, `nota`), status DISETUJUI and a roster snapshot when the date is scheduled (`shift_sumber` JADWAL, else NONE); rejections and cancelled pendings never create punches.
+
+**Migration:** apply `2026_10_26_090000_create_hris_koreksi_absen.php` on the `core` connection after reviewing `php artisan migrate:status`; it creates only `hris_koreksi_absen`. Do not enable the feature before the migration is present.
 
 **Audit boundary:** `hris_roster_event` starts at deploy (manual/batch/clear edits, approved shift changes, and finalized leave requests). It does not backfill past manual SQL or legacy panel writes; those stay out of scope and are documented as such.
 
