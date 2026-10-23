@@ -858,6 +858,7 @@ final class HrisAttendanceService
                 'kurang_menit' => $kurang,
                 'target_menit' => $target,
                 'durasi_menit' => $durasi,
+                'jumlah_blok' => count($blokList),
                 'curiga' => $curiga,
             ];
         }
@@ -1319,12 +1320,22 @@ final class HrisAttendanceService
         // its target; null without a MASUK.
         $targetMenit = null;
         $bolehPulang = null;
+        $targetAsal = null;
         foreach (array_reverse($punches) as $p) {
             if ($p['arah'] === 'MASUK' && $p['status'] !== 'DITOLAK') {
+                $sumberMasuk = $p['shift_sumber'] !== '' ? $p['shift_sumber'] : null;
+                $durasiKerja = $set['durasiKerja'] ?? ['default' => 540, 'orang' => []];
+                // Block count is recorded with new MASUK snapshots. Older
+                // rows with block > 1 are unambiguous; never infer a historic
+                // block 1 from a master shift that may have changed since.
+                $blokGanda = max((int) ($p['jumlah_blok'] ?? 1), (int) ($p['blok'] ?? 1)) >= 2;
+                if ($blokGanda) {
+                    $durasiKerja = ['default' => (int) ($durasiKerja['default'] ?? 540), 'orang' => []];
+                }
                 $targetMenit = PunchRules::targetDurasiMenit(
-                    $p['shift_sumber'] !== '' ? $p['shift_sumber'] : null,
-                    $p['shift_mulai'], $p['shift_selesai'],
-                    $set['durasiKerja'] ?? ['default' => 540, 'orang' => []], $uid);
+                    $sumberMasuk, $p['shift_mulai'], $p['shift_selesai'], $durasiKerja, $uid);
+                $targetAsal = PunchRules::targetDurasiAsal(
+                    $sumberMasuk, $p['shift_mulai'], $p['shift_selesai'], $durasiKerja, $uid);
                 $bolehPulang = PunchRules::jamWib($p['waktu'] + $targetMenit * 60000);
                 break;
             }
@@ -1374,6 +1385,7 @@ final class HrisAttendanceService
                 'toleransiTelat' => (int) $set['toleransiTelat'],
             ],
             'targetMenit' => $targetMenit,
+            'targetAsal' => $targetAsal,
             'bolehPulang' => $bolehPulang,
         ];
     }
@@ -1410,6 +1422,7 @@ final class HrisAttendanceService
             'pulang_awal' => (bool) ($info['pulang_awal'] ?? false),
             'kurang_menit' => (int) ($info['kurang_menit'] ?? 0),
             'target_menit' => $info['target_menit'] ?? null,
+            'jumlah_blok' => isset($info['jumlah_blok']) ? (int) $info['jumlah_blok'] : null,
             'durasi_menit' => $info['durasi_menit'] ?? null,
             'curiga' => $curiga,
             'skor_wajah' => $r->skor_wajah === null ? null : (float) $r->skor_wajah,

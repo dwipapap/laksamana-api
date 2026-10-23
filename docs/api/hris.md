@@ -224,7 +224,7 @@ so the PWA needs no `jadwal` module grant for the log screen:
   "wajahTerdaftar": true, "wajahJumlah": 2,
   "lokasi": [{"id": "01j…", "nama": "Outlet", "lat": -6.2, "lng": 106.8, "radius": 120, "aktif": true}],
   "aturan": {"akurasiMaks": 100, "awalMenit": 180, "pulangLewatMenit": 180, "toleransiTelat": 5},
-  "targetMenit": 540, "bolehPulang": "17:00",
+  "targetMenit": 540, "targetAsal": "ROSTER", "bolehPulang": "17:00",
   "lingkup": "sendiri",
   "sisaKemarin": {"tanggal_kerja": "2026-10-19", "arah": "PULANG", "masuk_jam": "22:04", "masuk_waktu": 1760898240000},
   "perhatian": [{"kode": "belum_masuk", "judul": "Belum absen masuk", "pesan": "Shift PAGI mulai 08:00.", "layar": "/absen", "tingkat": "penting"}]
@@ -242,7 +242,10 @@ screen warns and offers a correction request instead of tapping blind.
 PWA can show "Lengkapi wajah" below 3.
 
 `targetMenit` is the clock-out goal in minutes from the latest non-DITOLAK
-MASUK (`null` without one); `bolehPulang` is `"HH:MM"` WIB of MASUK + target
+MASUK (`null` without one); `targetAsal` identifies whether that goal came
+from the roster snapshot (`ROSTER`), a per-person duration (`PER_ORANG`), the
+default-shift snapshot (`SHIFT_BAWAAN`), or the fallback duration (`CADANGAN`).
+`bolehPulang` is `"HH:MM"` WIB of MASUK + target
 (`null` without one). `aturan` carries the punch-screen thresholds so the
 PWA can warn before sending (missing fields on an old server = defaults).
 

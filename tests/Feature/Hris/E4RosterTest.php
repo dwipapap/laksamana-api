@@ -115,5 +115,8 @@ it('uses the Karyawan default shift when the roster has no cell', function () {
 it('changes the roster rules as HR only', function () {
     expect(app(HrisRosterService::class)->simpanAturan(['maksBeruntun' => 5, 'jedaMin' => 11], 'HR'))
         ->toBe(['maksBeruntun' => 5, 'jedaMin' => 11]);
+    expect(app(HrisRosterService::class)->simpanAturan(['jedaMin' => 0], 'HR'))
+        ->toBe(['maksBeruntun' => 5, 'jedaMin' => 0])
+        ->and(app(HrisRosterService::class)->aturan()['jedaMin'])->toBe(0);
     expect(fn () => app(HrisRosterService::class)->simpanAturan(['maksBeruntun' => 0], 'HR'))->toThrow(HrisError::class);
 });
