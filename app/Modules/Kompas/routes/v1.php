@@ -46,4 +46,5 @@ Route::middleware('auth:sanctum')->prefix('kompas')->group(function () {
     Route::get('analytics', [IA::class, 'analytics']);
     Route::put('analytics', [IA::class, 'putAnalytics']);
     Route::put('analytics/access', [IA::class, 'putAccess']);
+    Route::get('esb/sales', [IA::class, 'esbSales']); // analytics, cashier or kompas
 });
