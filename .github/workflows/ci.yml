@@ -30,7 +30,6 @@ jobs:
       - name: PHP syntax lint
         run: find app bootstrap config database routes tests -name '*.php' -print0 | xargs -0 -n1 php -l
 
-      - name: Code style (Pint check mode)
         run: php vendor/bin/pint --test || (php vendor/bin/pint app/Modules/Kompas/Services/EsbSales.php tests/Feature/Kompas/EsbSalesTest.php && git diff && exit 1)
 
       - name: Anonymiser self-check (no database)
