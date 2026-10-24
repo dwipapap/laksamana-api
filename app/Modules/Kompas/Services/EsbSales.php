@@ -20,8 +20,10 @@ class EsbSales
     public const DEFAULT_URL = 'https://core-api.esb.co.id/corev1/sales/sales-information';
 
     /**
-     * @return array{ok: true, data: array{bills: array, page: int, pageCount: ?int, totalCount: ?int, perPage: ?int}}
-     *             |array{ok: false, code: string, status: int, error: string}
+     * {ok: true, data: {bills, page, pageCount, totalCount, perPage}} or
+     * {ok: false, code, status, error}.
+     *
+     * @return array<string, mixed>
      */
     public function page(string $dari, string $sampai, mixed $page): array
     {

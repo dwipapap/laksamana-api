@@ -2,12 +2,13 @@
 
 use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Testing\TestResponse;
 
 /* GET /api/v1/kompas/esb/sales — one page of POS ESB sales (port of esbHalaman). u-wandi is superadmin. */
 
 const ESB_TEST_TOKEN = 'tok-test-123';
 
-function esbGet(string $query): Illuminate\Testing\TestResponse
+function esbGet(string $query): TestResponse
 {
     return test()->withToken(loginAs(officeUser('u-wandi')))->getJson('/api/v1/kompas/esb/sales?'.$query);
 }
