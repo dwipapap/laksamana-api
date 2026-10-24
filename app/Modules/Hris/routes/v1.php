@@ -192,6 +192,8 @@ Route::middleware(['auth:sanctum', 'module:hris'])->prefix('hris')->group(functi
     // Roster history for HR (issue #346): append-only cell events plus the
     // shift changes waiting for the HR fallback decider.
     Route::get('kelola/roster/riwayat', [Y::class, 'riwayat']);
+    // One row per roster save (Kepala Divisi publish directly; HR follows).
+    Route::get('kelola/roster/aktivitas', [Y::class, 'aktivitas']);
     Route::get('kelola/ubah-shift/{id}', [C::class, 'showUbahKelola'])->where('id', '[A-Za-z0-9]+');
 
     // Attendance corrections for HR: full list plus the rows waiting for

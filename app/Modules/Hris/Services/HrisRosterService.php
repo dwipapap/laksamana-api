@@ -9,6 +9,7 @@ use App\Modules\Hris\Models\HrisRosterEvent;
 use App\Modules\Jadwal\Services\JadwalService;
 use App\Support\Divisi;
 use App\Support\JsonDoc;
+use Illuminate\Support\Str;
 
 /**
  * The roster in HRIS (J6–J7, ADR-0012): the monthly grid per shift Divisi,
@@ -28,6 +29,7 @@ final class HrisRosterService
         private readonly HrisShiftService $shift,
         private readonly HrisAuditService $audit,
         private readonly HrisRosterEventService $event,
+        private readonly HrisPeriodeKunci $periode,
     ) {}
 
     private static function s(mixed $v): string
@@ -91,7 +93,13 @@ final class HrisRosterService
      * @param  array<int,string>|null  $bolehDivisi
      * @return array{isi:int,hapus:int,peringatan:array<int,string>}
      */
-    public function simpan(?array $bolehDivisi, array $isi, array $hapus, string $by): array
+    /**
+     * Write roster cells. A Kepala Divisi publishes directly (owner decision
+     * 2026-10-24) but only from today on; past dates are HR's, and nobody
+     * writes inside a locked period. Every save that changed a cell is
+     * logged for HR (hris_roster_simpan) with its cell events.
+     */
+    public function simpan(?array $bolehDivisi, array $isi, array $hapus, string $by, string $byId = '', string $catatan = ''): array
     {
         $defs = [];
         foreach ($this->shift->list() as $x) {
@@ -126,16 +134,27 @@ final class HrisRosterService
             $orang[$uid][] = $tgl;
         }
         if ($rows === [] && $hapusRows === []) {
-            return ['isi' => 0, 'hapus' => 0, 'peringatan' => []];
+            return ['isi' => 0, 'hapus' => 0, 'berubah' => 0, 'peringatan' => []];
+        }
+        $tanggal = array_merge(...array_values($orang));
+        foreach (array_unique(array_map(fn ($t) => substr($t, 0, 7).'-01', $tanggal)) as $bulan) {
+            $this->periode->pastikanTerbuka($bulan);
         }
         $kunci = $this->kunciTersentuh($rows, $hapusRows);
         $r = $this->jadwal->saveCells($rows, $hapusRows, 'HRIS:'.$by,
             ['id' => '', 'name' => $by, 'adminModules' => ['jadwal']], true);
         $this->audit->record($by, 'roster_disimpan', 'jadwal_sel', '', ['isi' => count($rows), 'hapus' => count($hapusRows)]);
-        $this->catatEvent($kunci, $r['before'] ?? [], $by, $defs);
+        $simpanId = (string) Str::ulid();
+        $berubah = $this->catatEvent($kunci, $r['before'] ?? [], $by, $defs, $simpanId);
+        $divisi = [];
+        foreach (array_keys($orang) as $uid) {
+            $divisi[] = $this->jadwal->divisiUser((string) $uid);
+        }
+        $this->event->catatSimpan($simpanId, $by, $byId, $bolehDivisi === null, $divisi,
+            min($tanggal), max($tanggal), count($rows), count($hapusRows), $berubah, $catatan);
 
         return ['isi' => (int) ($r['isi'] ?? count($rows)), 'hapus' => (int) ($r['hapus'] ?? count($hapusRows)),
-            'peringatan' => $this->peringatan($orang, $defs)];
+            'berubah' => $berubah, 'peringatan' => $this->peringatan($orang, $defs)];
     }
 
     /** @return array<string,array<string,mixed>> key `u|d` => row (+hapus flag) */
@@ -153,11 +172,12 @@ final class HrisRosterService
     }
 
     /** One roster event per cell the manual/batch/clear write changed. */
-    private function catatEvent(array $kunci, array $lama, string $by, array $defs): void
+    private function catatEvent(array $kunci, array $lama, string $by, array $defs, string $simpanId): int
     {
         if ($kunci === []) {
-            return;
+            return 0;
         }
+        $n = 0;
         $uids = [];
         foreach (array_keys($kunci) as $k) {
             [$uid] = explode('|', $k, 2) + [null];
@@ -177,8 +197,9 @@ final class HrisRosterService
             if ($this->selSama($sebelum, $sesudah)) {
                 continue;
             }
+            $n++;
             $this->event->catat(HrisRosterEvent::EDIT_MANUAL, $by, [
-                'user_id' => (string) $uid,
+                'user_id' => (string) $uid, 'simpan_id' => $simpanId,
                 'divisi_kode' => ($divisi[(string) $uid] ?? null)?->kode,
                 'divisi_nama' => ($divisi[(string) $uid] ?? null)?->nama,
                 'tanggal_kerja' => (string) $tgl,
@@ -186,6 +207,8 @@ final class HrisRosterService
                 'sel_baru' => $sesudah === null ? null : $this->potretSel($sesudah, $defs),
             ]);
         }
+
+        return $n;
     }
 
     private static function selSama(?array $a, ?array $b): bool
@@ -225,6 +248,10 @@ final class HrisRosterService
             $div = $this->jadwal->divisiUser($uid);
             if ($div === Divisi::NONSHIFT || ! in_array($div, $bolehDivisi, true)) {
                 throw new HrisError('forbidden', 'Jadwal kru ini hanya bisa diatur HR atau Kepala Divisinya.', 403);
+            }
+            if ($tgl < PunchRules::tglWib(PunchRules::ms())) {
+                throw new HrisError('tanggal_lewat',
+                    'Jadwal tanggal yang sudah lewat hanya bisa diubah HR ('.$tgl.').', 403, ['tanggal' => $tgl]);
             }
         }
 

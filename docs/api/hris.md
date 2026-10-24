@@ -145,13 +145,16 @@ Transition rules:
 - `dalam_area`: `jarak_m <= radius` **and** `1 <= akurasi <= akurasiMaks`
   (setting, default 100 m). Missing/zero/too-coarse accuracy is outside;
   no `jarak - akurasi` slack. No locations registered = inside (setup).
-- `dalam_shift`: MASUK inside `[mulai - awalMenit, selesai]`; PULANG within
-  `target + pulangLewatMenit`.
+- `dalam_shift`: MASUK inside `[mulai - awalMenit, selesai]`; PULANG no later
+  than the clock-out goal + `pulangLewatMenit`.
 - `telat_menit` (MASUK): past `mulai + toleransiTelat`, else 0. `durasi_menit`
   (PULANG): minutes from the actual MASUK. `target_menit`: JADWAL snapshot
   duration, else `durasiKerja.orang[userId]`, else BAWAAN snapshot, else
-  `durasiKerja.default`. `pulang_awal` + `kurang_menit`: PULANG short of
-  target (still VALID). Metrics live in `hris_ketukan.info`; rows predating
+  `durasiKerja.default`. The clock-out goal (2026-10-24) is the **scheduled
+  end** of the MASUK snapshot for `ROSTER`/`SHIFT_BAWAAN` (arriving early
+  never moves it; overnight ends the next day), and MASUK + target only for
+  `PER_ORANG`/`CADANGAN`. `pulang_awal` + `kurang_menit`: PULANG before the
+  goal (still VALID). Metrics live in `hris_ketukan.info`; rows predating
   the column recompute them live (`curiga: []`).
 - `curiga[]`: suspicion flags, never a queue reason, HR/head readers only
   (crew get `[]`): `KOORDINAT_SAMA` (same point as the person's previous
@@ -159,7 +162,11 @@ Transition rules:
   (akurasi ≤ 1 or a multiple of 100), `KOORDINAT_KEMBAR` (another user sent
   the same point within ±5 min).
 
-- `shift_sumber`: `JADWAL` (roster cell), `BAWAAN` (person's default shift),
+- Work date: a MASUK after midnight belongs to yesterday's overnight shift
+  while that shift has not ended and has no MASUK yet; a PULANG is judged by
+  the roster of its MASUK's work date (never the next day's cell).
+- `shift_sumber`: `JADWAL` (roster cell), `BAWAAN` (default shift of a
+  **nonshift** staff member; shift-Divisi crew with an empty cell are `NONE`),
   `NONE` (genuinely unscheduled), `TAK_TERBACA` (roster unreadable — recorded,
   never queued).
 - `alasan_antrean`: `[]` when VALID, else one of `LUAR_AREA`, `WAJAH`
@@ -245,8 +252,10 @@ PWA can show "Lengkapi wajah" below 3.
 MASUK (`null` without one); `targetAsal` identifies whether that goal came
 from the roster snapshot (`ROSTER`), a per-person duration (`PER_ORANG`), the
 default-shift snapshot (`SHIFT_BAWAAN`), or the fallback duration (`CADANGAN`).
-`bolehPulang` is `"HH:MM"` WIB of MASUK + target
-(`null` without one). `aturan` carries the punch-screen thresholds so the
+`bolehPulang` is `"HH:MM"` WIB of the clock-out goal: the scheduled end for
+`ROSTER`/`SHIFT_BAWAAN`, MASUK + target otherwise (`null` without a MASUK).
+`tgl` is yesterday while a night shift that started yesterday is still open.
+`aturan.koreksiMaksHari` tells the correction form how far back it may go. `aturan` carries the punch-screen thresholds so the
 PWA can warn before sending (missing fields on an old server = defaults).
 
 `perhatian[]` is computed on request (no push, no scheduler). Each item
@@ -275,9 +284,14 @@ Defaults (`PUT /hris/settings` takes a partial map; unknown keys are `422`):
     "default": {"metric": "cosine", "ambang": 0.637},
     "sface-2021dec-int8": {"metric": "cosine", "ambang": 0.637}
   },
-  "hr": ["u-admin"]
+  "hr": ["u-admin"],
+  "koreksiMaksHari": 7
 }
 ```
+
+`koreksiMaksHari` (1–31): how many days back crew may file an attendance
+correction; older dates go to HR. A locked period (Uang Makan → Kunci) is
+refused either way (`409 periode_terkunci`).
 
 - `awalMenit` (0–720): how early a MASUK is still VALID. `akhirMenit` is
   removed: PUT still accepts it and ignores it (old PWA sends it), and
@@ -605,7 +619,7 @@ The shift definitions stay in the Jadwal setting (`shifts`), so the old panels k
 | Method | Path | Body / query | Notes |
 |---|---|---|---|
 | GET | `/hris/roster` | `bulan=YYYY-MM`, `divisi` (shift kode) | HR: any Divisi. Kepala Divisi: their own. Returns `{bulan, divisi, hari[], kru[{user_id,nama,jabatan}], sel[{u,d,t,m,s,n}], shift[], aturan, bolehDivisi}`. `shift` = active shifts for this Divisi plus any code already used in the month |
-| PUT | `/hris/roster` | `isi[{u,d,t,m?,s?,n?}]`, `hapus[{u,d}]` | Every row is checked: Divisi (`403`), shift known/active/for this Divisi (`422`); block shifts drop `m`/`s`. Answer `{isi, hapus, peringatan[]}`. Warnings never block |
+| PUT | `/hris/roster` | `isi[{u,d,t,m?,s?,n?}]`, `hapus[{u,d}]`, `catatan?` (≤ 255, shown to HR) | Every row is checked: Divisi (`403`), a Kepala Divisi only from today on (`403 tanggal_lewat`; past dates are HR's), no date in a locked period (`409 periode_terkunci`), shift known/active/for this Divisi (`422`); block shifts drop `m`/`s`. Answer `{isi, hapus, berubah, peringatan[]}`. Warnings never block. A save that changed a cell is logged in `hris_roster_simpan` (published directly, no HR approval) |
 | GET | `/hris/roster/rekap` | `bulan`, `divisi` | Per crew member: `per_shift{kode:n}`, `hari_kerja`, `hari_libur`, `kosong` |
 | GET/PUT | `/hris/roster/aturan` | `maksBeruntun` (1–31), `jedaMin` (hours, 0–24) | PUT is HR only; stored in the Jadwal setting |
 | GET | `/hris/me/jadwal` | `dari`, `sampai` (≤ 62 days) | Own cells `{tanggal, kode, nama, warna, mulai, selesai, blok[], libur}` |
@@ -636,7 +650,8 @@ Who may call:
 | GET | `/hris/tim/persetujuan` | — | `{ubah_shift[], koreksi[], pengajuan[]}` the caller may decide (heads only; plain crew get empty lists) |
 | POST | `/hris/tim/ubah-shift/{id}/putuskan` | `status` DISETUJUI/DITOLAK, `catatan?` (required on reject), `berubah` | Head in scope (never self) or HR fallback; final replay is authorized and idempotent; `APPLYING` can only be resumed by its frozen approver using the latest version; cancel/reject or another approver gets `409` |
 | GET | `/hris/kelola/ubah-shift/{id}` | — | HR shift change detail (same shape as the crew detail); Admin HRIS only |
-| GET | `/hris/kelola/roster/riwayat` | `tanggal_dari/sampai`, `waktu_dari/sampai`, `divisi?`, `user?`, `q?`, `sumber?`, `page?`, `per_page?` | `{event[], menunggu_hr[]}`: append-only cell events with before/after snapshots plus shift changes waiting for the HR fallback decider |
+| GET | `/hris/kelola/roster/aktivitas` | `bulan?` YYYY-MM, `divisi?`, `peran?` HR/KEPALA, `page?`, `per_page?` | `{simpan[]}` one row per roster save, newest first: `{id, waktu, aktor, aktor_user_id, peran, divisi[], tanggal_dari, tanggal_sampai, jumlah_isi, jumlah_hapus, jumlah_berubah, catatan}`; Admin HRIS only |
+| GET | `/hris/kelola/roster/riwayat` | `tanggal_dari/sampai`, `waktu_dari/sampai`, `divisi?`, `user?`, `q?`, `sumber?`, `simpan_id?`, `page?`, `per_page?` | `{event[], menunggu_hr[]}`: append-only cell events with before/after snapshots plus shift changes waiting for the HR fallback decider |
 
 **Team roster meaning (schedule, never attendance):** a cell with a valid working shift is Dijadwalkan; a cell with a valid off/libur shift is Tidak masuk; no explicit cell is Belum diatur (shift bawaan never upgrades it; office/nonshift crew without cells stay Belum diatur). SPLIT counts once with both blocks; an end earlier than the start is marked `lintas_hari` on the work date. Unknown shift codes are listed under `masalah` with names and dates, never silently counted. Peer DTOs carry names, positions, divisions, dates, schedule status and working-shift detail only; nonworking/leave cells return `shift: null` to avoid revealing specific leave categories.
 
@@ -648,7 +663,7 @@ Who may call:
 
 ## K — attendance corrections (koreksi absen)
 
-Crew file a missing MASUK/PULANG for a past work date (max 7 days back)
+Crew file a missing MASUK/PULANG for a past work date (max `koreksiMaksHari` days back, default 7)
 with the clock time and reason; the division head approves directly (HR
 fallback through Kelola). Approval writes the punch row; nothing lands in
 `hris_ketukan` while MENUNGGU. One active request per crew per date and
@@ -663,7 +678,7 @@ Who may call:
 | Method | Path | Body / query | Notes |
 |---|---|---|---|
 | GET | `/hris/tim/koreksi-absen` | `status?`, `page?`, `per_page?` | Own history, newest first |
-| POST | `/hris/tim/koreksi-absen` | `tanggal_kerja`, `arah` MASUK/PULANG, `jam` HH:MM, `alasan`, `idempotency_key` | `201` MENUNGGU, official punches untouched; past dates only (max 7 days back); same key + payload replays, same key + other payload is `409` |
+| POST | `/hris/tim/koreksi-absen` | `tanggal_kerja`, `arah` MASUK/PULANG, `jam` HH:MM, `alasan`, `idempotency_key` | `201` MENUNGGU, official punches untouched; past dates only (max `koreksiMaksHari` days back, `422 terlalu_lama` with `details.maks_hari`; locked period `409 periode_terkunci`); same key + payload replays, same key + other payload is `409` |
 | GET | `/hris/tim/koreksi-absen/{id}` | — | Own detail; another person's id is `404` |
 | GET | `/hris/tim/persetujuan/koreksi-absen/{id}` | — | Decision detail for the requester's current division head only (never self); a plain crew member or another head gets `403` |
 | POST | `/hris/tim/koreksi-absen/{id}/batal` | `berubah` | Only the owner and only MENUNGGU |
@@ -672,7 +687,7 @@ Who may call:
 | GET | `/hris/kelola/koreksi-absen/{id}` | — | HR correction detail; Admin HRIS only |
 | POST | `/hris/kelola/koreksi-absen/{id}/putuskan` | `status`, `catatan?`, `berubah` | HR fallback decision; same verdict semantics as the head route; Admin HRIS only |
 
-**Koreksi rules:** past work dates only, at most 7 days back (older goes to HR directly); clock time is WIB HH:MM converted to server epoch ms; the approved punch carries the request reason (`alasan_kru`), the decider (`diputus_oleh/at`, `nota`), status DISETUJUI and a roster snapshot when the date is scheduled (`shift_sumber` JADWAL, else NONE); rejections and cancelled pendings never create punches.
+**Koreksi rules:** past work dates only, at most `koreksiMaksHari` days back (older goes to HR directly), never inside a locked period (checked again on approval); clock time is WIB HH:MM converted to server epoch ms; the approved punch carries the request reason (`alasan_kru`), the decider (`diputus_oleh/at`, `nota`), status VALID (so the meal allowance, Kehadiran and PH count it; migration `2026_10_27_090000` turns earlier DISETUJUI punches VALID) and a roster snapshot when the date is scheduled (`shift_sumber` JADWAL, else NONE); rejections and cancelled pendings never create punches.
 
 **Migration:** apply `2026_10_26_090000_create_hris_koreksi_absen.php` on the `core` connection after reviewing `php artisan migrate:status`; it creates only `hris_koreksi_absen`. Do not enable the feature before the migration is present.
 

@@ -24,9 +24,6 @@ use Illuminate\Support\Carbon;
  */
 final class HrisKoreksiAbsenService
 {
-    /** Corrections only look back this many days (requests stay fresh). */
-    public const MAKS_MUNDUR_HARI = 7;
-
     public function __construct(
         private readonly OfficeAccess $access,
         private readonly AccountRepository $users,
@@ -34,7 +31,15 @@ final class HrisKoreksiAbsenService
         private readonly HrisShiftService $shift,
         private readonly HrisDivisiService $divisi,
         private readonly HrisAuditService $audit,
+        private readonly HrisSettingsService $settings,
+        private readonly HrisPeriodeKunci $periode,
     ) {}
+
+    /** Corrections only look back this many days (setting koreksiMaksHari). */
+    private function maksMundurHari(): int
+    {
+        return max(1, (int) $this->settings->get('koreksiMaksHari', 7));
+    }
 
     private static function s(mixed $v): string
     {
@@ -133,11 +138,14 @@ final class HrisKoreksiAbsenService
             throw new HrisError('tanggal_masa_depan',
                 'Koreksi hanya untuk tanggal yang sudah lewat, bukan tanggal depan.', 422);
         }
-        $batas = date('Y-m-d', strtotime(self::hariIni().' -'.self::MAKS_MUNDUR_HARI.' days'));
+        $maks = $this->maksMundurHari();
+        $batas = date('Y-m-d', strtotime(self::hariIni().' -'.$maks.' days'));
         if ($tgl < $batas) {
             throw new HrisError('terlalu_lama',
-                'Koreksi maksimal '.self::MAKS_MUNDUR_HARI.' hari ke belakang. Hubungi HR untuk tanggal yang lebih lama.', 422);
+                'Koreksi maksimal '.$maks.' hari ke belakang. Hubungi HR untuk tanggal yang lebih lama.', 422,
+                ['maks_hari' => $maks]);
         }
+        $this->periode->pastikanTerbuka($tgl);
     }
 
     // ------------------------------------------------------------------ read
@@ -328,6 +336,7 @@ final class HrisKoreksiAbsenService
 
                 return $r;
             }
+            $this->periode->pastikanTerbuka((string) $r->tanggal_kerja->format('Y-m-d'));
             $this->terapkan($r, $uid, $nama, $catatan);
 
             return $r;
@@ -390,7 +399,9 @@ final class HrisKoreksiAbsenService
                 : (bool) ($def['lintas_hari'] ?? false),
             'shift_sumber' => $sel === null ? 'NONE' : 'JADWAL',
             'dalam_shift' => false,
-            'status' => 'DISETUJUI',
+            // VALID like a queued punch HR approved: every recap (meal
+            // allowance, Kehadiran, PH) counts VALID punches only.
+            'status' => 'VALID',
             'alasan_kru' => mb_substr((string) $r->alasan, 0, 255),
             'diputus_oleh' => mb_substr($nama, 0, 120), 'diputus_at' => PunchRules::ms(),
             'nota' => mb_substr($catatan, 0, 255),

@@ -308,17 +308,66 @@ final class PunchRules
     }
 
     /**
-     * Judge a PULANG duration (A23, A24).
+     * Scheduled end of a shift snapshot as epoch ms: `selesai` on the work
+     * date, the next day when the shift runs past midnight. null when the
+     * snapshot has no readable hours.
+     */
+    public static function akhirJadwalMs(string $tanggalKerja, mixed $mulai, mixed $selesai): ?int
+    {
+        $m = self::jamKeMenit($mulai);
+        $s = self::jamKeMenit($selesai);
+        $tgl = self::tglValid($tanggalKerja);
+        if ($m < 0 || $s < 0 || $m === $s || $tgl === '') {
+            return null;
+        }
+        $menit = $s <= $m ? $s + 1440 : $s;
+        $tengahMalamWib = gmmktime(0, 0, 0, (int) substr($tgl, 5, 2), (int) substr($tgl, 8, 2), (int) substr($tgl, 0, 4)) - 7 * 3600;
+
+        return ($tengahMalamWib + $menit * 60) * 1000;
+    }
+
+    /**
+     * Judge a PULANG against the MASUK it closes (A22–A24, owner decision
+     * 2026-10-24): when the MASUK snapshot has a schedule, the schedule's
+     * end is the goal — arriving early never moves it, and leaving before
+     * it is `pulang_awal`. A per-person duration still overrides a BAWAAN
+     * schedule (HR's explicit flexible-hours choice, never a roster cell).
+     * Without a schedule the goal stays MASUK + duration.
+     *
+     * @param  array{waktu:int,tanggal_kerja:string,shift_sumber:string,shift_mulai:string,shift_selesai:string}  $masuk
+     * @param  array{default:int,orang:array<string,int>}|mixed  $durasiKerja
+     * @return array{target_menit:int,boleh_pulang_ms:int,asal:string}
+     */
+    public static function tujuanPulang(array $masuk, mixed $durasiKerja, string $userId): array
+    {
+        $sumber = $masuk['shift_sumber'] !== '' ? $masuk['shift_sumber'] : null;
+        $asal = self::targetDurasiAsal($sumber, $masuk['shift_mulai'], $masuk['shift_selesai'], $durasiKerja, $userId);
+        $target = self::targetDurasiMenit($sumber, $masuk['shift_mulai'], $masuk['shift_selesai'], $durasiKerja, $userId);
+        if ($asal === 'ROSTER' || $asal === 'SHIFT_BAWAAN') {
+            $akhir = self::akhirJadwalMs($masuk['tanggal_kerja'], $masuk['shift_mulai'], $masuk['shift_selesai']);
+            if ($akhir !== null) {
+                return ['target_menit' => $target, 'boleh_pulang_ms' => $akhir, 'asal' => $asal];
+            }
+        }
+
+        return ['target_menit' => $target, 'boleh_pulang_ms' => (int) $masuk['waktu'] + $target * 60000, 'asal' => $asal];
+    }
+
+    /**
+     * Judge a PULANG time against its goal in whole minutes: earlier is
+     * `pulang_awal` (+ kurang_menit), later than goal + pulangLewatMenit is
+     * `terlambat` (LUAR_SHIFT).
      *
      * @return array{terlambat:bool,pulang_awal:bool,kurang_menit:int}
      */
-    public static function nilaiPulang(int $durasiMenit, int $targetMenit, int $pulangLewatMenit): array
+    public static function nilaiPulangPada(int $pulangMs, int $bolehPulangMs, int $pulangLewatMenit): array
     {
-        if ($durasiMenit > $targetMenit + $pulangLewatMenit) {
+        $selisih = intdiv($pulangMs, 60000) - intdiv($bolehPulangMs, 60000);
+        if ($selisih > $pulangLewatMenit) {
             return ['terlambat' => true, 'pulang_awal' => false, 'kurang_menit' => 0];
         }
-        if ($durasiMenit < $targetMenit) {
-            return ['terlambat' => false, 'pulang_awal' => true, 'kurang_menit' => $targetMenit - $durasiMenit];
+        if ($selisih < 0) {
+            return ['terlambat' => false, 'pulang_awal' => true, 'kurang_menit' => -$selisih];
         }
 
         return ['terlambat' => false, 'pulang_awal' => false, 'kurang_menit' => 0];

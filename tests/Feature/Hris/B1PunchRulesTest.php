@@ -175,19 +175,36 @@ it('resolves the work-duration target: JADWAL, person, BAWAAN, default', functio
         ->and(PunchRules::targetDurasiMenit(null, '', '', $kerja, 'u-andry'))->toBe(540);
 });
 
-it('measures PULANG against target + pulangLewatMenit', function () {
-    // Short of target: early but valid.
-    expect(PunchRules::nilaiPulang(240, 540, 180))
-        ->toBe(['terlambat' => false, 'pulang_awal' => true, 'kurang_menit' => 300]);
-    // On target: clean.
-    expect(PunchRules::nilaiPulang(540, 540, 180))
+it('judges a PULANG time against its goal + pulangLewatMenit', function () {
+    $goal = hrisMs(2026, 10, 20, 23, 0);
+    expect(PunchRules::nilaiPulangPada(hrisMs(2026, 10, 20, 20, 0), $goal, 180))
+        ->toBe(['terlambat' => false, 'pulang_awal' => true, 'kurang_menit' => 180]);
+    expect(PunchRules::nilaiPulangPada($goal, $goal, 180))
         ->toBe(['terlambat' => false, 'pulang_awal' => false, 'kurang_menit' => 0]);
-    // Past target but within grace: clean.
-    expect(PunchRules::nilaiPulang(720, 540, 180))
+    expect(PunchRules::nilaiPulangPada($goal + 180 * 60000, $goal, 180))
         ->toBe(['terlambat' => false, 'pulang_awal' => false, 'kurang_menit' => 0]);
-    // Past target + grace: out of policy.
-    expect(PunchRules::nilaiPulang(721, 540, 180))
+    expect(PunchRules::nilaiPulangPada($goal + 181 * 60000, $goal, 180))
         ->toBe(['terlambat' => true, 'pulang_awal' => false, 'kurang_menit' => 0]);
+});
+
+it('takes the clock-out goal from the schedule, never from an early MASUK', function () {
+    $kerja = ['default' => 540, 'orang' => ['u-dwipa' => 480]];
+    // Shift 14:00–23:00, MASUK 11:00: the goal stays 23:00, not 20:00.
+    $t = PunchRules::tujuanPulang(['waktu' => hrisMs(2026, 10, 20, 11, 0), 'tanggal_kerja' => '2026-10-20',
+        'shift_sumber' => 'JADWAL', 'shift_mulai' => '14:00', 'shift_selesai' => '23:00'], $kerja, 'u-andry');
+    expect($t)->toBe(['target_menit' => 540, 'boleh_pulang_ms' => hrisMs(2026, 10, 20, 23, 0), 'asal' => 'ROSTER']);
+    // Overnight 19:00–04:00 ends the next morning.
+    $t = PunchRules::tujuanPulang(['waktu' => hrisMs(2026, 10, 20, 19, 0), 'tanggal_kerja' => '2026-10-20',
+        'shift_sumber' => 'JADWAL', 'shift_mulai' => '19:00', 'shift_selesai' => '04:00'], $kerja, 'u-andry');
+    expect($t['boleh_pulang_ms'])->toBe(hrisMs(2026, 10, 21, 4, 0));
+    // Without a schedule the duration from MASUK still applies (per person first).
+    $t = PunchRules::tujuanPulang(['waktu' => hrisMs(2026, 10, 20, 9, 0), 'tanggal_kerja' => '2026-10-20',
+        'shift_sumber' => 'NONE', 'shift_mulai' => '', 'shift_selesai' => ''], $kerja, 'u-dwipa');
+    expect($t)->toBe(['target_menit' => 480, 'boleh_pulang_ms' => hrisMs(2026, 10, 20, 17, 0), 'asal' => 'PER_ORANG']);
+    // A per-person duration overrides a BAWAAN schedule, never a roster cell.
+    $t = PunchRules::tujuanPulang(['waktu' => hrisMs(2026, 10, 20, 7, 0), 'tanggal_kerja' => '2026-10-20',
+        'shift_sumber' => 'BAWAAN', 'shift_mulai' => '08:00', 'shift_selesai' => '17:00'], $kerja, 'u-dwipa');
+    expect($t['asal'])->toBe('PER_ORANG')->and($t['boleh_pulang_ms'])->toBe(hrisMs(2026, 10, 20, 15, 0));
 });
 
 // ------------------------------------------------------------ suspicion flags (A16)

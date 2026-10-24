@@ -12,6 +12,7 @@ use App\Modules\Hris\Models\HrisKetukan;
 use App\Modules\Hris\Models\HrisLokasi;
 use App\Modules\Hris\Models\HrisWajah;
 use App\Modules\Jadwal\Services\JadwalService;
+use App\Support\Divisi;
 use App\Support\JsonDoc;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Storage;
@@ -108,8 +109,8 @@ final class HrisAttendanceService
     }
 
     /**
-     * @var array<string,array<int,array{waktu:int,shift_sumber:string,shift_mulai:string,shift_selesai:string}>>|null
-     *                                                                                                                 MASUK partners per user, warmed by punches() for one range.
+     * @var array<string,array<int,array{waktu:int,tanggal_kerja:string,shift_sumber:string,shift_mulai:string,shift_selesai:string}>>|null
+     *                                                                                                                                      MASUK partners per user, warmed by punches() for one range.
      */
     private ?array $masukSiap = null;
 
@@ -131,8 +132,9 @@ final class HrisAttendanceService
             $q->whereIn('user_id', $userIds === [] ? ['__tidak_ada__'] : $userIds);
         }
         $peta = [];
-        foreach ($q->get(['user_id', 'waktu', 'shift_sumber', 'shift_mulai', 'shift_selesai']) as $m) {
+        foreach ($q->get(['user_id', 'waktu', 'tanggal_kerja', 'shift_sumber', 'shift_mulai', 'shift_selesai']) as $m) {
             $peta[(string) $m->user_id][] = ['waktu' => (int) $m->waktu,
+                'tanggal_kerja' => self::tglDari($m->tanggal_kerja),
                 'shift_sumber' => (string) ($m->shift_sumber ?? ''),
                 'shift_mulai' => (string) ($m->shift_mulai ?? ''),
                 'shift_selesai' => (string) ($m->shift_selesai ?? '')];
@@ -144,7 +146,7 @@ final class HrisAttendanceService
      * Latest MASUK partner for a PULANG row: the prefetched one when warmed,
      * else one query (single-row shape() calls).
      *
-     * @return array{waktu:int,shift_sumber:string,shift_mulai:string,shift_selesai:string}|null
+     * @return array{waktu:int,tanggal_kerja:string,shift_sumber:string,shift_mulai:string,shift_selesai:string}|null
      */
     private function masukUntuk(HrisKetukan $r): ?array
     {
@@ -169,9 +171,16 @@ final class HrisAttendanceService
         }
 
         return ['waktu' => (int) $m->waktu,
+            'tanggal_kerja' => self::tglDari($m->tanggal_kerja),
             'shift_sumber' => (string) ($m->shift_sumber ?? ''),
             'shift_mulai' => (string) ($m->shift_mulai ?? ''),
             'shift_selesai' => (string) ($m->shift_selesai ?? '')];
+    }
+
+    /** A DATE column value (string or Carbon) as YYYY-MM-DD. */
+    private static function tglDari(mixed $v): string
+    {
+        return $v instanceof \DateTimeInterface ? $v->format('Y-m-d') : substr(self::s($v), 0, 10);
     }
 
     private static function s(mixed $v): string
@@ -183,8 +192,10 @@ final class HrisAttendanceService
     //
     // THREE answers, like Absensi: array = shift found, null = genuinely
     // unscheduled, false = the roster did not answer (record, do not queue).
-    // On top: when the roster has no cell, fall back to the person's default
-    // shift (Jadwal setting shiftKru), marked sumber BAWAAN.
+    // For shift-Divisi crew the roster cell is the ONLY schedule (owner
+    // decision 2026-10-24): an empty cell is unscheduled, exactly what the
+    // team roster shows as "Belum diatur". Nonshift (kantor) staff have no
+    // roster, so their default shift (sumber BAWAAN) is their fixed schedule.
 
     /**
      * `blok` lists the blocks of a block shift (J4, ADR-0012) and is [] for
@@ -224,8 +235,12 @@ final class HrisAttendanceService
     {
         try {
             $set = JsonDoc::toArray($this->jadwal->setting());
+            $divisi = $this->jadwal->divisiUser($userId);
         } catch (\Throwable) {
             return false;
+        }
+        if ($divisi !== Divisi::NONSHIFT) {
+            return null;
         }
         // J8: the Karyawan record first, then the old Jadwal map.
         $kode = (string) (HrisKaryawan::query()->where('user_id', $userId)->value('shift_bawaan') ?? '');
@@ -247,6 +262,75 @@ final class HrisAttendanceService
         return ['kode' => $kode, 'mulai' => $m, 'selesai' => $s,
             'lintas_hari' => $s <= $m, 'sumber' => 'BAWAAN',
             'libur' => ! empty($d['libur']) ? 1 : 0, 'blok' => PunchRules::blokDari($d)];
+    }
+
+    /**
+     * Work date and shift for a MASUK at $now. An arrival after midnight
+     * belongs to yesterday's overnight shift while that shift has not ended
+     * and its last block has no MASUK yet; otherwise it is today's.
+     *
+     * @return array{0:string,1:array|null|false}
+     */
+    private function jadwalUntukMasuk(string $uid, int $now): array
+    {
+        $hariIni = PunchRules::tglWib($now);
+        $menit = PunchRules::menitWib($now);
+        if ($menit < 720) {
+            $kemarin = date('Y-m-d', strtotime($hariIni.' -1 day'));
+            $s = $this->shiftFor($uid, $kemarin);
+            if (is_array($s) && empty($s['libur'])) {
+                $blok = $s['blok'] ?? [];
+                $akhir = $blok !== [] ? $blok[count($blok) - 1] : $s;
+                $m = PunchRules::jamKeMenit($akhir['mulai']);
+                $e = PunchRules::jamKeMenit($akhir['selesai']);
+                if ($m >= 0 && $e >= 0 && $e < $m && $menit <= $e
+                    && ! HrisKetukan::query()->where('user_id', $uid)->where('tanggal_kerja', $kemarin)
+                        ->where('arah', 'MASUK')->where('blok', max(1, count($blok)))->exists()) {
+                    return [$kemarin, $s];
+                }
+            }
+        }
+
+        return [$hariIni, $this->shiftFor($uid, $hariIni, $menit)];
+    }
+
+    /**
+     * Shift context of a PULANG at $now: the roster of the work date its
+     * MASUK (≤ 18 h earlier) belongs to, so a night shift closing after
+     * midnight is never judged by the next day's cell (empty → TANPA_SHIFT,
+     * OFF → HARI_LIBUR). The work date itself is set from that MASUK later.
+     *
+     * @return array{0:string,1:array|null|false}
+     */
+    private function jadwalUntukPulang(string $uid, int $now): array
+    {
+        $hariIni = PunchRules::tglWib($now);
+        $masuk = HrisKetukan::query()->where('user_id', $uid)->where('arah', 'MASUK')->where('status', '!=', 'DITOLAK')
+            ->where('waktu', '>=', $now - 18 * 3600 * 1000)->orderByDesc('waktu')->first();
+        $tgl = $masuk ? self::tglDari($masuk->tanggal_kerja) : $hariIni;
+
+        return [$hariIni, $this->shiftFor($uid, $tgl, $tgl === $hariIni ? PunchRules::menitWib($now) : null)];
+    }
+
+    /**
+     * Work date and shift on the crew screen: yesterday while a night shift
+     * that started yesterday is still open (its MASUK has no PULANG yet and
+     * is under 18 h old), else the work date a MASUK now would get.
+     *
+     * @return array{0:string,1:array|null|false}
+     */
+    private function jadwalLayar(string $uid, int $now): array
+    {
+        $kemarin = date('Y-m-d', strtotime(PunchRules::tglWib($now).' -1 day'));
+        $terbuka = HrisKetukan::query()->where('user_id', $uid)->where('tanggal_kerja', $kemarin)
+            ->where('arah', 'MASUK')->where('status', '!=', 'DITOLAK')->where('lintas_hari', true)
+            ->where('waktu', '>=', $now - 18 * 3600 * 1000)->orderByDesc('waktu')->first();
+        if ($terbuka && ! HrisKetukan::query()->where('user_id', $uid)->where('tanggal_kerja', $kemarin)
+            ->where('arah', 'PULANG')->where('blok', (int) $terbuka->blok)->exists()) {
+            return [$kemarin, $this->shiftFor($uid, $kemarin)];
+        }
+
+        return $this->jadwalUntukMasuk($uid, $now);
     }
 
     /** @return array<int,array{mulai:string,selesai:string}> blocks of one shift code ([] = plain) */
@@ -695,16 +779,17 @@ final class HrisAttendanceService
         }
 
         $menit = PunchRules::menitWib($now);
-        $shift = $this->shiftFor($uid, PunchRules::tglWib($now), $menit);
+        [$tgl, $shift] = $arah === 'MASUK' ? $this->jadwalUntukMasuk($uid, $now) : $this->jadwalUntukPulang($uid, $now);
         $shiftArr = is_array($shift) ? $shift : null;
         $adaShift = $shiftArr !== null && empty($shiftArr['libur']);
         $durasiKerja = $set['durasiKerja'] ?? ['default' => 540, 'orang' => []];
 
-        $tgl = PunchRules::tglWib($now);
-        // Block shifts (J4): a MASUK belongs to the block its time falls in;
-        // a PULANG to the block of the MASUK it closes (set below).
+        // Block shifts (J4): a MASUK belongs to the block its time falls in
+        // (the last block after midnight of yesterday's shift); a PULANG to
+        // the block of the MASUK it closes (set below).
         $blokList = $shiftArr['blok'] ?? [];
-        $blok = $blokList !== [] ? PunchRules::blokUntuk($blokList, $menit) : 1;
+        $blok = $blokList === [] ? 1
+            : ($tgl !== PunchRules::tglWib($now) ? count($blokList) : PunchRules::blokUntuk($blokList, $menit));
         if ($blokList !== []) {
             // The block's own duration is the target, never a per-person override.
             $durasiKerja = ['default' => (int) ($durasiKerja['default'] ?? 540), 'orang' => []];
@@ -752,14 +837,15 @@ final class HrisAttendanceService
                 $tanpaMasuk = true;
             } else {
                 $blok = max(1, (int) $masuk->blok);
-                $tgl = PunchRules::workDateForPulang($masuk->tanggal_kerja, PunchRules::tglWib($now));
-                // The target comes from the MASUK row's shift snapshot, never
-                // a re-read: a roster edited mid-day must not move the goal.
-                $target = PunchRules::targetDurasiMenit(
-                    $masuk->shift_sumber !== '' ? $masuk->shift_sumber : null,
-                    $masuk->shift_mulai, $masuk->shift_selesai, $durasiKerja, $uid);
+                $tgl = PunchRules::workDateForPulang(self::tglDari($masuk->tanggal_kerja), PunchRules::tglWib($now));
+                // The goal comes from the MASUK row's shift snapshot, never
+                // a re-read: a roster edited mid-day must not move it.
+                $tujuan = PunchRules::tujuanPulang(['waktu' => (int) $masuk->waktu, 'tanggal_kerja' => $tgl,
+                    'shift_sumber' => (string) $masuk->shift_sumber, 'shift_mulai' => (string) $masuk->shift_mulai,
+                    'shift_selesai' => (string) $masuk->shift_selesai], $durasiKerja, $uid);
+                $target = $tujuan['target_menit'];
                 $durasi = (int) floor(($now - (int) $masuk->waktu) / 60000);
-                $nilai = PunchRules::nilaiPulang($durasi, $target, (int) $set['pulangLewatMenit']);
+                $nilai = PunchRules::nilaiPulangPada($now, $tujuan['boleh_pulang_ms'], (int) $set['pulangLewatMenit']);
                 $luarWaktu = $nilai['terlambat'];
                 $dalamShift = ! $nilai['terlambat'];
                 $pulangAwal = $nilai['pulang_awal'];
@@ -1052,11 +1138,10 @@ final class HrisAttendanceService
                 return ['telat_menit' => null, 'pulang_awal' => false, 'kurang_menit' => 0,
                     'target_menit' => null, 'durasi_menit' => null, 'curiga' => []];
             }
-            $target = PunchRules::targetDurasiMenit(
-                $masuk['shift_sumber'] !== '' ? $masuk['shift_sumber'] : null,
-                $masuk['shift_mulai'], $masuk['shift_selesai'], $kerja, (string) $r->user_id);
+            $tujuan = PunchRules::tujuanPulang($masuk, $kerja, (string) $r->user_id);
+            $target = $tujuan['target_menit'];
             $durasi = (int) floor(((int) $r->waktu - $masuk['waktu']) / 60000);
-            $nilai = PunchRules::nilaiPulang($durasi, $target, (int) $set['pulangLewatMenit']);
+            $nilai = PunchRules::nilaiPulangPada((int) $r->waktu, $tujuan['boleh_pulang_ms'], (int) $set['pulangLewatMenit']);
 
             return ['telat_menit' => null, 'pulang_awal' => $nilai['pulang_awal'],
                 'kurang_menit' => $nilai['kurang_menit'],
@@ -1291,14 +1376,15 @@ final class HrisAttendanceService
     {
         $uid = self::s($me['id'] ?? '');
         $now = PunchRules::ms();
-        $tgl = PunchRules::tglWib($now);
+        [$tgl, $shift] = $this->jadwalLayar($uid, $now);
         $semua = HrisKetukan::query()->where('user_id', $uid)->where('tanggal_kerja', $tgl)
             ->orderBy('waktu')->get()->map(fn ($r) => $this->shape($r))->values()->all();
-        $shift = $this->shiftFor($uid, $tgl, PunchRules::menitWib($now));
         $blokList = is_array($shift) ? ($shift['blok'] ?? []) : [];
         // The block on screen (J4): one still open (MASUK without PULANG)
-        // stays current; otherwise the block the clock is in.
-        $blokAktif = $blokList !== [] ? PunchRules::blokUntuk($blokList, PunchRules::menitWib($now)) : 1;
+        // stays current; otherwise the block the clock is in (the last one
+        // after midnight of yesterday's shift).
+        $blokAktif = $blokList === [] ? 1
+            : ($tgl !== PunchRules::tglWib($now) ? count($blokList) : PunchRules::blokUntuk($blokList, PunchRules::menitWib($now)));
         foreach ($semua as $p) {
             if ($p['arah'] === 'MASUK' && $p['status'] !== 'DITOLAK'
                 && ! array_filter($semua, fn ($q) => $q['arah'] === 'PULANG' && $q['blok'] === $p['blok'])) {
@@ -1316,14 +1402,14 @@ final class HrisAttendanceService
             }
         }
         $set = $this->settings->all();
-        // Clock-out goal (A23, A26): from the latest non-rejected MASUK plus
-        // its target; null without a MASUK.
+        // Clock-out goal (A23, A26): the scheduled end of the latest
+        // non-rejected MASUK's shift snapshot, or MASUK + duration without
+        // a schedule; null without a MASUK.
         $targetMenit = null;
         $bolehPulang = null;
         $targetAsal = null;
         foreach (array_reverse($punches) as $p) {
             if ($p['arah'] === 'MASUK' && $p['status'] !== 'DITOLAK') {
-                $sumberMasuk = $p['shift_sumber'] !== '' ? $p['shift_sumber'] : null;
                 $durasiKerja = $set['durasiKerja'] ?? ['default' => 540, 'orang' => []];
                 // Block count is recorded with new MASUK snapshots. Older
                 // rows with block > 1 are unambiguous; never infer a historic
@@ -1332,11 +1418,12 @@ final class HrisAttendanceService
                 if ($blokGanda) {
                     $durasiKerja = ['default' => (int) ($durasiKerja['default'] ?? 540), 'orang' => []];
                 }
-                $targetMenit = PunchRules::targetDurasiMenit(
-                    $sumberMasuk, $p['shift_mulai'], $p['shift_selesai'], $durasiKerja, $uid);
-                $targetAsal = PunchRules::targetDurasiAsal(
-                    $sumberMasuk, $p['shift_mulai'], $p['shift_selesai'], $durasiKerja, $uid);
-                $bolehPulang = PunchRules::jamWib($p['waktu'] + $targetMenit * 60000);
+                $tujuan = PunchRules::tujuanPulang(['waktu' => (int) $p['waktu'], 'tanggal_kerja' => $tgl,
+                    'shift_sumber' => (string) $p['shift_sumber'], 'shift_mulai' => (string) $p['shift_mulai'],
+                    'shift_selesai' => (string) $p['shift_selesai']], $durasiKerja, $uid);
+                $targetMenit = $tujuan['target_menit'];
+                $targetAsal = $tujuan['asal'];
+                $bolehPulang = PunchRules::jamWib($tujuan['boleh_pulang_ms']);
                 break;
             }
         }
@@ -1383,6 +1470,7 @@ final class HrisAttendanceService
                 'awalMenit' => (int) $set['awalMenit'],
                 'pulangLewatMenit' => (int) $set['pulangLewatMenit'],
                 'toleransiTelat' => (int) $set['toleransiTelat'],
+                'koreksiMaksHari' => (int) $set['koreksiMaksHari'],
             ],
             'targetMenit' => $targetMenit,
             'targetAsal' => $targetAsal,

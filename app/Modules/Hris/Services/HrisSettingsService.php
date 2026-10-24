@@ -54,6 +54,9 @@ final class HrisSettingsService
         // and minutes after shift end with MASUK but no PULANG.
         'perhatianTelatMenit' => 15,
         'perhatianPulangMenit' => 60,
+        // How many days back crew may file an attendance correction; older
+        // dates go through HR. Never past a locked period either way.
+        'koreksiMaksHari' => 7,
     ];
 
     /** Merged settings, memoized per instance (one query per request, not per row). */
@@ -133,6 +136,7 @@ final class HrisSettingsService
             'jatahCuti' => $int($v, 0, 30, $k),
             'perhatianTelatMenit' => $int($v, 5, 240, $k),
             'perhatianPulangMenit' => $int($v, 5, 720, $k),
+            'koreksiMaksHari' => $int($v, 1, 31, $k),
         };
     }
 

@@ -3,6 +3,7 @@
 use App\Modules\Hris\Models\HrisKetukan;
 use App\Modules\Hris\Services\HrisAttendanceService;
 use App\Modules\Hris\Services\HrisImporKaryawanService;
+use App\Modules\Hris\Services\HrisJadwalSinkron;
 use App\Modules\Hris\Services\HrisKaryawanService;
 use App\Modules\Hris\Services\HrisShiftService;
 use App\Modules\Jadwal\Services\JadwalService;
@@ -279,6 +280,8 @@ it('keeps a BAWAAN block target consistent with the punch and ignores person dur
         'blok' => [['mulai' => '11:00', 'selesai' => '15:00'], ['mulai' => '18:00', 'selesai' => '23:00']],
     ], 'test');
     app(HrisKaryawanService::class)->update($uid, ['shift_bawaan' => $shift['kode']], 'test');
+    // BAWAAN is a nonshift-only schedule now (owner 2026-10-24).
+    app(HrisJadwalSinkron::class)->tempatkan($uid, null, 'test');
     hrisEnrolOnce($uid);
     $tgl = hrisToday();
     [$y, $m, $d] = array_map(intval(...), explode('-', $tgl));
