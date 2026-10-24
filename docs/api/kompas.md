@@ -127,6 +127,12 @@ Figures investors see are **already summed** from the single daily map: no staff
 | PUT | `/analytics` | `{data}` replaces the whole analytics state. **If-Match = version**, checked and written under one row lock (`409` with the current `version` when stale) |
 | PUT | `/analytics/access` | **Analytics admin.** `{matrix?, roles?}`: each one given replaces its whole map (`tingkat` is clamped to 0–2). If-Match = `accessVersion` |
 
+### POS ESB — `/esb/sales` (module analytics, cashier or kompas)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/esb/sales?dari=YYYY-MM-DD&sampai=YYYY-MM-DD&page=N` | ONE page of raw ESB bills (port of `esbHalaman`): `{bills, page, pageCount, totalCount, perPage}`. Counts come from the `X-Pagination-*` headers or the body meta; not found = `null` (stop at the first empty page). The client loops the pages (a month is ~270) and parses the bills itself; nothing is written. The ESB token is server config (`ESB_TOKEN`, optional `ESB_URL`) and never returned. Errors: `503 esb_not_configured`, `422 invalid_request` (date / page), `502 esb_token_rejected` (ESB said 401/403: replace the token, do not retry), `502 esb_error` |
+
 ## Errors
 
 | Status | code |

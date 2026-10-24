@@ -28,6 +28,13 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    // POS ESB sales API (kompas esb/sales). The token opens every sale of the
+    // company: server config only, never sent to a browser.
+    'esb' => [
+        'token' => env('ESB_TOKEN'),
+        'url' => env('ESB_URL'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

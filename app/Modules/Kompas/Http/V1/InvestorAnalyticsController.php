@@ -3,6 +3,7 @@
 namespace App\Modules\Kompas\Http\V1;
 
 use App\Auth\OfficeAccess;
+use App\Modules\Kompas\Services\EsbSales;
 use App\Modules\Kompas\Services\InvestorAnalytics;
 use App\Support\Api\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -145,6 +146,22 @@ class InvestorAnalyticsController
         $a = $this->svc->analytics();
 
         return ApiResponse::ok(['matrix' => $a['akses'], 'roles' => $a['peran']], ['accessVersion' => self::hash([$a['akses'], $a['peran']])]);
+    }
+
+    /**
+     * GET /kompas/esb/sales?dari=&sampai=&page= — one page of POS ESB sales (port of
+     * esbHalaman). Module analytics, cashier or kompas: the Analytics sync and the
+     * Cashier "Isi POS dari ESB" button both use it. Writes nothing.
+     */
+    public function esbSales(Request $r, EsbSales $esb): JsonResponse
+    {
+        $id = (string) $r->user()->getKey();
+        if (! $this->access->hasModule($id, 'analytics') && ! $this->access->hasModule($id, 'cashier') && ! $this->access->hasModule($id, 'kompas')) {
+            return ApiResponse::error('module_not_granted', 'Your account has no access to module [analytics], [cashier] or [kompas].', 403);
+        }
+        $out = $esb->page((string) $r->query('dari', ''), (string) $r->query('sampai', ''), $r->query('page', 1));
+
+        return $out['ok'] ? ApiResponse::ok($out['data']) : ApiResponse::error($out['code'], $out['error'], $out['status']);
     }
 
     // ─────────────────────────── helpers ──
