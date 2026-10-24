@@ -54,8 +54,9 @@ class DwGuests
     ) {}
 
     /**
-     * Pax sums per (day, source) in [dari, sampai]:
-     * {rows: [{tgl, sumber, pax}], dari, sampai}.
+     * Pax sums per (day, source) in [dari, sampai], plus the day's agenda:
+     * {rows: [{tgl, sumber, pax, n}], acara: [{tgl, sumber, id, judul, jam,
+     * tempat, fb, pax, status}], dari, sampai}. `n` counts the items summed.
      *
      * `sumber` is `marketing` (events + Reservasi VIP, both owned by the
      * marketing module), `event` or `reservasi`. Only days with pax > 0 are
@@ -72,14 +73,16 @@ class DwGuests
             [$a, $b] = [$b, $a];
         }
 
+        // Every counted item bumps n (the old "3 reservasi" counts no-shows
+        // too); only days whose pax is above zero become rows, as before.
         $sum = [];
         $add = function (string $tgl, string $sumber, int $pax) use (&$sum): void {
-            if ($pax <= 0) {
-                return;
-            }
             $k = $tgl."\0".$sumber;
-            $sum[$k] = [$tgl, $sumber, ($sum[$k][2] ?? 0) + $pax];
+            $sum[$k] = [$tgl, $sumber, ($sum[$k][2] ?? 0) + max(0, $pax), ($sum[$k][3] ?? 0) + 1];
         };
+        // The day's agenda, as the old TAMU list (muatTamu :2068-2085):
+        // Marketing and Event items only; VIP and table bookings get no title.
+        $acara = [];
 
         $mkt = $this->marketing->read();
         foreach (is_array($mkt['events'] ?? null) ? $mkt['events'] : [] as $e) {
@@ -94,6 +97,14 @@ class DwGuests
                 continue;
             }
             $add($tgl, 'marketing', (int) ($e['pax'] ?? 0));
+            $det = is_array($e['detail'] ?? null) ? $e['detail'] : [];
+            $acara[] = [
+                'tgl' => $tgl, 'sumber' => 'marketing', 'id' => (string) ($e['id'] ?? ''),
+                'judul' => (string) ($e['nama'] ?? '') !== '' ? (string) $e['nama'] : '(tanpa nama)',
+                'jam' => (string) ($det['tamuDatang'] ?? ''), 'tempat' => (string) ($det['area'] ?? ''),
+                'fb' => (string) ($det['fbFormat'] ?? ''), 'pax' => (int) ($e['pax'] ?? 0),
+                'status' => (string) ($e['status'] ?? ''),
+            ];
         }
         foreach (is_array($mkt['vip'] ?? null) ? $mkt['vip'] : [] as $v) {
             if (! is_array($v) || ! empty($v['batalAt'])) {
@@ -124,6 +135,13 @@ class DwGuests
                 continue;
             }
             $add($mulai['tgl'], 'event', (int) ($e['capacity'] ?? 0));
+            $acara[] = [
+                'tgl' => $mulai['tgl'], 'sumber' => 'event', 'id' => (string) ($e['id'] ?? ''),
+                'judul' => (string) ($e['title'] ?? '') !== '' ? (string) $e['title'] : '(tanpa judul)',
+                'jam' => $mulai['jam'], 'tempat' => (string) ($e['venue'] ?? ''),
+                'fb' => '', 'pax' => (int) ($e['capacity'] ?? 0),
+                'status' => (string) ($e['status'] ?? ''),
+            ];
         }
 
         foreach ($this->reservasi->list($a, $b) as $r) {
@@ -140,12 +158,15 @@ class DwGuests
         }
 
         $rows = array_map(
-            fn (array $s): array => ['tgl' => $s[0], 'sumber' => $s[1], 'pax' => $s[2]],
-            array_values($sum)
+            fn (array $s): array => ['tgl' => $s[0], 'sumber' => $s[1], 'pax' => $s[2], 'n' => $s[3]],
+            array_values(array_filter($sum, fn (array $s): bool => $s[2] > 0))
         );
         usort($rows, fn (array $x, array $y): int => [$x['tgl'], $x['sumber']] <=> [$y['tgl'], $y['sumber']]);
 
-        return ['rows' => $rows, 'dari' => $a, 'sampai' => $b];
+        // Day, then time; an item without a time goes last (the old 'zz' key).
+        usort($acara, fn (array $x, array $y): int => [$x['tgl'], $x['jam'] !== '' ? $x['jam'] : 'zz'] <=> [$y['tgl'], $y['jam'] !== '' ? $y['jam'] : 'zz']);
+
+        return ['rows' => $rows, 'acara' => $acara, 'dari' => $a, 'sampai' => $b];
     }
 
     private static function inRange(string $tgl, string $a, string $b): bool

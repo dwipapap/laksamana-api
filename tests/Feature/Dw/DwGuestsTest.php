@@ -75,8 +75,8 @@ it('sums daily pax per source with the old calendar rules', function () {
         ->and($res['data']['sampai'])->toBe('2026-11-12');
     $rows = $res['data']['rows'];
     foreach ($rows as $r) {
-        expect($r)->toHaveKeys(['tgl', 'sumber', 'pax'])
-            ->and(array_keys($r))->toBe(['tgl', 'sumber', 'pax'])
+        expect($r)->toHaveKeys(['tgl', 'sumber', 'pax', 'n'])
+            ->and(array_keys($r))->toBe(['tgl', 'sumber', 'pax', 'n'])
             ->and($r['sumber'])->toBeIn(['marketing', 'event', 'reservasi']);
     }
     // Ordered by day then source.
@@ -99,6 +99,40 @@ it('sums daily pax per source with the old calendar rules', function () {
         // Reservasi: Confirmed + Pending count, Cancelled does not, No-show is 0.
         ->and($delta('2026-11-10|reservasi'))->toBe(6)
         ->and($delta('2026-11-11|reservasi'))->toBe(2);
+});
+
+it('lists the day agenda and counts the items behind each row (#352)', function () {
+    $token = loginAs(officeUser('u-rizkiarfan'));
+    $url = '/api/v1/dw/guests?from=2026-11-09&to=2026-11-12';
+    $before = $this->withToken($token)->getJson($url)->assertOk()->json('data');
+    $nBefore = [];
+    foreach ($before['rows'] as $r) {
+        $nBefore[$r['tgl'].'|'.$r['sumber']] = (int) $r['n'];
+    }
+
+    seedDwGuests();
+
+    $data = $this->withToken($token)->getJson($url)->assertOk()->json('data');
+    $n = [];
+    foreach ($data['rows'] as $r) {
+        $n[$r['tgl'].'|'.$r['sumber']] = (int) $r['n'];
+    }
+    // Reservasi Nov 10: Confirmed + No-show count as bookings (old rsv.length), Cancelled does not.
+    expect(($n['2026-11-10|reservasi'] ?? 0) - ($nBefore['2026-11-10|reservasi'] ?? 0))->toBe(2);
+
+    $judul = array_column(array_filter($data['acara'], fn ($x) => $x['tgl'] === '2026-11-10'), 'judul');
+    // Counted Marketing + Event items carry a title; Lead, draft, VIP and bookings do not.
+    expect($judul)->toContain('G Deal', 'E Malam', 'E Lewat Tengah Malam')
+        ->and($judul)->not->toContain('G Lead', 'E Draft', 'VIP Besar', 'Tamu A');
+    foreach ($data['acara'] as $x) {
+        expect(array_keys($x))->toBe(['tgl', 'sumber', 'id', 'judul', 'jam', 'tempat', 'fb', 'pax', 'status'])
+            ->and($x['sumber'])->toBeIn(['marketing', 'event']);
+    }
+    $malam = collect($data['acara'])->firstWhere('judul', 'E Malam');
+    expect($malam['jam'])->toBe('19:30')->and($malam['pax'])->toBe(50);
+    // Ordered by day, then time.
+    $kunci = array_map(fn ($x) => $x['tgl'].' '.($x['jam'] !== '' ? $x['jam'] : 'zz'), $data['acara']);
+    expect($kunci)->toBe(collect($kunci)->sort()->values()->all());
 });
 
 it('validates its dates and orders a swapped range', function () {
