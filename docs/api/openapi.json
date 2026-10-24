@@ -14154,6 +14154,89 @@
         }
       }
     },
+    "/api/v1/hris/kelola/roster/aktivitas": {
+      "get": {
+        "tags": [
+          "hris"
+        ],
+        "summary": "Roster activity: one row per roster save by a Kepala Divisi or HR, newest first; the cells of one save are kelola/roster/riwayat?simpan_id= (HRIS module admin only)",
+        "operationId": "getApiV1HrisKelolaRosterAktivitas",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "bulan",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "divisi",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "peran",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "per_page",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Success"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized (missing/invalid Bearer token)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (not an HRIS module admin)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/hris/kelola/roster/riwayat": {
       "get": {
         "tags": [
@@ -14219,6 +14302,13 @@
           {
             "in": "query",
             "name": "sumber",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "simpan_id",
             "schema": {
               "type": "string"
             }
