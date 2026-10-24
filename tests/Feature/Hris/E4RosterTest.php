@@ -4,6 +4,7 @@ use App\Modules\Hris\Models\HrisKaryawan;
 use App\Modules\Hris\Services\HrisAttendanceService;
 use App\Modules\Hris\Services\HrisError;
 use App\Modules\Hris\Services\HrisImporKaryawanService;
+use App\Modules\Hris\Services\HrisJadwalSinkron;
 use App\Modules\Hris\Services\HrisKaryawanService;
 use App\Modules\Hris\Services\HrisRosterService;
 use App\Modules\Hris\Services\HrisShiftService;
@@ -39,12 +40,14 @@ it('serves the month of one Divisi with only the shifts meant for it', function 
 
 it('lets a Kepala Divisi write their own crew and nobody else', function () {
     $h = ['Authorization' => 'Bearer '.hrisToken('u-arif')]; // head of bar
+    // Heads write from today on only, so the date follows the clock.
+    $d = date('Y-m-d', strtotime(hrisToday().' +9 days'));
 
-    test()->putJson('/api/v1/hris/roster', ['isi' => [['u' => 'u-yuzaalfarel', 'd' => '2026-11-02', 't' => 'PAGI']],
+    test()->putJson('/api/v1/hris/roster', ['isi' => [['u' => 'u-yuzaalfarel', 'd' => $d, 't' => 'PAGI']],
         'hapus' => []], $h)->assertOk()->assertJsonPath('data.isi', 1);
-    expect(rosterSel('u-yuzaalfarel', '2026-11-02')['t'])->toBe('PAGI');
+    expect(rosterSel('u-yuzaalfarel', $d)['t'])->toBe('PAGI');
 
-    test()->putJson('/api/v1/hris/roster', ['isi' => [['u' => 'u-aryaputras', 'd' => '2026-11-02', 't' => 'PAGI']],
+    test()->putJson('/api/v1/hris/roster', ['isi' => [['u' => 'u-aryaputras', 'd' => $d, 't' => 'PAGI']],
         'hapus' => []], $h)->assertStatus(403);
 });
 
@@ -100,14 +103,20 @@ it('recaps a month per crew member', function () {
         ->and($k['hari_kerja'])->toBe(1)->and($k['hari_libur'])->toBe(1)->and($k['kosong'])->toBe(28);
 });
 
-it('uses the Karyawan default shift when the roster has no cell', function () {
+it('uses the Karyawan default shift only for nonshift staff without a roster', function () {
     app(HrisImporKaryawanService::class)->impor('test');
+    // Shift-Divisi crew: the roster cell is the only schedule (owner 2026-10-24).
     app(HrisKaryawanService::class)->update('u-yuzaalfarel', ['shift_bawaan' => 'MIDDLE'], 'test');
     hrisClearShift('u-yuzaalfarel', '2026-11-25');
-
-    $s = app(HrisAttendanceService::class)->shiftFor('u-yuzaalfarel', '2026-11-25');
-    expect($s)->toMatchArray(['kode' => 'MIDDLE', 'sumber' => 'BAWAAN'])
+    expect(app(HrisAttendanceService::class)->shiftFor('u-yuzaalfarel', '2026-11-25'))->toBeNull()
         ->and(HrisKaryawan::query()->where('user_id', 'u-yuzaalfarel')->value('shift_bawaan'))->toBe('MIDDLE');
+
+    // Nonshift staff: the default shift is their fixed schedule.
+    app(HrisKaryawanService::class)->update('u-adit', ['shift_bawaan' => 'MIDDLE'], 'test');
+    app(HrisJadwalSinkron::class)->tempatkan('u-adit', null, 'test');
+    hrisClearShift('u-adit', '2026-11-25');
+    expect(app(HrisAttendanceService::class)->shiftFor('u-adit', '2026-11-25'))
+        ->toMatchArray(['kode' => 'MIDDLE', 'sumber' => 'BAWAAN']);
     expect(fn () => app(HrisKaryawanService::class)->update('u-yuzaalfarel', ['shift_bawaan' => 'OFF'], 'test'))
         ->toThrow(HrisError::class);
 });

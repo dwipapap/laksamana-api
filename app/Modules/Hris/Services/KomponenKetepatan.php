@@ -60,7 +60,7 @@ final class KomponenKetepatan implements SkorKomponen
     }
 
     /**
-     * Did this VALID PULANG leave before its target? The stored info row
+     * Did this VALID PULANG leave before its goal (PunchRules::tujuanPulang)? The stored info row
      * says so; older rows recompute live from the MASUK ≤ 18 h earlier.
      */
     private function adalahPulangAwal(HrisKetukan $p): bool
@@ -77,13 +77,13 @@ final class KomponenKetepatan implements SkorKomponen
         if ($masuk === null) {
             return false;
         }
-        $target = PunchRules::targetDurasiMenit(
-            $masuk->shift_sumber !== '' ? $masuk->shift_sumber : null,
-            $masuk->shift_mulai, $masuk->shift_selesai,
-            $this->settings->get('durasiKerja', ['default' => 540, 'orang' => []]),
-            (string) $p->user_id);
-        $durasi = (int) floor(((int) $p->waktu - (int) $masuk->waktu) / 60000);
+        $tgl = $masuk->tanggal_kerja;
+        $tujuan = PunchRules::tujuanPulang(['waktu' => (int) $masuk->waktu,
+            'tanggal_kerja' => $tgl instanceof \DateTimeInterface ? $tgl->format('Y-m-d') : substr((string) $tgl, 0, 10),
+            'shift_sumber' => (string) $masuk->shift_sumber, 'shift_mulai' => (string) $masuk->shift_mulai,
+            'shift_selesai' => (string) $masuk->shift_selesai],
+            $this->settings->get('durasiKerja', ['default' => 540, 'orang' => []]), (string) $p->user_id);
 
-        return $durasi < $target;
+        return intdiv((int) $p->waktu, 60000) < intdiv($tujuan['boleh_pulang_ms'], 60000);
     }
 }

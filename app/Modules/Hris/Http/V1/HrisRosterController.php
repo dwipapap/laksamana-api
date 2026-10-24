@@ -68,9 +68,11 @@ final class HrisRosterController extends HrisBaseController
     public function simpan(Request $r): JsonResponse
     {
         $me = $this->me($r);
-        $d = $r->validate(['isi' => ['present', 'array', 'max:2000'], 'hapus' => ['present', 'array', 'max:2000']]);
+        $d = $r->validate(['isi' => ['present', 'array', 'max:2000'], 'hapus' => ['present', 'array', 'max:2000'],
+            'catatan' => ['nullable', 'string', 'max:255']]);
 
-        return $this->run(fn () => $this->roster->simpan($this->bolehDivisi($me), $d['isi'], $d['hapus'], self::s($me['name'])));
+        return $this->run(fn () => $this->roster->simpan($this->bolehDivisi($me), $d['isi'], $d['hapus'],
+            self::s($me['name']), self::s($me['id'] ?? ''), self::s($d['catatan'] ?? '')));
     }
 
     public function rekap(Request $r): JsonResponse
@@ -126,6 +128,7 @@ final class HrisRosterController extends HrisBaseController
             'user' => ['nullable', 'string', 'max:64'],
             'q' => ['nullable', 'string', 'max:120'],
             'sumber' => ['nullable', 'string', 'max:16'],
+            'simpan_id' => ['nullable', 'string', 'max:32'],
             'page' => ['nullable', 'integer', 'min:1', 'max:10000'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
@@ -140,9 +143,39 @@ final class HrisRosterController extends HrisBaseController
                 isset($d['waktu_dari']) ? (int) $d['waktu_dari'] : null,
                 isset($d['waktu_sampai']) ? (int) $d['waktu_sampai'] : null,
                 $d['divisi'] ?? null, $d['user'] ?? null, $d['q'] ?? null, $d['sumber'] ?? null,
-                (int) ($d['page'] ?? 1), (int) ($d['per_page'] ?? 20));
+                (int) ($d['page'] ?? 1), (int) ($d['per_page'] ?? 20), $d['simpan_id'] ?? null);
 
             return ApiResponse::ok(['event' => $hasil['data'], 'menunggu_hr' => $this->ubah->antreanHr($me)], $hasil['meta']);
+        } catch (\Throwable $e) {
+            return $this->failure($e);
+        }
+    }
+
+    /**
+     * Kelola roster activity (owner decision 2026-10-24): one row per roster
+     * save by a Kepala Divisi or HR, newest first; the cells of one save are
+     * `kelola/roster/riwayat?simpan_id=`. Admin Modul HRIS only.
+     */
+    public function aktivitas(Request $r): JsonResponse
+    {
+        $d = $r->validate([
+            'bulan' => ['nullable', 'string', 'size:7'],
+            'divisi' => ['nullable', 'string', 'max:32'],
+            'peran' => ['nullable', 'string', 'in:HR,KEPALA'],
+            'page' => ['nullable', 'integer', 'min:1', 'max:10000'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+        $me = $this->me($r);
+
+        try {
+            $uid = self::s($me['id'] ?? '');
+            if ($uid === '' || ! $this->access->isModuleAdmin($uid, 'hris')) {
+                throw new HrisError('forbidden', 'Aktivitas roster hanya untuk Admin Modul HRIS.', 403);
+            }
+            $hasil = $this->riwayat->aktivitas($d['bulan'] ?? null, $d['divisi'] ?? null, $d['peran'] ?? null,
+                (int) ($d['page'] ?? 1), (int) ($d['per_page'] ?? 20));
+
+            return ApiResponse::ok(['simpan' => $hasil['data']], $hasil['meta']);
         } catch (\Throwable $e) {
             return $this->failure($e);
         }

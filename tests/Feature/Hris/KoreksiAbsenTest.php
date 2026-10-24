@@ -157,7 +157,8 @@ it('lets the head approve, writing the punch row, and rejects without a note', f
 
     $ketuk = HrisKetukan::query()->where('user_id', 'u-yuzaalfarel')
         ->where('tanggal_kerja', $tgl)->where('arah', 'PULANG')->firstOrFail();
-    expect($ketuk->status)->toBe('DISETUJUI');
+    // VALID, so the meal allowance and Kehadiran count the corrected day.
+    expect($ketuk->status)->toBe('VALID');
     // Clock time lands on the requested date in WIB.
     expect(date('Y-m-d H:i', (int) ($ketuk->waktu / 1000) + 7 * 3600))->toBe("{$tgl} 18:05");
 
